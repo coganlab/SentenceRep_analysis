@@ -145,14 +145,14 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds,
     return errors
 
 
-def CV2K_x(V, category_folds, sample_folds):
+def CV2K_x(V, category_folds, sample_folds, cf_ind=None, sf_ind=None):
     """
     runs CV2K_x method. using parameters from main.
     :return: numpy array - errors for each k and sample fold - error matrix (Ks x sample_folds)
     """
     # run method with pool
     with Pool(args.workers) as pool:
-        res = [pool.apply_async(CV2K_x_compute_error, (V, k, sample_fold, category_folds)) for
+        res = [pool.apply_async(CV2K_x_compute_error, (V, k, sample_fold, category_folds, sf_ind, cf_ind)) for
                k in Ks for sample_fold in range(sample_folds)]
         pool.close()
         pool.join()
@@ -163,7 +163,7 @@ def CV2K_x(V, category_folds, sample_folds):
     return errors
 
 
-def CV2K_standard(V, eps, Ks):
+def CV2K_standard(V, eps, Ks, maxiter, obj, reg, fraction):
     """
     runs CV2K standard method. using parameters from main.
     :return: numpy array - errors for each k and repetition - error matrix (Ks x repetitions)
@@ -171,20 +171,20 @@ def CV2K_standard(V, eps, Ks):
     rank_cycle = np.array([[i] * args.reps for i in Ks]).flatten()
     # create pool and run nmf
     with Pool(args.workers) as pool:
-        res = [pool.apply_async(crossval_nmf, (V, rank, args.maxiter, eps, args.obj, args.reg, args.fraction))
+        m_res = [pool.apply_async(crossval_nmf, (V, rank, maxiter, eps, obj, reg, fraction))
                for rank in rank_cycle]
         pool.close()
         pool.join()
     # get results from pool
-    res = [x.get() for x in res]
+    res = [x.get() for x in m_res]
     Ws, Hs = [x[0] for x in res], [x[1] for x in res]  # ignoring
     errors = np.reshape(np.array([x[2] for x in res]),
-                        (len(np.unique(rank_cycle)), args.reps))
+                        (len(np.unique(rank_cycle)), reps))
 
     return errors
 
 
-def CV2K_auto_binary_search(n,m,variant='standard'):
+def CV2K_auto_binary_search(n,m,V,eps,variant='standard'):
     Ks_and_errors = {}
     global Ks
     Ks = [5, 10, 20]  # predetermined starting Ks
@@ -196,9 +196,9 @@ def CV2K_auto_binary_search(n,m,variant='standard'):
         if flag == 1:
             stop = True
         if variant == 'standard':
-            errors = CV2K_standard()
+            errors = CV2K_standard(V, eps, Ks, maxiter,obj,reg,fraction)
         else:  # variant == 'x'
-            errors = CV2K_x()
+            errors = CV2K_x(V, category_folds, sample_folds, cf_ind, sf_ind)
         # store errors in dictionary and sort it by key
         for i in range(errors.shape[0]):
             Ks_and_errors[Ks[i]] = errors[i]
@@ -266,7 +266,8 @@ def produce_figure(errors, best_k, n, m, run_dir, best_k_after_rollback, rollbac
     plt.clf()
 
 
-def main(data, bottom_k, top_k, stride, reps, reg, obj, fraction, version, auto):
+def main(data, bottom_k, top_k, stride, reps, reg, obj,
+         fraction, version, auto, maxiter, workers):
     args = locals().values()
     V = np.load(data)
     n, m = V.shape
@@ -288,7 +289,7 @@ def main(data, bottom_k, top_k, stride, reps, reg, obj, fraction, version, auto)
         if auto == 'n':
             errors = CV2K_standard(V, eps, Ks)
         else:
-            errors = CV2K_auto_binary_search(version)
+            errors = CV2K_auto_binary_search(n, m, version)
     else:  # version == 'x'
         # define default number of category and sample folds
         category_folds = V.shape[1]  # m category folds
@@ -307,7 +308,8 @@ def main(data, bottom_k, top_k, stride, reps, reg, obj, fraction, version, auto)
         fold_category_indices = np.split(indices, category_folds)
         # get errors using our method
         if auto == 'n':
-            errors = CV2K_x(V, category_folds, sample_folds)
+            errors = CV2K_x(V, category_folds, sample_folds,
+                            fold_category_indices, fold_sample_indices)
         else:
             errors = CV2K_auto_binary_search(n, m, version)
 
