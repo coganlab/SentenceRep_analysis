@@ -1,15 +1,42 @@
 import os
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
 import sys
 import collections
 from multiprocessing import Pool
 import matplotlib as mpl
-mpl.use('Agg')
 import matplotlib.pyplot as plt
 import argparse
 import scipy.stats
-import scipy.optimize.nnls
+import scipy.optimize
 from CV2K_cv import *
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+mpl.use('Agg')
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='CV2K')
+    parser.add_argument('--version', type=str, default='standard',
+                        choices=['standard', 'x'], help='standard / x')
+    parser.add_argument('--auto', type=str, default='n',
+                        choices=['y', 'n'], help='automatic search vs given range')
+    parser.add_argument('--data', type=str, help='file_name.npy - n x m catalog: n rows are samples, '
+                                                 'm columns are mutation types')
+    parser.add_argument('--fraction', type=float,
+                        default=0.1, help='validation fraction')
+    parser.add_argument('--reps', type=int, default=30,
+                        help='number of repeats per rank')
+    parser.add_argument('--maxiter', type=int, default=2000,
+                        help='max number of iterations')
+    parser.add_argument('--bottom_k', type=int,
+                        default=1, help='lower boundary')
+    parser.add_argument('--top_k', type=int, default=10, help='upper boundary')
+    parser.add_argument('--stride', type=int, default=1, help='stride')
+    parser.add_argument('--workers', type=int, default=20,
+                        help='number of workers')
+    parser.add_argument('--obj', type=str, default='kl', choices=['kl', 'euc', 'is'],
+                        help='euclidean vs kl-divergence vs IS')
+    parser.add_argument('--reg', type=float, default=0,
+                        help='regularization rate')
+    return parser
 
 
 def rollback(errors):
@@ -173,15 +200,18 @@ def CV2K_auto_binary_search(variant='standard'):
         best_k_idx = rollback(all_errors)
         best_k = sorted_visited_Ks[best_k_idx]
         best_k_global_arg = np.nonzero(sorted_visited_Ks == best_k)[0][0]
-        if best_k_global_arg == 0: new_Ks = [max(low_bound, best_k//2), best_k + (sorted_visited_Ks[1]-best_k)//2]
-        elif best_k_global_arg == len(sorted_visited_Ks)-1: new_Ks = [best_k - (best_k-sorted_visited_Ks[-2])//2,
-                                                                      min(best_k*2, up_bound)]
-        else: new_Ks = [best_k - (best_k-sorted_visited_Ks[best_k_global_arg-1])//2,
-                    best_k + (sorted_visited_Ks[best_k_global_arg+1]-best_k)//2]
+        if best_k_global_arg == 0:
+            new_Ks = [max(low_bound, best_k // 2), best_k + (sorted_visited_Ks[1] - best_k) // 2]
+        elif best_k_global_arg == len(sorted_visited_Ks) - 1:
+            new_Ks = [best_k - (best_k - sorted_visited_Ks[-2]) // 2,
+                      min(best_k * 2, up_bound)]
+        else:
+            new_Ks = [best_k - (best_k - sorted_visited_Ks[best_k_global_arg - 1]) // 2,
+                      best_k + (sorted_visited_Ks[best_k_global_arg + 1] - best_k) // 2]
         Ks = np.setdiff1d(new_Ks, sorted_visited_Ks)
         if len(Ks) == 0:
             flag = 1  # indicates final loop -- 7 size window [k-3, k+3]
-            Ks = np.setdiff1d(np.arange(max(low_bound, best_k-3), min(best_k+4, up_bound+1)), sorted_visited_Ks)
+            Ks = np.setdiff1d(np.arange(max(low_bound, best_k - 3), min(best_k + 4, up_bound + 1)), sorted_visited_Ks)
             if len(Ks) == 0: stop = True
 
     # update global Ks and final errors
@@ -239,7 +269,7 @@ if __name__ == '__main__':
     # define convergence criterion
     eps = 1e-6
     # create rank cycle
-    Ks = np.arange(args.bottom_k, args.top_k+1, args.stride)
+    Ks = np.arange(args.bottom_k, args.top_k + 1, args.stride)
 
     start = time.time()
     timestamp = datetime.datetime.now().strftime('%d-%m_%H-%M-%S')
@@ -296,7 +326,7 @@ if __name__ == '__main__':
     # rollback
     best_k_after_rollback_idx = rollback(errors)
     best_k_after_rollback = Ks[best_k_after_rollback_idx]
-    
+
     # results figure
     produce_figure(rollback=True)
     print("Rollback from median: %d\n" % best_k_after_rollback)
