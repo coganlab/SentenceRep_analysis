@@ -251,3 +251,4 @@ def crossval_nmf(V, rank, maxiter=2000, eps=1e-8, obj='kl', reg=0, fraction=.01)
     imputation_error = calc_validation_error(V_tag, W_tag, H, ~O) / np.sum(~O)
 
     return W, H, imputation_error
+    

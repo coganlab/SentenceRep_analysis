@@ -1,15 +1,42 @@
+from CV2K_cv import *
+import scipy.optimize
+import scipy.stats
+import argparse
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from multiprocessing import Pool
+import collections
+import sys
 import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
-import sys
-import collections
-from multiprocessing import Pool
-import matplotlib as mpl
 mpl.use('Agg')
-import matplotlib.pyplot as plt
-import argparse
-import scipy.stats
-import scipy.optimize.nnls
-from CV2K_cv import *
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='CV2K')
+    parser.add_argument('--version', type=str, default='standard',
+                        choices=['standard', 'x'], help='standard / x')
+    parser.add_argument('--auto', type=str, default='n',
+                        choices=['y', 'n'], help='automatic search vs given range')
+    parser.add_argument('--data', type=str, help='file_name.npy - n x m catalog: n rows are samples, '
+                                                 'm columns are mutation types')
+    parser.add_argument('--fraction', type=float,
+                        default=0.1, help='validation fraction')
+    parser.add_argument('--reps', type=int, default=30,
+                        help='number of repeats per rank')
+    parser.add_argument('--maxiter', type=int, default=2000,
+                        help='max number of iterations')
+    parser.add_argument('--bottom_k', type=int,
+                        default=1, help='lower boundary')
+    parser.add_argument('--top_k', type=int, default=10, help='upper boundary')
+    parser.add_argument('--stride', type=int, default=1, help='stride')
+    parser.add_argument('--workers', type=int, default=20,
+                        help='number of workers')
+    parser.add_argument('--obj', type=str, default='kl', choices=['kl', 'euc', 'is'],
+                        help='euclidean vs kl-divergence vs IS')
+    parser.add_argument('--reg', type=float, default=0,
+                        help='regularization rate')
+    return parser
 
 
 def rollback(errors):
@@ -37,8 +64,10 @@ def NMF(V, k):
     :param k: rank of factorization
     :return: W (n x k) and H (k x m) matrices
     """
-    W, H = init_factor_matrices(V, k, O=np.ones((V.shape), dtype=bool), eps=1e-6, obj='euc', reg=0)
-    W, H, _ = optimize(V, W, H, O=np.ones((V.shape), dtype=bool), maxiter=args.maxiter, eps=1e-6, obj='euc', reg=0)
+    W, H = init_factor_matrices(V, k, O=np.ones(
+        (V.shape), dtype=bool), eps=1e-6, obj='euc', reg=0)
+    W, H, _ = optimize(V, W, H, O=np.ones((V.shape), dtype=bool),
+                       maxiter=args.maxiter, eps=1e-6, obj='euc', reg=0)
 
     return W, H
 
@@ -58,10 +87,13 @@ def nnls(V, H):
     return np.array(W)
 
 
-def CV2K_x_compute_error(V, k, sample_fold, category_folds):
+def CV2K_x_compute_error(V, k, sample_fold, category_folds,
+                         fold_sample_indices, fold_category_indices):
     """
     CV2K_x helper - computes overall error for a given k and sample_fold, by accumulating all category_fold errors.
     using parameters from main.
+    :param fold_category_indices:
+    :param fold_sample_indices:
     :param V: input matrix (n x m)
     :param k: rank of factorization
     :param sample_fold: index of group of samples that correspond to the current fold
@@ -72,7 +104,8 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
     errors = 0
 
     # splitting samples to train and test
-    train_samples_idx = np.concatenate([indices for i, indices in enumerate(fold_sample_indices) if i != sample_fold])
+    train_samples_idx = np.concatenate(
+        [indices for i, indices in enumerate(fold_sample_indices) if i != sample_fold])
     test_samples_idx = fold_sample_indices[sample_fold]
     V_train = V[train_samples_idx]
     V_test = V[test_samples_idx]
@@ -104,14 +137,15 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
         final_V = normalized_V_test.T[test_categories_idx].T
 
         # compute error and add to overall
-        errors += np.sum(np.abs(final_V_from_WH - final_V)) / final_V_from_WH.size
+        errors += np.sum(np.abs(final_V_from_WH - final_V)) / \
+            final_V_from_WH.size
 
     print("k = %d, fold: %d - completed." % (k, sample_fold))
 
     return errors
 
 
-def CV2K_x():
+def CV2K_x(V, category_folds, sample_folds):
     """
     runs CV2K_x method. using parameters from main.
     :return: numpy array - errors for each k and sample fold - error matrix (Ks x sample_folds)
@@ -129,7 +163,7 @@ def CV2K_x():
     return errors
 
 
-def CV2K_standard():
+def CV2K_standard(V, eps, Ks):
     """
     runs CV2K standard method. using parameters from main.
     :return: numpy array - errors for each k and repetition - error matrix (Ks x repetitions)
@@ -144,12 +178,13 @@ def CV2K_standard():
     # get results from pool
     res = [x.get() for x in res]
     Ws, Hs = [x[0] for x in res], [x[1] for x in res]  # ignoring
-    errors = np.reshape(np.array([x[2] for x in res]), (len(np.unique(rank_cycle)), args.reps))
+    errors = np.reshape(np.array([x[2] for x in res]),
+                        (len(np.unique(rank_cycle)), args.reps))
 
     return errors
 
 
-def CV2K_auto_binary_search(variant='standard'):
+def CV2K_auto_binary_search(n,m,variant='standard'):
     Ks_and_errors = {}
     global Ks
     Ks = [5, 10, 20]  # predetermined starting Ks
@@ -158,7 +193,8 @@ def CV2K_auto_binary_search(variant='standard'):
     flag = 0
 
     while not stop:
-        if flag == 1: stop = True
+        if flag == 1:
+            stop = True
         if variant == 'standard':
             errors = CV2K_standard()
         else:  # variant == 'x'
@@ -173,16 +209,22 @@ def CV2K_auto_binary_search(variant='standard'):
         best_k_idx = rollback(all_errors)
         best_k = sorted_visited_Ks[best_k_idx]
         best_k_global_arg = np.nonzero(sorted_visited_Ks == best_k)[0][0]
-        if best_k_global_arg == 0: new_Ks = [max(low_bound, best_k//2), best_k + (sorted_visited_Ks[1]-best_k)//2]
-        elif best_k_global_arg == len(sorted_visited_Ks)-1: new_Ks = [best_k - (best_k-sorted_visited_Ks[-2])//2,
-                                                                      min(best_k*2, up_bound)]
-        else: new_Ks = [best_k - (best_k-sorted_visited_Ks[best_k_global_arg-1])//2,
-                    best_k + (sorted_visited_Ks[best_k_global_arg+1]-best_k)//2]
+        if best_k_global_arg == 0:
+            new_Ks = [max(low_bound, best_k//2), best_k +
+                      (sorted_visited_Ks[1]-best_k)//2]
+        elif best_k_global_arg == len(sorted_visited_Ks)-1:
+            new_Ks = [best_k - (best_k-sorted_visited_Ks[-2])//2,
+                      min(best_k*2, up_bound)]
+        else:
+            new_Ks = [best_k - (best_k-sorted_visited_Ks[best_k_global_arg-1])//2,
+                      best_k + (sorted_visited_Ks[best_k_global_arg+1]-best_k)//2]
         Ks = np.setdiff1d(new_Ks, sorted_visited_Ks)
         if len(Ks) == 0:
             flag = 1  # indicates final loop -- 7 size window [k-3, k+3]
-            Ks = np.setdiff1d(np.arange(max(low_bound, best_k-3), min(best_k+4, up_bound+1)), sorted_visited_Ks)
-            if len(Ks) == 0: stop = True
+            Ks = np.setdiff1d(np.arange(max(low_bound, best_k-3),
+                              min(best_k+4, up_bound+1)), sorted_visited_Ks)
+            if len(Ks) == 0:
+                stop = True
 
     # update global Ks and final errors
     Ks = np.array(list(Ks_and_errors.keys()))
@@ -190,9 +232,15 @@ def CV2K_auto_binary_search(variant='standard'):
     return final_errors
 
 
-def produce_figure(rollback=True):
+def produce_figure(errors, best_k, n, m, run_dir, best_k_after_rollback, rollback=True):
     """
     produces a figure that shows the results
+    :param best_k_after_rollback:
+    :param run_dir:
+    :param m:
+    :param n:
+    :param best_k:
+    :param errors:
     :param rollback: int - chosen k, after rolling backwards from the k with minimum median error
     """
     print("Tested Ks: ", Ks, flush=True)
@@ -205,57 +253,43 @@ def produce_figure(rollback=True):
     plt.xlabel('Rank')
     plt.ylabel('log(Imputation Error)')
     rank_cycle = np.array([[i] * args.reps for i in Ks]).flatten()
-    plt.plot(rank_cycle + randn(rank_cycle.size) * .1, np.log(errors.flatten()), '.k', markersize=1)  # scatter
-    plt.plot(Ks, np.log(medians), 'b--', zorder=-1, label='Validation median (best: %d)' % best_k)
+    plt.plot(rank_cycle + randn(rank_cycle.size) * .1,
+             np.log(errors.flatten()), '.k', markersize=1)  # scatter
+    plt.plot(Ks, np.log(medians), 'b--', zorder=-1,
+             label='Validation median (best: %d)' % best_k)
     plt.legend(loc='best')
     plt.xticks(Ks.astype(int))
     if rollback:
-        plt.axvspan(best_k_after_rollback - 0.05, best_k_after_rollback + 0.05, color='gray', alpha=0.5)
+        plt.axvspan(best_k_after_rollback - 0.05,
+                    best_k_after_rollback + 0.05, color='gray', alpha=0.5)
     plt.savefig(run_dir + '/figure.pdf')
     plt.clf()
 
 
-if __name__ == '__main__':
-    # parse script parameters
-    parser = argparse.ArgumentParser(description='CV2K')
-    parser.add_argument('--version', type=str, default='standard', choices=['standard', 'x'], help='standard / x')
-    parser.add_argument('--auto', type=str, default='n', choices=['y', 'n'], help='automatic search vs given range')
-    parser.add_argument('--data', type=str, help='file_name.npy - n x m catalog: n rows are samples, '
-                                                 'm columns are mutation types')
-    parser.add_argument('--fraction', type=float, default=0.1, help='validation fraction')
-    parser.add_argument('--reps', type=int, default=30, help='number of repeats per rank')
-    parser.add_argument('--maxiter', type=int, default=2000, help='max number of iterations')
-    parser.add_argument('--bottom_k', type=int, default=1, help='lower boundary')
-    parser.add_argument('--top_k', type=int, default=10, help='upper boundary')
-    parser.add_argument('--stride', type=int, default=1, help='stride')
-    parser.add_argument('--workers', type=int, default=20, help='number of workers')
-    parser.add_argument('--obj', type=str, default='kl', choices=['kl', 'euc', 'is'],
-                        help='euclidean vs kl-divergence vs IS')
-    parser.add_argument('--reg', type=float, default=0, help='regularization rate')
-    args = parser.parse_args()
-
-    V = np.load(args.data)
+def main(data, bottom_k, top_k, stride, reps, reg, obj, fraction, version, auto):
+    args = locals().values()
+    V = np.load(data)
     n, m = V.shape
     # define convergence criterion
     eps = 1e-6
     # create rank cycle
-    Ks = np.arange(args.bottom_k, args.top_k+1, args.stride)
+    Ks = np.arange(bottom_k, top_k+1, stride)
 
     start = time.time()
     timestamp = datetime.datetime.now().strftime('%d-%m_%H-%M-%S')
     # create output directory
-    run_dir = args.data + "_%dx%d_reps-%d_obj-%s_frac-%.4f-reg-%.2f_" % (n, m, args.reps, args.obj, args.fraction,
-                                                                         args.reg) + timestamp
+    run_dir = data + "_%dx%d_reps-%d_obj-%s_frac-%.4f-reg-%.2f_" % (n, m, reps, obj, fraction,
+                                                                         reg) + timestamp
     if not os.path.exists(run_dir):
         os.makedirs(run_dir)
 
     # main procedure
-    if args.version == 'standard':
-        if args.auto == 'n':
-            errors = CV2K_standard()
+    if version == 'standard':
+        if auto == 'n':
+            errors = CV2K_standard(V, eps, Ks)
         else:
-            errors = CV2K_auto_binary_search(args.version)
-    else:  # args.version == 'x'
+            errors = CV2K_auto_binary_search(version)
+    else:  # version == 'x'
         # define default number of category and sample folds
         category_folds = V.shape[1]  # m category folds
         sample_folds = 10
@@ -272,10 +306,10 @@ if __name__ == '__main__':
         indices = np.arange(m)
         fold_category_indices = np.split(indices, category_folds)
         # get errors using our method
-        if args.auto == 'n':
-            errors = CV2K_x()
+        if auto == 'n':
+            errors = CV2K_x(V, category_folds, sample_folds)
         else:
-            errors = CV2K_auto_binary_search(args.version)
+            errors = CV2K_auto_binary_search(n, m, version)
 
     end = time.time()
     print("Completed!")
@@ -296,10 +330,17 @@ if __name__ == '__main__':
     # rollback
     best_k_after_rollback_idx = rollback(errors)
     best_k_after_rollback = Ks[best_k_after_rollback_idx]
-    
+
     # results figure
     produce_figure(rollback=True)
     print("Rollback from median: %d\n" % best_k_after_rollback)
 
     sys.stdout = orig_stdout
     f.close()
+
+
+if __name__ == '__main__':
+    # parse script parameters
+    args = get_parser().parse_args()
+    main(**vars(args))
+
