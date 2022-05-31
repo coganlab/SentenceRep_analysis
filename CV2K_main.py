@@ -138,7 +138,7 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
     return errors
 
 
-def CV2K_x():
+def CV2K_x(V,):
     """
     runs CV2K_x method. using parameters from main.
     :return: numpy array - errors for each k and sample fold - error matrix (Ks x sample_folds)
@@ -156,8 +156,12 @@ def CV2K_x():
     return errors
 
 
-def CV2K_standard(V,eps,Ks,args):
+def CV2K_standard(V, eps, Ks, args):
     """
+    :param args:
+    :param Ks:
+    :param eps:
+    :param V: input matrix (n x m)
     runs CV2K standard method. using parameters from main.
     :return: numpy array - errors for each k and repetition - error matrix (Ks x repetitions)
     """
@@ -187,7 +191,7 @@ def CV2K_auto_binary_search(variant='standard'):
     while not stop:
         if flag == 1: stop = True
         if variant == 'standard':
-            errors = CV2K_standard(V,eps,args)
+            errors = CV2K_standard(V, eps, Ks, args)
         else:  # variant == 'x'
             errors = CV2K_x()
         # store errors in dictionary and sort it by key
@@ -220,9 +224,12 @@ def CV2K_auto_binary_search(variant='standard'):
     return final_errors
 
 
-def produce_figure(rollback=True):
+def produce_figure(run_dir, Ks, errors, best_k, best_k_after_rollback,
+                   n, m, rollback=True):
     """
     produces a figure that shows the results
+    :param Ks:
+    :param run_dir:
     :param rollback: int - chosen k, after rolling backwards from the k with minimum median error
     """
     print("Tested Ks: ", Ks, flush=True)
@@ -310,16 +317,16 @@ def main(args):
     best_k_after_rollback = Ks[best_k_after_rollback_idx]
 
     # results figure
-    produce_figure(rollback=True)
+    produce_figure(run_dir, Ks, errors, best_k, best_k_after_rollback,
+                   n, m, rollback=True)
     print("Rollback from median: %d\n" % best_k_after_rollback)
 
     sys.stdout = orig_stdout
     f.close()
+
 
 if __name__ == '__main__':
     # parse script parameters
     parser = get_parser()
     args = parser.parse_args()
     main(args)
-
-
