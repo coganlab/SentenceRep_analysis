@@ -156,7 +156,7 @@ def CV2K_x():
     return errors
 
 
-def CV2K_standard():
+def CV2K_standard(V,eps,Ks,args):
     """
     runs CV2K standard method. using parameters from main.
     :return: numpy array - errors for each k and repetition - error matrix (Ks x repetitions)
@@ -187,7 +187,7 @@ def CV2K_auto_binary_search(variant='standard'):
     while not stop:
         if flag == 1: stop = True
         if variant == 'standard':
-            errors = CV2K_standard()
+            errors = CV2K_standard(V,eps,args)
         else:  # variant == 'x'
             errors = CV2K_x()
         # store errors in dictionary and sort it by key
@@ -245,25 +245,7 @@ def produce_figure(rollback=True):
     plt.clf()
 
 
-if __name__ == '__main__':
-    # parse script parameters
-    parser = argparse.ArgumentParser(description='CV2K')
-    parser.add_argument('--version', type=str, default='standard', choices=['standard', 'x'], help='standard / x')
-    parser.add_argument('--auto', type=str, default='n', choices=['y', 'n'], help='automatic search vs given range')
-    parser.add_argument('--data', type=str, help='file_name.npy - n x m catalog: n rows are samples, '
-                                                 'm columns are mutation types')
-    parser.add_argument('--fraction', type=float, default=0.1, help='validation fraction')
-    parser.add_argument('--reps', type=int, default=30, help='number of repeats per rank')
-    parser.add_argument('--maxiter', type=int, default=2000, help='max number of iterations')
-    parser.add_argument('--bottom_k', type=int, default=1, help='lower boundary')
-    parser.add_argument('--top_k', type=int, default=10, help='upper boundary')
-    parser.add_argument('--stride', type=int, default=1, help='stride')
-    parser.add_argument('--workers', type=int, default=20, help='number of workers')
-    parser.add_argument('--obj', type=str, default='kl', choices=['kl', 'euc', 'is'],
-                        help='euclidean vs kl-divergence vs IS')
-    parser.add_argument('--reg', type=float, default=0, help='regularization rate')
-    args = parser.parse_args()
-
+def main(args):
     V = np.load(args.data)
     n, m = V.shape
     # define convergence criterion
@@ -282,7 +264,7 @@ if __name__ == '__main__':
     # main procedure
     if args.version == 'standard':
         if args.auto == 'n':
-            errors = CV2K_standard()
+            errors = CV2K_standard(V, eps, Ks, args)
         else:
             errors = CV2K_auto_binary_search(args.version)
     else:  # args.version == 'x'
@@ -333,3 +315,11 @@ if __name__ == '__main__':
 
     sys.stdout = orig_stdout
     f.close()
+
+if __name__ == '__main__':
+    # parse script parameters
+    parser = get_parser()
+    args = parser.parse_args()
+    main(args)
+
+
