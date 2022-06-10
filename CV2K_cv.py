@@ -187,7 +187,8 @@ def init_factor_matrices(V, rank, O, eps, obj, reg, best_of=100):
     return W[arg_of_best], H[arg_of_best]
 
 
-def optimize(V, W, H, O, maxiter=5000, eps=1e-8, obj='kl', init=False, reg=0):
+def optimize(V, W, H, O, maxiter=5000, eps=1e-8, obj='kl',
+             init=False, reg=0, verbose=False):
     """
     V * O ~ WH optimization
     :param V: input matrix (n x m)
@@ -213,7 +214,8 @@ def optimize(V, W, H, O, maxiter=5000, eps=1e-8, obj='kl', init=False, reg=0):
         W, H = sBCD_update(V, W, H, O, reg=reg, obj=obj)
         if n_iters % check_conv_intervals == 0:
             current_error = calc_train_error(V, W, H, O, obj=obj)
-            print("Current error: {error}".format(error=current_error))
+            if verbose:
+                print("Current error: {error}".format(error=current_error))
             converged = (previous_error - current_error) / previous_error < eps
             # converged = np.abs(previous_error - current_error) / previous_error < eps
             previous_error = current_error

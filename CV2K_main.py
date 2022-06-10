@@ -36,6 +36,8 @@ def get_parser():
                         help='euclidean vs kl-divergence vs IS')
     parser.add_argument('--reg', type=float, default=0,
                         help='regularization rate')
+    parser.add_argument('-v', '--verbose', default=False,
+                        action='store_true', help='verbosity')
     return parser
 
 
@@ -85,10 +87,11 @@ def nnls(V, H):
     return np.array(W)
 
 
-def CV2K_x_compute_error(V, k, sample_fold, category_folds):
+def CV2K_x_compute_error(V, k, sample_fold, category_folds, fold_sample_indices):
     """
     CV2K_x helper - computes overall error for a given k and sample_fold, by accumulating all category_fold errors.
     using parameters from main.
+    :param fold_sample_indices:
     :param V: input matrix (n x m)
     :param k: rank of factorization
     :param sample_fold: index of group of samples that correspond to the current fold
@@ -99,6 +102,7 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
     errors = 0
 
     # splitting samples to train and test
+    n, m = V.shape
     train_samples_idx = np.concatenate([indices for i, indices in enumerate(fold_sample_indices) if i != sample_fold])
     test_samples_idx = fold_sample_indices[sample_fold]
     V_train = V[train_samples_idx]
@@ -108,7 +112,7 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
     _, H = NMF(V_train, k)
     # normalizing H
     H /= H.sum(1, keepdims=True)
-
+    fold_category_indices = np.array_split(np.arange(n), category_folds)
     for category_fold in range(category_folds):
         # splitting categories to train and test
         train_categories_idx = np.concatenate([indices for i, indices in enumerate(fold_category_indices) if
@@ -138,14 +142,14 @@ def CV2K_x_compute_error(V, k, sample_fold, category_folds):
     return errors
 
 
-def CV2K_x(V,):
+def CV2K_x(V,sample_folds, category_folds, ind):
     """
     runs CV2K_x method. using parameters from main.
     :return: numpy array - errors for each k and sample fold - error matrix (Ks x sample_folds)
     """
     # run method with pool
     with Pool(args.workers) as pool:
-        res = [pool.apply_async(CV2K_x_compute_error, (V, k, sample_fold, category_folds)) for
+        res = [pool.apply_async(CV2K_x_compute_error, (V, k, sample_fold, category_folds, ind)) for
                k in Ks for sample_fold in range(sample_folds)]
         pool.close()
         pool.join()
@@ -184,6 +188,7 @@ def CV2K_auto_binary_search(variant='standard'):
     Ks_and_errors = {}
     global Ks
     Ks = [5, 10, 20]  # predetermined starting Ks
+    n, m = V.shape
     low_bound, up_bound = 1, np.min([80, n, m])
     stop = False
     flag = 0
@@ -193,7 +198,7 @@ def CV2K_auto_binary_search(variant='standard'):
         if variant == 'standard':
             errors = CV2K_standard(V, eps, Ks, args)
         else:  # variant == 'x'
-            errors = CV2K_x()
+            errors = CV2K_x(V, sample_folds, category_folds, ind)
         # store errors in dictionary and sort it by key
         for i in range(errors.shape[0]):
             Ks_and_errors[Ks[i]] = errors[i]
