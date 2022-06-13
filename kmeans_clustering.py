@@ -1,11 +1,11 @@
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.neighbors import NearestNeighbors
-from tslearn.clustering import TimeSeriesKMeans, silhouette_score
+from tslearn.clustering import silhouette_score
+from tslearn.clustering import TimeSeriesKMeans as KMeans
+from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 import matplotlib.pyplot as plt
 
-x = np.load("Z_LSwords+LMwords_aud+go.npy")
-KMeans = TimeSeriesKMeans
+x = np.load("../A_LSwords_aud+go_SM.npy")
 
 
 def cluster_variance(n):
@@ -15,7 +15,7 @@ def cluster_variance(n):
     K = [i for i in range(1, n + 1)]
     for i in range(1, n + 1):
         variance = 0
-        model = KMeans(n_clusters=i, random_state=82, verbose=2).fit(x)
+        model = KMeans(n_clusters=i, verbose=2).fit(x)
         kmeans.append(model)
         variances.append(model.inertia_)
 
@@ -52,22 +52,24 @@ def calc_sil(kmax):
 def calc_score(kmax, method="sil", repeat=10):
     k_scores = []
     for r in range(repeat):
-        if method == "sil":
+        if method.lower() in ["sil", "silhouette"]:
             score = calc_sil(kmax)
         elif method.lower() == "wss":
             score = calculate_WSS(kmax)
         elif method.lower() in ["var", "variance"]:
             [score, _] = cluster_variance(kmax)
+        else:
+            raise SyntaxError("Scoring options are currently 'sil', 'var', and 'wss'")
         k_scores.append(score)
     scores = np.mean(k_scores, 0)
-    return scores
+    return scores, k_scores
 
 
 def sk_clustering(k):
-    nbrs = NearestNeighbors(n_neighbors=k, algorithm='ball_tree').fit(x)
-    #connectivity = nbrs.kneighbors_graph(x)
+    nbrs = NearestNeighbors(n_neighbors=2, n_jobs=8).fit(x)
+    connectivity = nbrs.kneighbors_graph(x)
     ward = AgglomerativeClustering(
-        n_clusters=k, linkage="ward"#, connectivity=connectivity
+        n_clusters=k, linkage="ward", connectivity=connectivity
     ).fit(x)
     return ward, nbrs
 
@@ -75,26 +77,38 @@ def sk_clustering(k):
 def plot_clustering(labels, error=False):
     for i in np.unique(labels):
         w_sigs = x[labels == i]
-        mean = np.mean(w_sigs,0)
-        std = np.std(w_sigs,0)
-        tscale = range(np.shape(w_sigs)[1])
         if error:
-            plt.errorbar(tscale,mean,std)
+            plot_std(w_sigs)
         else:
-            plt.plot(tscale,mean)
+            mean = np.mean(w_sigs, 0)
+            tscale = range(np.shape(w_sigs)[1])
+            plt.plot(tscale, mean)
     plt.show()
 
 
+def plot_std(mat: np.array):
+    mean = np.mean(mat, 0)
+    mean = np.reshape(mean, [len(mean)])
+    std = np.std(mat, 0) / np.sqrt(np.shape(mat)[1])
+    std = np.reshape(std, [len(std)])
+    tscale = range(np.shape(mat)[1])
+    plt.errorbar(tscale, mean, yerr=std)
+
+
 if __name__ == "__main__":
+
     n = 20
+    rep = 20
+    for s_type in ['wss', 'sil', 'var']:
+        _, scores = calc_score(n, s_type, rep)
+        plot_std(scores)
+        # plt.scatter(range(n), scores)
+        plt.ylabel("score")
+        plt.xlabel("K Value")
+        plt.xticks(np.array(range(n))+1)
+        plt.title(s_type)
+        plt.show()
 
-    # score = calc_score(n, "var", 20)
-    # plt.plot(score)
-    # plt.ylabel("silhouette score")
-    # plt.xlabel("K Value")
-    # plt.xticks([i for i in range(1, n + 1)])
-    # plt.show()
-
-    model = KMeans(n_clusters=6, random_state=82, verbose=2).fit(x)
-    #ward, nbrs = sk_clustering(4)
-    plot_clustering(model.labels_)
+    #model = KMeans(n_clusters=4, verbose=2).fit(x)
+    #model, nbrs = sk_clustering(4)
+    #plot_clustering(model.labels_, error=True)
