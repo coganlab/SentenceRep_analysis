@@ -98,14 +98,18 @@ def plot_std(mat: np.array):
 if __name__ == "__main__":
 
     n = 20
-    rep = 20
+    rep = 40
+    xvals = []
+
+    for i in range(n):
+        xvals.append(np.array(range(n))+1)
     for s_type in ['wss', 'sil', 'var']:
         _, scores = calc_score(n, s_type, rep)
         plot_std(scores)
-        # plt.scatter(range(n), scores)
+        # plt.scatter(xvals, scores)
         plt.ylabel("score")
         plt.xlabel("K Value")
-        plt.xticks(np.array(range(n))+1)
+        plt.xticks(np.array(range(n)), np.array(range(n))+1)
         plt.title(s_type)
         plt.show()
 
