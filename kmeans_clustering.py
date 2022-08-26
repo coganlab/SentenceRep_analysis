@@ -8,7 +8,10 @@ from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.barycenters import softdtw_barycenter
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
+from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName
 
+allsigZ = sigZ
+allsigA = sigA
 sigZ = {'SM': np.load('../Z_LSwords_aud+go_SM.npy'),
         'AUD': np.load('../Z_LSwords_aud+go_AUD.npy'),
         'PROD': np.load('../Z_LSwords_aud+go_PROD.npy')}
