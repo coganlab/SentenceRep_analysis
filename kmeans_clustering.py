@@ -1,4 +1,5 @@
 import numpy as np
+from numpy import matlib
 from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
 from sklearn.decomposition import NMF
 from tslearn.clustering import silhouette_score, KernelKMeans, KShape
@@ -6,52 +7,27 @@ from tslearn.clustering import TimeSeriesKMeans as KMeans
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.barycenters import softdtw_barycenter
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
 
-SM = np.load('../Z_LSwords_aud+resp_SM.npy')
-AUD = np.load('../Z_LSwords_aud+resp_AUD.npy')
-PROD = np.load('../Z_LSwords_aud+resp_PROD.npy')
-sigA = {'SM': np.load('../A_LSwords_aud+resp_SM.npy'),
-        'AUD': np.load('../A_LSwords_aud+resp_AUD.npy'),
-        'PROD': np.load('../A_LSwords_aud+resp_PROD.npy')}
-
-
-def cluster_variance(n):
-    variances = []
-    kmeans = []
-    outputs = []
-    K = [i for i in range(1, n + 1)]
-    for i in range(1, n + 1):
-        variance = 0
-        model = KMeans(n_clusters=i, verbose=2).fit(x)
-        kmeans.append(model)
-        variances.append(model.inertia_)
-
-    return variances, K
+sigZ = {'SM': np.load('../Z_LSwords_aud+go_SM.npy'),
+        'AUD': np.load('../Z_LSwords_aud+go_AUD.npy'),
+        'PROD': np.load('../Z_LSwords_aud+go_PROD.npy')}
+sigA = {'SM': np.load('../A_LSwords_aud+go_SM.npy'),
+        'AUD': np.load('../A_LSwords_aud+go_AUD.npy'),
+        'PROD': np.load('../A_LSwords_aud+go_PROD.npy')}
 
 
-def calculate_WSS(centroids, labels, points):
+def calculate_WSS(centroids, label, points):
     sse = 0
 
     # calculate square of Euclidean distance of each point from its
     # cluster center and add to current WSS
     for i in range(len(points)):
-        curr_center = centroids[labels[i]]
+        curr_center = centroids[label[i]]
         sse += (points[i, 0] - curr_center[0]) ** 2 + \
-            (points[i, 1] - curr_center[1]) ** 2
+               (points[i, 1] - curr_center[1]) ** 2
 
     return sse
-
-
-def calc_sil(kmax, metric='euclidean'):
-    # dissimilarity would not be defined for a single cluster, thus, minimum
-    #  number of clusters should be 2
-    sil = []
-    for k in range(2, kmax + 1):
-        kmeans = KMeans(k, metric=metric, n_init=5, n_jobs=-1, verbose=2)
-        labels = kmeans.fit_predict(x)
-        sil.append(silhouette_score(x, labels, metric=metric))
-    sil = [sil[0]] + sil
-    return sil
 
 
 def calc_score(X, kmax, model, metric='euclidean'):
@@ -64,9 +40,9 @@ def calc_score(X, kmax, model, metric='euclidean'):
         if k == 1:
             pass
         else:
-            sil.append(silhouette_score(X, labels, metric=metric))
-        var.append(model.inertia_)
-        wss.append(calculate_WSS(model.cluster_centers_,labels,X))
+            sil.append(float(silhouette_score(X, labels, metric=metric, n_jobs=-1)))
+        var.append(float(model.inertia_))
+        wss.append(float(calculate_WSS(model.cluster_centers_, labels, X)))
     sil = [sil[0]] + sil
     return sil, var, wss
 
@@ -80,67 +56,115 @@ def sk_clustering(k):
     return ward, nbrs
 
 
-def plot_clustering(x, labels, error=False):
-    for i in np.unique(labels):
-        w_sigs = x[labels == i]
+def plot_clustering(data: np.ndarray, label: np.ndarray,
+                    error: bool = False, title: str = None):
+    fig, ax = plt.subplots()
+    for i in np.unique(label):
+        w_sigs = data[labels == i]
+        mean, std, tscale, = dist(w_sigs)
         if error:
-            plot_std(w_sigs)
+            ax.errorbar(tscale, mean, yerr=std)
         else:
-            mean = np.mean(w_sigs, 0)
-            tscale = range(np.shape(w_sigs)[1])
-            plt.plot(tscale, mean)
+            ax.plot(tscale, mean)
+        # the x coords of this transformation are data, and the
+        # y coord are axes
+    trans = ax.get_xaxis_transform()
+    ax.text(50, 0, 'aud onset', rotation=90, transform=trans)
+    ax.axvline(175)
+    ax.text(225, 0, 'go cue', rotation=90, transform=trans)
+    if title is not None:
+        plt.title(title)
     plt.show()
 
 
-def plot_std(mat: np.array):
+def dist(mat: np.array):
     mean = np.mean(mat, 0)
     mean = np.reshape(mean, [len(mean)])
     std = np.std(mat, 0) / np.sqrt(np.shape(mat)[1])
     std = np.reshape(std, [len(std)])
     tscale = range(np.shape(mat)[1])
-    plt.errorbar(tscale, mean, yerr=std)
+    return mean, std, tscale
 
 
-def plot_opt_k(X, n, rep):
-    model = KMeans(n_jobs=-1, verbose=2)
-    methods = ['euclidean', 'dtw', 'softdtw']
-    scores = {}
+def get_elbow(data: np.array):
+    nPoints = len(data)
+    allCoord = np.vstack((range(nPoints), data)).T
+    np.array([range(nPoints), data])
+    firstPoint = allCoord[0]
+    lineVec = allCoord[-1] - allCoord[0]
+    lineVecNorm = lineVec / np.sqrt(np.sum(lineVec ** 2))
+    vecFromFirst = allCoord - firstPoint
+    scalarProduct = np.sum(vecFromFirst * matlib.repmat(lineVecNorm, nPoints, 1), axis=1)
+    vecFromFirstParallel = np.outer(scalarProduct, lineVecNorm)
+    vecToLine = vecFromFirst - vecFromFirstParallel
+    distToLine = np.sqrt(np.sum(vecToLine ** 2, axis=1))
+    idxOfBestPoint = np.argmax(distToLine)
+    return idxOfBestPoint
+
+
+def par_calc(X, n, rep, model, method):
+    sil = np.ndarray([rep, n])
+    var = np.ndarray([rep, n])
+    wss = np.ndarray([rep, n])
+    data = Parallel(-1)(delayed(calc_score)(X, n, model, method) for i in range(rep))
+    for i, dat in enumerate(data):
+        sil[i, :], var[i, :], wss[i, :] = dat
+    return sil, var, wss
+
+
+def plot_opt_k(data, n, rep, model, methods=None, title=None):
+    if methods is None:
+        methods = ['euclidean', 'dtw', 'softdtw']
+    if title is None:
+        title = str(len(data))
+    title = "Optimal k for " + title
+    results = {}
     for method in methods:
-        model.set_params(**{'metric': method})
-        sil = list(range(rep))
-        var = list(range(rep))
-        wss = list(range(rep))
-        for i in range(rep):
-            sil[i], var[i], wss[i] = calc_score(X, n, model, method)
+        model.metric = method
+        sil, var, wss = par_calc(data, n, rep, model, method)
         score = {'sil': sil, 'var': var, 'wss': wss}
-        for key, value in score.items():
-            plot_std(value)
-            plt.ylabel("score")
+        for key, value in {'sil': sil}.items():
+            mean, std, tscale, = dist(value)
+            plt.errorbar(tscale, mean, yerr=std)
+            plt.ylabel(method + " Silhouette Score")
             plt.xlabel("K Value")
-            plt.xticks(np.array(range(n)), np.array(range(n))+1)
-            plt.title(method+"_"+key+"_"+str(len(X)))
+            plt.xticks(np.array(range(n)), np.array(range(n)) + 1)
+            plt.title(title)
             plt.show()
-        scores[method] = score
-    return scores
+        score['k'] = get_elbow(np.mean(sil, 0)) + 1
+        results[method] = score
+    return results
 
 
 if __name__ == "__main__":
+    scores = {}
+    models = {}
+    for group, x in sigA.items():
+        scores[group] = plot_opt_k(x, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
+        models[group] = KMeans(n_clusters=scores[group]['euclidean']['k'],
+                               metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
+        labels = models[group].fit_predict(x)
+        plot_clustering(sigZ[group], labels, True, group)
 
-    for x,k in zip([SM, AUD, PROD],[4,4,3]):
-        scores = plot_opt_k(x, 10, 10)
-        model = KMeans(n_clusters=k, metric='softdtw', n_init=3, n_jobs=-1, verbose=2)
-        labels = model.fit_predict(x)
-        plot_clustering(x, labels, error=True)
-
-    #model = KMeans(n_clusters=4, metric='softdtw', n_init=4, n_jobs=-1, verbose=2)
+    # model = KMeans(n_clusters=4, metric='softdtw', n_init=4, n_jobs=-1, verbose=2)
     # = KernelKMeans(n_clusters=4, n_jobs=-1, kernel="laplacian", verbose=2)
-    #model = KShape(n_clusters=4, verbose=2)
-    # model2 = NMF(n_components=4, init='random')
-    # W = model2.fit_transform(x)
-    # H = model2.components_
-    # model, nbrs = sk_clustering(4)
-    #model.fit(x)
-    #labels = model.fit_predict(x)
-    #plot_clustering(labels, error=True)
+    # model = KShape(n_clusters=4, verbose=2)
+    # X = SM - np.min(SM)
+    # errs = []
+    # for i in range(10):
+    #     err = []
+    #     for k in np.array(range(10))+1:
+    #         model2 = NMF(n_components=k, init='random', max_iter=10000)
+    #         W = model2.fit_transform(X)
+    #         H = model2.components_
+    #         err.append(np.linalg.norm(X - W @ H) ** 2 / np.linalg.norm(X) ** 2)
+    #     errs.append(err)
+    # plot_std(errs)
+    # plt.show()
 
-    #soft_dtw_graph(SM)
+    # model, nbrs = sk_clustering(4)
+    # model.fit(x)
+    # labels = model.fit_predict(x)
+    # plot_clustering(labels, error=True)
+
+    # soft_dtw_graph(SM)
