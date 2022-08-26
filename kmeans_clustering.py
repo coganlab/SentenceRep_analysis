@@ -105,13 +105,13 @@ def get_elbow(data: np.array):
     return idxOfBestPoint
 
 
-def par_calc(X, n, rep, model, method):
+def par_calc(data, n, rep, model, method):
     sil = np.ndarray([rep, n])
     var = np.ndarray([rep, n])
     wss = np.ndarray([rep, n])
-    data = Parallel(-1)(delayed(calc_score)(X, n, model, method) for i in range(rep))
-    for i, dat in enumerate(data):
-        sil[i, :], var[i, :], wss[i, :] = dat
+    results = Parallel(-1)(delayed(calc_score)(data, n, model, method) for i in range(rep))
+    for i, result in enumerate(results):
+        sil[i, :], var[i, :], wss[i, :] = result
     return sil, var, wss
 
 
@@ -142,7 +142,7 @@ def plot_opt_k(data, n, rep, model, methods=None, title=None):
 if __name__ == "__main__":
     scores = {}
     models = {}
-    for group, x in sigA.items():
+    for group, x in sigZ.items():
         scores[group] = plot_opt_k(x, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
         models[group] = KMeans(n_clusters=scores[group]['euclidean']['k'],
                                metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
