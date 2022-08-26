@@ -12,4 +12,4 @@ def load_all(filename: str):
     return t, z, a, sCh, sChL, sChN
 
 
-Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName = load_all('../pydata.mat')
+Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName = load_all('data/pydata.mat')
