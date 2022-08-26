@@ -12,12 +12,12 @@ from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName
 
 allsigZ = sigZ
 allsigA = sigA
-sigZ = {'SM': np.load('../Z_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('../Z_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('../Z_LSwords_aud+go_PROD.npy')}
-sigA = {'SM': np.load('../A_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('../A_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('../A_LSwords_aud+go_PROD.npy')}
+sigZ = {'SM': np.load('data/Z_LSwords_aud+go_SM.npy'),
+        'AUD': np.load('data/Z_LSwords_aud+go_AUD.npy'),
+        'PROD': np.load('data/Z_LSwords_aud+go_PROD.npy')}
+sigA = {'SM': np.load('data/A_LSwords_aud+go_SM.npy'),
+        'AUD': np.load('data/A_LSwords_aud+go_AUD.npy'),
+        'PROD': np.load('data/A_LSwords_aud+go_PROD.npy')}
 
 
 def calculate_WSS(centroids, label, points):
