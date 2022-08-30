@@ -5,7 +5,7 @@ from sklearn.decomposition import NMF
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
-from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject
+from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject, SM, AUD, PROD
 from calc import calc_score, get_elbow, dist
 
 allsigZ = sigZ

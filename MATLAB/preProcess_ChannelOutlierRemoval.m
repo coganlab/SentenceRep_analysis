@@ -11,8 +11,8 @@ global DUKEDIR
 
 %addpath(genpath([BOX_DIR '\CoganLab\Scripts\']));
 
-TASK_DIR=Task.Directory;
-%TASK_DIR=([BOX_DIR '\CoganLab\D_Data\' Task.Name]);
+%TASK_DIR=Task.Directory;
+TASK_DIR=([BOX_DIR '\CoganLab\D_Data\' Task.Name]);
 DUKEDIR=TASK_DIR;
 
 
