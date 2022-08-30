@@ -1,14 +1,12 @@
 import numpy as np
-from numpy import matlib
 from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
-from sklearn.decomposition import NMF
-from tslearn.clustering import silhouette_score, KernelKMeans, KShape
 from tslearn.clustering import TimeSeriesKMeans as KMeans
+from sklearn.decomposition import NMF
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
-from tslearn.barycenters import softdtw_barycenter
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
-from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName
+from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject
+from calc import calc_score, get_elbow, dist
 
 allsigZ = sigZ
 allsigA = sigA
@@ -20,36 +18,6 @@ sigA = {'SM': np.load('data/A_LSwords_aud+go_SM.npy'),
         'PROD': np.load('data/A_LSwords_aud+go_PROD.npy')}
 
 
-def calculate_WSS(centroids, label, points):
-    sse = 0
-
-    # calculate square of Euclidean distance of each point from its
-    # cluster center and add to current WSS
-    for i in range(len(points)):
-        curr_center = centroids[label[i]]
-        sse += (points[i, 0] - curr_center[0]) ** 2 + \
-               (points[i, 1] - curr_center[1]) ** 2
-
-    return sse
-
-
-def calc_score(X, kmax, model, metric='euclidean'):
-    sil = []
-    var = []
-    wss = []
-    for k in range(1, kmax + 1):
-        model.set_params(n_clusters=k)
-        labels = model.fit_predict(X)
-        if k == 1:
-            pass
-        else:
-            sil.append(float(silhouette_score(X, labels, metric=metric, n_jobs=-1)))
-        var.append(float(model.inertia_))
-        wss.append(float(calculate_WSS(model.cluster_centers_, labels, X)))
-    sil = [sil[0]] + sil
-    return sil, var, wss
-
-
 def sk_clustering(k):
     nbrs = NearestNeighbors(n_neighbors=2, n_jobs=-1).fit(x)
     connectivity = nbrs.kneighbors_graph(x)
@@ -57,6 +25,22 @@ def sk_clustering(k):
         n_clusters=k, linkage="ward", connectivity=connectivity
     ).fit(x)
     return ward, nbrs
+
+
+def do_nmf(data):
+    X = data - np.min(data)
+    errs = []
+    for i in range(10):
+        err = []
+        for k in np.array(range(10))+1:
+            model2 = NMF(n_components=k, init='random', max_iter=10000)
+            W = model2.fit_transform(X)
+            H = model2.components_
+            err.append(np.linalg.norm(X - W @ H) ** 2 / np.linalg.norm(X) ** 2)
+        errs.append(err)
+    mean, std, tscale, = dist(errs)
+    plt.errorbar(tscale, mean, yerr=std)
+    plt.show()
 
 
 def plot_clustering(data: np.ndarray, label: np.ndarray,
@@ -78,31 +62,6 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
     if title is not None:
         plt.title(title)
     plt.show()
-
-
-def dist(mat: np.array):
-    mean = np.mean(mat, 0)
-    mean = np.reshape(mean, [len(mean)])
-    std = np.std(mat, 0) / np.sqrt(np.shape(mat)[1])
-    std = np.reshape(std, [len(std)])
-    tscale = range(np.shape(mat)[1])
-    return mean, std, tscale
-
-
-def get_elbow(data: np.array):
-    nPoints = len(data)
-    allCoord = np.vstack((range(nPoints), data)).T
-    np.array([range(nPoints), data])
-    firstPoint = allCoord[0]
-    lineVec = allCoord[-1] - allCoord[0]
-    lineVecNorm = lineVec / np.sqrt(np.sum(lineVec ** 2))
-    vecFromFirst = allCoord - firstPoint
-    scalarProduct = np.sum(vecFromFirst * matlib.repmat(lineVecNorm, nPoints, 1), axis=1)
-    vecFromFirstParallel = np.outer(scalarProduct, lineVecNorm)
-    vecToLine = vecFromFirst - vecFromFirstParallel
-    distToLine = np.sqrt(np.sum(vecToLine ** 2, axis=1))
-    idxOfBestPoint = np.argmax(distToLine)
-    return idxOfBestPoint
 
 
 def par_calc(data, n, rep, model, method):
