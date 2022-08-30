@@ -3,9 +3,9 @@
 global BOX_DIR
 global RECONDIR
 %global TASK_DIR
-BOX_DIR='C:\Users\Jakda\Box';
+BOX_DIR='C:\Users\ae166\Box';
 RECONDIR=([BOX_DIR '\ECoG_Recon']);
-path = fullfile(userpath, 'MATLAB-env');
+path = fullfile(userpath, 'MATLAB-env');ae12
 addpath(genpath(path)); % repo at https://github.com/coganlab/MATLAB-env
 Task=makeTask();
 %Task.Name='Phoneme_Sequencing';%'LexicalDecRepDelay';
@@ -22,9 +22,9 @@ if ~exist('Subjects','var')
     Subjects = popTaskSubjectData(Task);
 end
 
-Subject = getSubjects(Subjects,{'D65'});
+Subject = getSubjects(Subjects,{'D73'});
 preProcess_LineFilter(Task,Subject); % -> cleanieeg.dat
-preProcess_ChannelOutlierRemoval(Task, Subjects)
+preProcess_ChannelOutlierRemoval(Task, Subject)
 makeSentenceRepTrials
 %preProcess_ResponseCoding(Task,Subjects);
 %preProcess_Specgrams

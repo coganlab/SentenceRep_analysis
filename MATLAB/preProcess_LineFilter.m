@@ -6,9 +6,9 @@ global RECONDIR
 global TASK_DIR
 global experiment
 global DUKEDIR
-if ~exist('BOX_DIR','var')
-    global BOX_DIR
-    BOX_DIR='C:\Users\Jakda\Box';
+global BOX_DIR
+if isempty(BOX_DIR)
+    BOX_DIR='C:\Users\ae166\Box';
 end
 RECONDIR=[BOX_DIR '\ECoG_Recon'];
 DUKEDIR = [BOX_DIR '\CoganLab\D_Data\SentenceRep'];
