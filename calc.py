@@ -35,7 +35,7 @@ def calc_score(X, kmax, model, metric='euclidean'):
 
 def dist(mat: array):
     avg = mean(mat, 0)
-    avg = reshape(avg, [len(mean)])
+    avg = reshape(avg, [len(avg)])
     stdev = std(mat, 0) / sqrt(shape(mat)[1])
     stdev = reshape(stdev, [len(stdev)])
     tscale = range(shape(mat)[1])

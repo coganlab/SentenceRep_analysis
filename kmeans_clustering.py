@@ -5,17 +5,8 @@ from sklearn.decomposition import NMF
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
-from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject, SM, AUD, PROD
+from mat_load import get_sigs, load_all
 from calc import calc_score, get_elbow, dist
-
-allsigZ = sigZ
-allsigA = sigA
-sigZ = {'SM': np.load('data/Z_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('data/Z_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('data/Z_LSwords_aud+go_PROD.npy')}
-sigA = {'SM': np.load('data/A_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('data/A_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('data/A_LSwords_aud+go_PROD.npy')}
 
 
 def sk_clustering(k):
@@ -32,7 +23,7 @@ def do_nmf(data):
     errs = []
     for i in range(10):
         err = []
-        for k in np.array(range(10))+1:
+        for k in np.array(range(10)) + 1:
             model2 = NMF(n_components=k, init='random', max_iter=10000)
             W = model2.fit_transform(X)
             H = model2.components_
@@ -74,7 +65,7 @@ def par_calc(data, n, rep, model, method):
     return sil, var, wss
 
 
-def plot_opt_k(data, n, rep, model, methods=None, title=None):
+def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
     if methods is None:
         methods = ['euclidean', 'dtw', 'softdtw']
     if title is None:
@@ -99,6 +90,8 @@ def plot_opt_k(data, n, rep, model, methods=None, title=None):
 
 
 if __name__ == "__main__":
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     scores = {}
     models = {}
     for group, x in sigZ.items():
@@ -107,26 +100,3 @@ if __name__ == "__main__":
                                metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
         labels = models[group].fit_predict(x)
         plot_clustering(sigZ[group], labels, True, group)
-
-    # model = KMeans(n_clusters=4, metric='softdtw', n_init=4, n_jobs=-1, verbose=2)
-    # = KernelKMeans(n_clusters=4, n_jobs=-1, kernel="laplacian", verbose=2)
-    # model = KShape(n_clusters=4, verbose=2)
-    # X = SM - np.min(SM)
-    # errs = []
-    # for i in range(10):
-    #     err = []
-    #     for k in np.array(range(10))+1:
-    #         model2 = NMF(n_components=k, init='random', max_iter=10000)
-    #         W = model2.fit_transform(X)
-    #         H = model2.components_
-    #         err.append(np.linalg.norm(X - W @ H) ** 2 / np.linalg.norm(X) ** 2)
-    #     errs.append(err)
-    # plot_std(errs)
-    # plt.show()
-
-    # model, nbrs = sk_clustering(4)
-    # model.fit(x)
-    # labels = model.fit_predict(x)
-    # plot_clustering(labels, error=True)
-
-    # soft_dtw_graph(SM)

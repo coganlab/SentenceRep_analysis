@@ -1,5 +1,5 @@
 from scipy.io import loadmat
-from numpy import where, unique
+from numpy import where, concatenate
 
 
 def load_all(filename: str):
@@ -7,6 +7,10 @@ def load_all(filename: str):
     t = d['Task']
     z = d['allSigZ']
     a = d['sigMatA']
+    # reduce indexing by 1 because python is 0-indexed
+    for cond, epochs in d['sigChans'].items():
+        for epoch, vals in epochs.items():
+            d['sigChans'][cond][epoch] = vals - 1
     sCh = d['sigChans']
     sChL = d['sigMatChansLoc']
     sChN = d['sigMatChansName']
@@ -15,24 +19,30 @@ def load_all(filename: str):
 
 
 def group_elecs(sigA, sig_chans):
-    # [AUDLS,] = where([1 in times[50: 174] for times in sigA['LSwords']['AuditorywDelay']])
-    # AUDLS = [A for A in AUDLS if A in sigChans['LSwords']['AuditorywDelay']]
     AUD = dict()
     for cond in ['LS', 'LM', 'JL']:
         condw = cond + 'words'
-        [ad,] = where([1 in times[50: 174] for times in sigA[condw]['AuditorywDelay']])
-        AUD[cond] = [A for A in ad if A in sigChans[condw]['AuditorywDelay']]
-        # AUD[cond] = where(sigA[condw]['AuditorywDelay'][:, 50: 174] == 1)
-        # AUD[cond] = unique(AUD[cond])
-        # AUD[cond] = set(AUD[cond]) & set(sig_chans[condw]['AuditorywDelay'])
+        elecs = where(sigA[condw]['AuditorywDelay'][:, 50:175] == 1)[0]
+        AUD[cond] = set(elecs) & set(sig_chans[condw]['AuditorywDelay'])
 
-    AUD1 = set(AUD['LS']) & set(AUD['LM'])
-    AUD2 = set(AUD1) & set(AUD['JL'])
+    AUD1 = AUD['LS'] & AUD['LM']
+    AUD2 = AUD1 & AUD['JL']
     PROD1 = set(sig_chans['LSwords']['DelaywGo']) & set(sig_chans['LMwords']['DelaywGo'])
-    SM = list(set(AUD1) & set(PROD1))
-    AUD = list(set(AUD2) - set(SM))
-    PROD = list(set(PROD1) - set(SM))
+    SM = list(AUD1 & PROD1)
+    AUD = list(AUD2 - set(SM))
+    PROD = list(PROD1 - set(SM))
     return SM, AUD, PROD
+
+
+def get_sigs(allsigZ, allsigA, sigChans):
+    sigZ = dict()
+    sigA = dict()
+    for group, idx in zip(['SM', 'AUD', 'PROD'], group_elecs(allsigA, sigChans)):
+        sigZ[group] = concatenate((allsigZ['LSwords']['AuditorywDelay'][idx, :175],
+                                  allsigZ['LSwords']['DelaywGo'][idx]), axis=1)
+        sigA[group] = concatenate((allsigA['LSwords']['AuditorywDelay'][idx, :175],
+                                  allsigA['LSwords']['DelaywGo'][idx]), axis=1)
+    return sigZ, sigA
 
 
 if __name__ == "__main__":
