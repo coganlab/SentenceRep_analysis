@@ -1,20 +1,27 @@
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
-from tslearn.clustering import TimeSeriesKMeans as KMeans
-from sklearn.decomposition import NMF
+from tslearn.clustering import TimeSeriesKMeans, KernelKMeans, KShape, silhouette_score
+from sklearn.decomposition import NMF, LatentDirichletAllocation
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
+from tslearn.metrics import gamma_soft_dtw
+from sklearn.metrics import make_scorer
+import sklearn.model_selection as ms
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 from mat_load import get_sigs, load_all
 from calc import calc_score, get_elbow, dist
 
 
-def sk_clustering(k):
-    nbrs = NearestNeighbors(n_neighbors=2, n_jobs=-1).fit(x)
+def sk_clustering(x,k,metric='euclidean'):
+    kwargs = dict()
+    if metric == 'softdtw':
+        kwargs['gamma'] = gamma_soft_dtw(x)
+    nbrs = NearestNeighbors(n_neighbors=int(np.shape(x)[0]/k/2), n_jobs=-1,
+                            metric=metric, metric_params=kwargs)
+    nbrs.fit(x)
     connectivity = nbrs.kneighbors_graph(x)
-    ward = AgglomerativeClustering(
-        n_clusters=k, linkage="ward", connectivity=connectivity
-    ).fit(x)
+    ward = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity)
+    ward.fit(x)
     return ward, nbrs
 
 
@@ -45,7 +52,7 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
         if not weighted:
             w_sigs = data[label == i]
         else:
-            w_sigs = np.array([np.multiply(label[i], dat) for dat in data.T]).T
+            w_sigs = np.array([label[i][j]*dat for j, dat in enumerate(data.T)])
         mean, std = dist(w_sigs)
         tscale = range(len(mean))
         if error:
@@ -98,15 +105,64 @@ def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
     return results
 
 
+def alt_plot(X_train, y_pred):
+    plt.figure()
+    for yi in range(len(np.unique(y_pred))):
+        plt.subplot(len(np.unique(y_pred)), 1, 1 + yi)
+        for xx in X_train[y_pred == yi]:
+            plt.plot(xx.ravel(), "k-", alpha=.2)
+        plt.xlim(0, X_train.shape[1])
+        plt.title("Cluster %d" % (yi + 1))
+
+    plt.tight_layout()
+    plt.show()
+
+
+def main(sig, metric='euclidean'):
+    scores = {}
+    models = {}
+    for group, x in sig.items():
+        scores[group] = plot_opt_k(x, 8, 15, TimeSeriesKMeans(verbose=1, n_init=3), [metric])
+        # models[group] = list(range(3))
+        # x = x.T
+
+        kwargs = {}
+        kwargs['metric'] = metric
+        kwargs['n_jobs'] = -1
+        models[group] = TimeSeriesKMeans(n_clusters=scores[group][metric]['k'],
+                                         n_init=10, verbose=2, **kwargs)
+        models[group].fit(x)
+        weights = models[group].cluster_centers_.squeeze()
+        labels = models[group].predict(x)
+        # labels = np.where((weights == np.max(weights, 0)).T)[1]
+        plot_clustering(x, labels, True, group)
+        # plot_clustering(x, weights, True, group,True)
+        alt_plot(x, labels)
+        return scores, models
+
+
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
-    scores = {}
-    models = {}
-    for group, x in sigZ.items():
-        scores[group] = plot_opt_k(x.T, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
-        models[group] = KMeans(n_clusters=scores[group]['euclidean']['k'],
-                               metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
-        labels = models[group].fit_predict(x.T)
-        weights = models[group].cluster_centers_.squeeze()
-        plot_clustering(x, weights, True, group, True)
+    # scores, models = main(sigZ)
+    ts_cv = ms.TimeSeriesSplit()
+    scorer = make_scorer(silhouette_score,metric='euclidean')
+
+    knn = NearestNeighbors(metric="euclidean")
+    p_grid = {"n_neighbors": [1,2,3,4, 5],"metric":["euclidean","softdtw"]}
+
+    cv = ms.KFold(n_splits=2, shuffle=True)
+    clf = ms.GridSearchCV(estimator=knn, param_grid=p_grid, cv=cv, scoring=silhouette_score,
+                    verbose=2, n_jobs=-1)
+    clf.fit(sigZ['SM'])
+
+    test = ms.GridSearchCV(AgglomerativeClustering(
+        linkage="ward", connectivity=clf.best_estimator_.kneighbors_graph(sigZ['SM'])),
+        {'n_clusters':[2,3,4,5,6,7,8]},
+                    scoring=silhouette_score,
+                    cv=cv, verbose=2, n_jobs=-1)
+    # test = ms.GridSearchCV(TimeSeriesKMeans(metric='euclidean'),
+    #                 {'n_clusters':[2,3,4,5,6,7,8]},
+    #                 scoring=silhouette_score,
+    #                 cv=ts_cv, verbose=2, n_jobs=-1)
+    test.fit(sigZ['SM'])

@@ -35,14 +35,17 @@ def group_elecs(sigA, sig_chans):
 
 
 def get_sigs(allsigZ, allsigA, sigChans):
-    sigZ = dict()
-    sigA = dict()
-    for group, idx in zip(['SM', 'AUD', 'PROD'], group_elecs(allsigA, sigChans)):
-        sigZ[group] = concatenate((allsigZ['LSwords']['AuditorywDelay'][idx, :175],
-                                  allsigZ['LSwords']['DelaywGo'][idx]), axis=1)
-        sigA[group] = concatenate((allsigA['LSwords']['AuditorywDelay'][idx, :175],
-                                  allsigA['LSwords']['DelaywGo'][idx]), axis=1)
-    return sigZ, sigA
+    out_sig = dict()
+    for sig, metric in zip([allsigZ, allsigA], ['Z', 'A']):
+        out_sig[metric] = dict()
+        for group, idx in zip(['SM', 'AUD', 'PROD'], group_elecs(allsigA, sigChans)):
+            blend = sig['LSwords']['AuditorywDelay'][idx, 150:175] / 2 + \
+                    sig['LSwords']['DelaywGo'][idx, 0:25] / 2
+            out_sig[metric][group] = concatenate((sig['LSwords']['AuditorywDelay'][idx, :150],
+                                                  blend,
+                                                  sig['LSwords']['DelaywGo'][idx, 25:]), axis=1)
+
+    return out_sig['Z'], out_sig['A']
 
 
 if __name__ == "__main__":
