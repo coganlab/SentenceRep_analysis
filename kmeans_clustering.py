@@ -35,11 +35,19 @@ def do_nmf(data):
 
 
 def plot_clustering(data: np.ndarray, label: np.ndarray,
-                    error: bool = False, title: str = None):
+                    error: bool = False, title: str = None, weighted=False):
     fig, ax = plt.subplots()
-    for i in np.unique(label):
-        w_sigs = data[labels == i]
-        mean, std, tscale, = dist(w_sigs)
+    if weighted:
+        group = range(np.shape(label)[0])
+    else:
+        group = np.unique(label)
+    for i in group:
+        if not weighted:
+            w_sigs = data[label == i]
+        else:
+            w_sigs = np.array([np.multiply(label[i], dat) for dat in data.T]).T
+        mean, std = dist(w_sigs)
+        tscale = range(len(mean))
         if error:
             ax.errorbar(tscale, mean, yerr=std)
         else:
@@ -77,9 +85,10 @@ def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
         sil, var, wss = par_calc(data, n, rep, model, method)
         score = {'sil': sil, 'var': var, 'wss': wss}
         for key, value in {'sil': sil}.items():
-            mean, std, tscale, = dist(value)
+            mean, std = dist(value)
+            tscale = range(len(mean))
             plt.errorbar(tscale, mean, yerr=std)
-            plt.ylabel(method + " Silhouette Score")
+            plt.ylabel(method + key)
             plt.xlabel("K Value")
             plt.xticks(np.array(range(n)), np.array(range(n)) + 1)
             plt.title(title)
@@ -95,8 +104,9 @@ if __name__ == "__main__":
     scores = {}
     models = {}
     for group, x in sigZ.items():
-        scores[group] = plot_opt_k(x, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
+        scores[group] = plot_opt_k(x.T, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
         models[group] = KMeans(n_clusters=scores[group]['euclidean']['k'],
                                metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
-        labels = models[group].fit_predict(x)
-        plot_clustering(sigZ[group], labels, True, group)
+        labels = models[group].fit_predict(x.T)
+        weights = models[group].cluster_centers_.squeeze()
+        plot_clustering(x, weights, True, group, True)

@@ -38,8 +38,7 @@ def dist(mat: array):
     avg = reshape(avg, [len(avg)])
     stdev = std(mat, 0) / sqrt(shape(mat)[1])
     stdev = reshape(stdev, [len(stdev)])
-    tscale = range(shape(mat)[1])
-    return avg, stdev, tscale
+    return avg, stdev
 
 
 def get_elbow(data: array):
