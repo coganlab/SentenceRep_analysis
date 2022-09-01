@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
 from tslearn.clustering import TimeSeriesKMeans, KernelKMeans, KShape, silhouette_score
 from sklearn.decomposition import NMF, LatentDirichletAllocation
+from sklearn.neighbors import KNeighborsClassifier, NeighborhoodComponentsAnalysis
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.metrics import gamma_soft_dtw
 from sklearn.metrics import make_scorer
@@ -91,7 +92,7 @@ def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
         model.metric = method
         sil, var, wss = par_calc(data, n, rep, model, method)
         score = {'sil': sil, 'var': var, 'wss': wss}
-        for key, value in {'sil': sil}.items():
+        for key, value in score.items():
             mean, std = dist(value)
             tscale = range(len(mean))
             plt.errorbar(tscale, mean, yerr=std)
@@ -137,32 +138,17 @@ def main(sig, metric='euclidean'):
         # labels = np.where((weights == np.max(weights, 0)).T)[1]
         plot_clustering(x, labels, True, group)
         # plot_clustering(x, weights, True, group,True)
-        alt_plot(x, labels)
-        return scores, models
+        dat = sigZ[group]
+        dat[dat>=1] = sigZ[group][dat>=1]
+        alt_plot(dat, labels)
+    return scores, models
 
 
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
-    # scores, models = main(sigZ)
-    ts_cv = ms.TimeSeriesSplit()
-    scorer = make_scorer(silhouette_score,metric='euclidean')
+    scores, models = main(sigZ,'softdtw')
+    scores2, models2 = main(sigA,'softdtw')
+    ts_cv = ms.TimeSeriesSplit(n_splits=5)
 
-    knn = NearestNeighbors(metric="euclidean")
-    p_grid = {"n_neighbors": [1,2,3,4, 5],"metric":["euclidean","softdtw"]}
-
-    cv = ms.KFold(n_splits=2, shuffle=True)
-    clf = ms.GridSearchCV(estimator=knn, param_grid=p_grid, cv=cv, scoring=silhouette_score,
-                    verbose=2, n_jobs=-1)
-    clf.fit(sigZ['SM'])
-
-    test = ms.GridSearchCV(AgglomerativeClustering(
-        linkage="ward", connectivity=clf.best_estimator_.kneighbors_graph(sigZ['SM'])),
-        {'n_clusters':[2,3,4,5,6,7,8]},
-                    scoring=silhouette_score,
-                    cv=cv, verbose=2, n_jobs=-1)
-    # test = ms.GridSearchCV(TimeSeriesKMeans(metric='euclidean'),
-    #                 {'n_clusters':[2,3,4,5,6,7,8]},
-    #                 scoring=silhouette_score,
-    #                 cv=ts_cv, verbose=2, n_jobs=-1)
-    test.fit(sigZ['SM'])
+    knn = NearestNeighbors()
