@@ -1,6 +1,6 @@
 from tslearn.clustering import silhouette_score
 from numpy import matlib, array, mean, sqrt, reshape, \
-    vstack, sum, outer, argmax, std, shape
+    vstack, sum, outer, argmax, std, shape, linalg
 
 
 def calculate_WSS(centroids, label, points):
@@ -39,6 +39,13 @@ def dist(mat: array):
     stdev = std(mat, 0) / sqrt(shape(mat)[1])
     stdev = reshape(stdev, [len(stdev)])
     return avg, stdev
+
+
+def mat_err(data, mod):
+    W = mod.fit_transform(data)
+    H = mod.components_
+    error = linalg.norm(data - W @ H) ** 2 / linalg.norm(data) ** 2
+    return error
 
 
 def get_elbow(data: array):

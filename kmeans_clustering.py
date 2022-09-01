@@ -1,16 +1,39 @@
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
 from tslearn.clustering import TimeSeriesKMeans, KernelKMeans, KShape, silhouette_score
+import sklearn.decomposition
 from sklearn.decomposition import NMF, LatentDirichletAllocation
 from sklearn.neighbors import KNeighborsClassifier, NeighborhoodComponentsAnalysis
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.metrics import gamma_soft_dtw
-from sklearn.metrics import make_scorer
+from tslearn.preprocessing import TimeSeriesScalerMeanVariance, TimeSeriesScalerMinMax
+from sklearn.metrics import make_scorer, calinski_harabasz_score
 import sklearn.model_selection as ms
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 from mat_load import get_sigs, load_all
-from calc import calc_score, get_elbow, dist
+from calc import calc_score, get_elbow, dist, mat_err
+from pandas import DataFrame as df
+
+
+class ts_spectral_clustering(AgglomerativeClustering):
+    def __init__(self, **kwargs):
+        if 'n_neighbors' in kwargs.keys():
+            self.n_neighbors = kwargs.pop('n_neighbors')
+        else:
+            self.n_neighbors = 5
+        if 'metric' in kwargs.keys():
+            self.metric = kwargs.pop('metric')
+        else:
+            self.metric = 'euclidean'
+        super().__init__(**kwargs)
+
+    def fit(self, X, y=None):
+        knn = NearestNeighbors(n_neighbors=self.n_neighbors, metric=self.metric)
+        knn.fit(X)
+        self.connectivity = knn.kneighbors_graph
+        params = self.get_params()
+        return AgglomerativeClustering(**params).fit(self, X)
 
 
 def sk_clustering(x,k,metric='euclidean'):
@@ -24,22 +47,6 @@ def sk_clustering(x,k,metric='euclidean'):
     ward = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity)
     ward.fit(x)
     return ward, nbrs
-
-
-def do_nmf(data):
-    X = data - np.min(data)
-    errs = []
-    for i in range(10):
-        err = []
-        for k in np.array(range(10)) + 1:
-            model2 = NMF(n_components=k, init='random', max_iter=10000)
-            W = model2.fit_transform(X)
-            H = model2.components_
-            err.append(np.linalg.norm(X - W @ H) ** 2 / np.linalg.norm(X) ** 2)
-        errs.append(err)
-    mean, std, tscale, = dist(errs)
-    plt.errorbar(tscale, mean, yerr=std)
-    plt.show()
 
 
 def plot_clustering(data: np.ndarray, label: np.ndarray,
@@ -68,6 +75,21 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
     ax.text(225, 0, 'go cue', rotation=90, transform=trans)
     if title is not None:
         plt.title(title)
+    plt.show()
+
+
+def do_decomp(data, clusters=8, repetitions=10, mod=NMF(init='random', max_iter=10000, verbose=2)):
+    data = data - np.min(data)
+    errs = np.ndarray([repetitions, clusters])
+    for k in np.array(range(clusters)):
+        mod.set_params(n_components=k+1)
+        results = Parallel(-1)(delayed(mat_err)(data, mod) for i in range(repetitions))
+        errs[:, k] = results
+    mean, std = dist(errs)
+    tscale = list(range(len(mean)))
+    plt.errorbar(tscale, mean, yerr=std)
+    plt.xlabel("K Value")
+    plt.xticks(np.array(range(clusters)), np.array(range(clusters)) + 1)
     plt.show()
 
 
@@ -119,14 +141,28 @@ def alt_plot(X_train, y_pred):
     plt.show()
 
 
-def main(sig, metric='euclidean'):
+def create_scorer(scorer):
+    def cv_scorer(estimator, X):
+        estimator.fit(X)
+        if '.decomposition.' in str(estimator.__class__):
+            w = estimator.components_
+            cluster_labels = np.where(w == np.max(w, 0))[0]
+        else:
+            cluster_labels = estimator.labels_
+        num_labels = len(set(cluster_labels))
+        num_samples = len(X.index)
+        if num_labels == 1 or num_labels == num_samples:
+            return -1
+        else:
+            return scorer(X, cluster_labels)
+    return cv_scorer
+
+
+def main2(sig, metric='euclidean'):
     scores = {}
     models = {}
     for group, x in sig.items():
         scores[group] = plot_opt_k(x, 8, 15, TimeSeriesKMeans(verbose=1, n_init=3), [metric])
-        # models[group] = list(range(3))
-        # x = x.T
-
         kwargs = {}
         kwargs['metric'] = metric
         kwargs['n_jobs'] = -1
@@ -147,8 +183,39 @@ def main(sig, metric='euclidean'):
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
-    scores, models = main(sigZ,'softdtw')
-    scores2, models2 = main(sigA,'softdtw')
-    ts_cv = ms.TimeSeriesSplit(n_splits=5)
+    cv = [(slice(None), slice(None))]
 
-    knn = NearestNeighbors()
+    estimator = NMF(max_iter=10000)
+    # estimator = AgglomerativeClustering()
+    param_dict_sil = {'n_components': [2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
+                      'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito'],
+                      'regularization': ['both', 'components', 'transformation', None]}
+    param_dict_har = param_dict_sil.copy()
+    param_dict_har['n_components'] = [1, 2, 3]
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_sil,
+                         scoring=[create_scorer(silhouette_score), estimator.reconstruction_err_], cv=ms.TimeSeriesSplit(), n_jobs=-1, verbose=2)
+    gs2 = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_har,
+                          scoring=create_scorer(calinski_harabasz_score), cv=ms.TimeSeriesSplit(), n_jobs=-1, verbose=2)
+    winners = {}
+    for name, sig in zip(['Z','A'],[sigZ,sigA]):
+        winners[name] = {}
+        for group, x in sig.items():
+            x=x.T
+            # x = TimeSeriesScalerMeanVariance(mu=0., std=1.).fit_transform(x).squeeze()
+            # param_dict_sil = {'n_clusters': [2, 3, 4, 5, 6], 'linkage': ['ward', 'complete', 'average', 'single'],
+            #                   'connectivity': [
+            #                       NearestNeighbors(n_neighbors=i + 1, metric='euclidean', n_jobs=-1, verbose=2).fit(
+            #                           sig[group]).kneighbors_graph for i in range(10)]}
+            gs.fit(df(x-np.min(x)))
+            winner = gs.best_estimator_
+            if winner.n_components == 2:
+                gs2.fit(df(x-np.min(x)))
+                winner = gs2.best_estimator_
+            plot_clustering(x, winner.components_, True, str(winner.__class__)+" "+str(name)+" "+group,True)
+            winners[name][group] = winner
+
+
+    # scores, models = main(sigZ)
+    # scores, models2 = main(sigA)
+    # decomp = NMF(init='nnsvda',solver=)
+    # do_decomp(sigZ['SM'])
