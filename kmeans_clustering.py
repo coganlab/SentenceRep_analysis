@@ -185,22 +185,23 @@ if __name__ == "__main__":
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     cv = [(slice(None), slice(None))]
 
-    estimator = NMF(max_iter=10000)
+    # estimator = NMF(max_iter=10000)
     # estimator = AgglomerativeClustering()
-    param_dict_sil = {'n_components': [2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
-                      'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito'],
-                      'regularization': ['both', 'components', 'transformation', None]}
+    estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
+    # param_dict_sil = {'n_components': [2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
+    #                   'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito']}
+    comp = 'n_clusters'
+    param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
     param_dict_har = param_dict_sil.copy()
-    param_dict_har['n_components'] = [1, 2, 3]
+    param_dict_har[comp] = [1, 2, 3]
     gs = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_sil,
-                         scoring=[create_scorer(silhouette_score), estimator.reconstruction_err_], cv=ms.TimeSeriesSplit(), n_jobs=-1, verbose=2)
+                         scoring=create_scorer(silhouette_score), cv=ms.TimeSeriesSplit(n_splits=2), n_jobs=-1, verbose=2, error_score='raise')
     gs2 = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_har,
                           scoring=create_scorer(calinski_harabasz_score), cv=ms.TimeSeriesSplit(), n_jobs=-1, verbose=2)
     winners = {}
     for name, sig in zip(['Z','A'],[sigZ,sigA]):
         winners[name] = {}
         for group, x in sig.items():
-            x=x.T
             # x = TimeSeriesScalerMeanVariance(mu=0., std=1.).fit_transform(x).squeeze()
             # param_dict_sil = {'n_clusters': [2, 3, 4, 5, 6], 'linkage': ['ward', 'complete', 'average', 'single'],
             #                   'connectivity': [
@@ -208,10 +209,10 @@ if __name__ == "__main__":
             #                           sig[group]).kneighbors_graph for i in range(10)]}
             gs.fit(df(x-np.min(x)))
             winner = gs.best_estimator_
-            if winner.n_components == 2:
+            if winner.to_dict[comp] == 2:
                 gs2.fit(df(x-np.min(x)))
                 winner = gs2.best_estimator_
-            plot_clustering(x, winner.components_, True, str(winner.__class__)+" "+str(name)+" "+group,True)
+            plot_clustering(x, winner.labels_, True, str(winner.__class__)+" "+str(name)+" "+group)
             winners[name][group] = winner
 
 
