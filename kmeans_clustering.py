@@ -187,13 +187,15 @@ if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     cv = [(slice(None), slice(None))]
-    cv_ts = ms.TimeSeriesSplit(n_splits=35)
+    cv_ts = ms.TimeSeriesSplit(n_splits=10)
     estimator = NMF(max_iter=10000)
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     param_dict_sil = {'n_components': [2, 3, 4, 5, 6], 'init': ['random', 'nndsvd', 'nndsvda', 'nndsvdar'],
-                     'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito']}
+                     'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito'],
+                      'alpha_W': np.linspace(0, 1, 5), 'alpha_H': np.linspace(0, 1, 5), 'l1_ratio': np.linspace(0, 1, 5),
+                      'shuffle': [True, False]}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
