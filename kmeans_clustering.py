@@ -3,7 +3,7 @@ from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_
 from tslearn.clustering import TimeSeriesKMeans, KernelKMeans, KShape, silhouette_score
 import sklearn.decomposition
 from sklearn.decomposition import NMF, LatentDirichletAllocation
-from sklearn.neighbors import KNeighborsClassifier, NeighborhoodComponentsAnalysis
+from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.metrics import gamma_soft_dtw
 from tslearn.preprocessing import TimeSeriesScalerMeanVariance, TimeSeriesScalerMinMax
@@ -53,14 +53,17 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
                     error: bool = False, title: str = None, weighted=False):
     fig, ax = plt.subplots()
     if weighted:
-        group = range(np.shape(label)[0])
+        group = range(min(np.shape(label)))
     else:
         group = np.unique(label)
     for i in group:
         if not weighted:
             w_sigs = data[label == i]
         else:
-            w_sigs = np.array([label[i][j]*dat for j, dat in enumerate(data.T)])
+            try:
+                w_sigs = np.array([label[i][j]*dat for j, dat in enumerate(data.T)])
+            except (ValueError, IndexError) as e:
+                w_sigs = np.array([label.T[i][j]*dat for j, dat in enumerate(data)])
         mean, std = dist(w_sigs)
         tscale = range(len(mean))
         if error:
@@ -143,11 +146,11 @@ def alt_plot(X_train, y_pred):
 
 def create_scorer(scorer):
     def cv_scorer(estimator, X):
-        estimator.fit(X)
         if '.decomposition.' in str(estimator.__class__):
-            w = estimator.components_
-            cluster_labels = np.where(w == np.max(w, 0))[0]
+            w = estimator.fit_transform(X)
+            cluster_labels = np.where(w.T == np.max(w.T, 0))[0]
         else:
+            estimator.fit(X)
             cluster_labels = estimator.labels_
         num_labels = len(set(cluster_labels))
         num_samples = len(X.index)
@@ -184,39 +187,37 @@ if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     cv = [(slice(None), slice(None))]
-
-    # estimator = NMF(max_iter=10000)
+    cv_ts = ms.TimeSeriesSplit(n_splits=35)
+    estimator = NMF(max_iter=10000)
+    # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
-    estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    # param_dict_sil = {'n_components': [2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
-    #                   'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito']}
-    comp = 'n_clusters'
-    param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    param_dict_har = param_dict_sil.copy()
-    param_dict_har[comp] = [1, 2, 3]
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_sil,
-                         scoring=create_scorer(silhouette_score), cv=ms.TimeSeriesSplit(n_splits=2), n_jobs=-1, verbose=2, error_score='raise')
-    gs2 = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_har,
-                          scoring=create_scorer(calinski_harabasz_score), cv=ms.TimeSeriesSplit(), n_jobs=-1, verbose=2)
+    # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
+    param_dict_sil = {'n_components': [2, 3, 4, 5, 6], 'init': ['random', 'nndsvd', 'nndsvda', 'nndsvdar'],
+                     'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito']}
+    # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
+    comp = 'n_components'
+    # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_sil, scoring=create_scorer(silhouette_score),
+                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True)
     winners = {}
-    for name, sig in zip(['Z','A'],[sigZ,sigA]):
-        winners[name] = {}
-        for group, x in sig.items():
-            # x = TimeSeriesScalerMeanVariance(mu=0., std=1.).fit_transform(x).squeeze()
-            # param_dict_sil = {'n_clusters': [2, 3, 4, 5, 6], 'linkage': ['ward', 'complete', 'average', 'single'],
-            #                   'connectivity': [
-            #                       NearestNeighbors(n_neighbors=i + 1, metric='euclidean', n_jobs=-1, verbose=2).fit(
-            #                           sig[group]).kneighbors_graph for i in range(10)]}
-            gs.fit(df(x-np.min(x)))
-            winner = gs.best_estimator_
-            if winner.to_dict[comp] == 2:
-                gs2.fit(df(x-np.min(x)))
-                winner = gs2.best_estimator_
-            plot_clustering(x, winner.labels_, True, str(winner.__class__)+" "+str(name)+" "+group)
-            winners[name][group] = winner
-
-
-    # scores, models = main(sigZ)
-    # scores, models2 = main(sigA)
-    # decomp = NMF(init='nnsvda',solver=)
-    # do_decomp(sigZ['SM'])
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
+    # x = TimeSeriesScalerMeanVariance(mu=0., std=1.).fit_transform(x).squeeze()
+    # param_dict_sil = {'n_clusters': [2, 3, 4, 5, 6], 'linkage': ['ward', 'complete', 'average', 'single'],
+    #                   'connectivity': [
+    #                       NearestNeighbors(n_neighbors=i + 1, metric='euclidean', n_jobs=-1, verbose=2).fit(
+    #                           sig[group]).kneighbors_graph for i in range(10)]}
+    gs.fit(df(x),None)
+    keys = list(gs.best_estimator_.__dict__.keys())
+    thing = keys[comp == keys]
+    if gs.best_estimator_.__dict__[thing] == 2:
+        gs.param_grid[comp] = [1, 2, 3, 4, 5, 6]
+        gs.scoring = create_scorer(calinski_harabasz_score)
+        gs.fit(df(x),None)
+    winner = gs.best_estimator_
+    gs.estimator = winner
+    gs.param_grid = {comp: [i+1 for i in range(winner.__dict__[thing]+2)]}
+    for group, x in sigA.items():
+        gs.fit(df(x))
+        winners[group] = gs.best_estimator_
+        w = winners[group].fit_transform(x)
+        plot_clustering(x, w, True, group, True)
