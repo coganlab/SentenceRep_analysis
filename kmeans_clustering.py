@@ -5,7 +5,7 @@ import sklearn.decomposition
 from sklearn.decomposition import NMF, LatentDirichletAllocation
 from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
-from tslearn.metrics import gamma_soft_dtw
+from tslearn.metrics import gamma_soft_dtw, dtw, gak
 from tslearn.preprocessing import TimeSeriesScalerMeanVariance, TimeSeriesScalerMinMax
 from sklearn.metrics import make_scorer, calinski_harabasz_score
 import sklearn.model_selection as ms
@@ -187,15 +187,15 @@ if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     cv = [(slice(None), slice(None))]
-    cv_ts = ms.TimeSeriesSplit(n_splits=10)
-    estimator = NMF(max_iter=10000)
+    cv_ts = ms.TimeSeriesSplit(n_splits=2)
+    estimator = NMF(max_iter=100000)
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    param_dict_sil = {'n_components': [2, 3, 4, 5, 6], 'init': ['random', 'nndsvd', 'nndsvda', 'nndsvdar'],
-                     'solver': ['cd', 'mu'], 'beta_loss': ['frobenius', 'kullback-leibler', 'itakura-saito'],
-                      'alpha_W': np.linspace(0, 1, 5), 'alpha_H': np.linspace(0, 1, 5), 'l1_ratio': np.linspace(0, 1, 5),
-                      'shuffle': [True, False]}
+    test = np.linspace(0, 1, 5)
+    param_dict_sil = {'n_components': [2, 3, 4], 'init': ['random', 'nndsvd', 'nndsvda'],
+                      'solver': ['mu'], 'beta_loss': np.linspace(-0.5, 3, 8),
+                      'l1_ratio': test}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
@@ -208,18 +208,25 @@ if __name__ == "__main__":
     #                   'connectivity': [
     #                       NearestNeighbors(n_neighbors=i + 1, metric='euclidean', n_jobs=-1, verbose=2).fit(
     #                           sig[group]).kneighbors_graph for i in range(10)]}
-    gs.fit(df(x),None)
+    gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]
     if gs.best_estimator_.__dict__[thing] == 2:
-        gs.param_grid[comp] = [1, 2, 3, 4, 5, 6]
+        gs.param_grid[comp] = [1, 2, 3, 4]
         gs.scoring = create_scorer(calinski_harabasz_score)
-        gs.fit(df(x),None)
+        gs.fit(df(x))
     winner = gs.best_estimator_
+    # keys = list(gs.best_estimator_.__dict__.keys())
+    # thing = keys[comp == keys]
+
     gs.estimator = winner
-    gs.param_grid = {comp: [i+1 for i in range(winner.__dict__[thing]+2)]}
+    gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
+    gs.refit = 'calinski'
+    gs.param_grid = {comp: [i+2 for i in range(winner.__dict__[thing]+2)]}
     for group, x in sigA.items():
         gs.fit(df(x))
         winners[group] = gs.best_estimator_
         w = winners[group].fit_transform(x)
+        results = df(gs.cv_results_)
         plot_clustering(x, w, True, group, True)
+        break
