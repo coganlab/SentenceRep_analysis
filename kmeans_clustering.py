@@ -67,15 +67,25 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
         mean, std = dist(w_sigs)
         tscale = range(len(mean))
         if error:
-            ax.errorbar(tscale, mean, yerr=std)
+            ax.errorbar(tscale, mean, yerr=std, label=i+1)
         else:
             ax.plot(tscale, mean)
         # the x coords of this transformation are data, and the
         # y coord are axes
     trans = ax.get_xaxis_transform()
-    ax.text(50, 0, 'aud onset', rotation=90, transform=trans)
+    ax.text(50, 0.8, 'aud onset', rotation=270, transform=trans)
     ax.axvline(175)
-    ax.text(225, 0, 'go cue', rotation=90, transform=trans)
+    ax.axvline(50, linestyle='--')
+    ax.axvline(225, linestyle='--')
+    ax.text(225, 0.87, 'go cue', rotation=270, transform=trans)
+    ax.text(152, 0.6, 'transition',  transform=trans)
+    ax.legend(loc="best")
+    ax.axvspan(150,200,color=(0.5,0.5,0.5,0.15))
+    ax.set_xticks([0,50,100,150,200,225,250,300,350],
+              ['-0.5','0','0.5','1','-0.25','0','0.25','0.75','1.25'])
+    ax.set_xlabel('Time with respect to event (seconds)')
+    ax.set_ylabel('Significance of activity (range [0-1])')
+    ax.set_xlim(0,350)
     if title is not None:
         plt.title(title)
     plt.show()
@@ -183,9 +193,7 @@ def main2(sig, metric='euclidean'):
     return scores, models
 
 
-if __name__ == "__main__":
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
+def estimate():
     cv = [(slice(None), slice(None))]
     cv_ts = ms.TimeSeriesSplit(n_splits=2)
     estimator = NMF(max_iter=100000)
@@ -219,14 +227,19 @@ if __name__ == "__main__":
     # keys = list(gs.best_estimator_.__dict__.keys())
     # thing = keys[comp == keys]
 
-    gs.estimator = winner
+    gs.estimator = winner['SM']
     gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     gs.refit = 'calinski'
-    gs.param_grid = {comp: [i+2 for i in range(winner.__dict__[thing]+2)]}
+    gs.param_grid = {comp: [i + 2 for i in range(winner.__dict__[thing] + 2)]}
+
+
+if __name__ == "__main__":
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
+    winners, results, w_sav = np.load('data/nmf.npy',allow_pickle=True)
+    w={}
+    name = {'SM':'Sensory-Motor','AUD':'Auditory','PROD':'Production'}
     for group, x in sigA.items():
-        gs.fit(df(x))
-        winners[group] = gs.best_estimator_
-        w = winners[group].fit_transform(x)
-        results = df(gs.cv_results_)
-        plot_clustering(x, w, True, group, True)
-        break
+        # w[group] = winners[group].fit_transform(x)
+        plot_clustering(x, w_sav[group], True, name[group], True)
+        plt.savefig(group + "fig.svg",dpi=300,format='svg')
