@@ -31,6 +31,8 @@ def group_elecs(sigA, sig_chans):
     SM = list(AUD1 & PROD1)
     AUD = list(AUD2 - set(SM))
     PROD = list(PROD1 - set(SM))
+    for group in [SM, AUD, PROD]:
+        group.sort()
     return SM, AUD, PROD
 
 

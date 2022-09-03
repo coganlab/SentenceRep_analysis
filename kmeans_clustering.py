@@ -11,7 +11,7 @@ from sklearn.metrics import make_scorer, calinski_harabasz_score
 import sklearn.model_selection as ms
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
-from mat_load import get_sigs, load_all
+from mat_load import get_sigs, load_all, group_elecs
 from calc import calc_score, get_elbow, dist, mat_err
 from pandas import DataFrame as df
 
@@ -47,6 +47,13 @@ def sk_clustering(x,k,metric='euclidean'):
     ward = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity)
     ward.fit(x)
     return ward, nbrs
+
+
+def weight2label(w):
+    shape = np.shape(w)
+    if shape[0] > shape[1]:
+        w = w.T
+    return np.argmax(w, axis=0)
 
 
 def plot_clustering(data: np.ndarray, label: np.ndarray,
@@ -235,6 +242,7 @@ def estimate():
 
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     winners, results, w_sav = np.load('data/nmf.npy',allow_pickle=True)
     w={}
@@ -242,4 +250,4 @@ if __name__ == "__main__":
     for group, x in sigA.items():
         # w[group] = winners[group].fit_transform(x)
         plot_clustering(x, w_sav[group], True, name[group], True)
-        plt.savefig(group + "fig.svg",dpi=300,format='svg')
+        # plt.savefig(group + "fig.svg",dpi=300,format='svg')
