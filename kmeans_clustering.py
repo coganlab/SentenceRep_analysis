@@ -1,19 +1,18 @@
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
-from tslearn.clustering import TimeSeriesKMeans, KernelKMeans, KShape, silhouette_score
+from sklearn.cluster import AgglomerativeClustering, ward_tree
+from tslearn.clustering import TimeSeriesKMeans, KShape, silhouette_score
 from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
-from tslearn.metrics import gamma_soft_dtw, dtw, gak
-from tslearn.preprocessing import TimeSeriesScalerMeanVariance, TimeSeriesScalerMinMax
+from tslearn.metrics import gamma_soft_dtw, gak
+from tslearn.preprocessing import TimeSeriesScalerMinMax
 from sklearn.metrics import make_scorer, calinski_harabasz_score
 import sklearn.model_selection as ms
-from mat_load import get_sigs, load_all, group_elecs
+from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF
 from plotting import plot_opt_k, plot_clustering, alt_plot
-from calc import calc_score, get_elbow, dist, mat_err, do_decomp, par_calc
 from pandas import DataFrame as df
-from typing import Union, Any, Iterable
-
+from typing import Union
+from utils.calc import ArrayLike, BaseEstimator
 
 class ts_spectral_clustering(AgglomerativeClustering):
     def __init__(self, **kwargs):
@@ -35,7 +34,7 @@ class ts_spectral_clustering(AgglomerativeClustering):
         return AgglomerativeClustering(**params).fit(self, X)
 
 
-def sk_clustering(x, k, metric='euclidean'):
+def sk_clustering(x: ArrayLike, k: int, metric: str = 'euclidean'):
     kwargs = dict()
     if metric == 'softdtw':
         kwargs['gamma'] = gamma_soft_dtw(x)
@@ -49,7 +48,7 @@ def sk_clustering(x, k, metric='euclidean'):
 
 
 def create_scorer(scorer):
-    def cv_scorer(estimator, X):
+    def cv_scorer(estimator: BaseEstimator, X: ArrayLike):
         if '.decomposition.' in str(estimator.__class__):
             w = estimator.fit_transform(X)
             cluster_labels = np.where(w.T == np.max(w.T, 0))[0]
@@ -65,7 +64,7 @@ def create_scorer(scorer):
     return cv_scorer
 
 
-def main2(sig, metric='euclidean'):
+def main2(sig: dict[str, ArrayLike], metric: str = 'euclidean'):
     scores = {}
     models = {}
     for group, x in sig.items():
@@ -105,11 +104,6 @@ def estimate():
                          cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True)
     winners = {}
     x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
-    # x = TimeSeriesScalerMeanVariance(mu=0., std=1.).fit_transform(x).squeeze()
-    # param_dict_sil = {'n_clusters': [2, 3, 4, 5, 6], 'linkage': ['ward', 'complete', 'average', 'single'],
-    #                   'connectivity': [
-    #                       NearestNeighbors(n_neighbors=i + 1, metric='euclidean', n_jobs=-1, verbose=2).fit(
-    #                           sig[group]).kneighbors_graph for i in range(10)]}
     gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]

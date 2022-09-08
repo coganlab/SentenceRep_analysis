@@ -1,11 +1,14 @@
 from tslearn.clustering import silhouette_score
-from numpy import matlib, array, mean, sqrt, reshape,\
+from numpy import matlib, array, mean, sqrt, reshape, \
     vstack, sum, outer, argmax, std, shape, linalg, ndarray, min
 from joblib import Parallel, delayed
 from sklearn.decomposition import NMF
+from typing import Union
+from numpy.typing import ArrayLike
+from sklearn.base import BaseEstimator
 
 
-def calculate_WSS(centroids, label, points):
+def calculate_WSS(centroids: ArrayLike, label: list, points: ArrayLike) -> ArrayLike:
     sse = 0
     # calculate square of Euclidean distance of each point from its
     # cluster center and add to current WSS
@@ -16,7 +19,8 @@ def calculate_WSS(centroids, label, points):
     return sse
 
 
-def do_decomp(data, clusters=8, repetitions=10, mod=NMF(init='random', max_iter=10000, verbose=2)):
+def do_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
+              mod: BaseEstimator = NMF(init='random', max_iter=10000, verbose=2)) -> ArrayLike:
     data = data - min(data)
     errs = ndarray([repetitions, clusters])
     for k in array(range(clusters)):
@@ -26,14 +30,15 @@ def do_decomp(data, clusters=8, repetitions=10, mod=NMF(init='random', max_iter=
     return errs
 
 
-def weight2label(w):
+def weight2label(w: ArrayLike) -> Union[list, ndarray]:
     myshape = shape(w)
     if myshape[0] > myshape[1]:
         w = w.T
     return argmax(w, axis=0)
 
 
-def par_calc(data, n, rep, model, method):
+def par_calc(data: ArrayLike, n: int, rep: int, model: BaseEstimator, method: str
+             ) -> tuple[ndarray, ndarray, ndarray]:
     sil = ndarray([rep, n])
     var = ndarray([rep, n])
     wss = ndarray([rep, n])
@@ -43,7 +48,7 @@ def par_calc(data, n, rep, model, method):
     return sil, var, wss
 
 
-def calc_score(X, kmax, model, metric='euclidean'):
+def calc_score(X: ArrayLike, kmax: int, model: BaseEstimator, metric='euclidean'):
     sil = []
     var = []
     wss = []
@@ -60,7 +65,7 @@ def calc_score(X, kmax, model, metric='euclidean'):
     return sil, var, wss
 
 
-def dist(mat: array):
+def dist(mat: ArrayLike):
     avg = mean(mat, 0)
     avg = reshape(avg, [len(avg)])
     stdev = std(mat, 0) / sqrt(shape(mat)[1])
@@ -68,14 +73,14 @@ def dist(mat: array):
     return avg, stdev
 
 
-def mat_err(data, mod):
+def mat_err(data: ArrayLike, mod: BaseEstimator):
     W = mod.fit_transform(data)
     H = mod.components_
     error = linalg.norm(data - W @ H) ** 2 / linalg.norm(data) ** 2
     return error
 
 
-def get_elbow(data: array):
+def get_elbow(data: ArrayLike):
     """ Draws a line between the first and last points in a dataset and finds the point furthest from that line.
 
     :param data:
@@ -101,8 +106,9 @@ def get_elbow(data: array):
 if __name__ == "__main__":
     from mat_load import load_all, get_sigs
     from kmeans_clustering import plot_opt_k, KMeans
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('../data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
     score = plot_opt_k(sigZ['SM'], 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
     avg, stdev = dist(score['euclidean']['sil'])
-    elb = get_elbow(avg)+1
+    elb = get_elbow(avg) + 1

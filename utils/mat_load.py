@@ -1,5 +1,6 @@
 from scipy.io import loadmat
 from numpy import where, concatenate
+from calc import ArrayLike
 
 
 def load_all(filename: str):
@@ -18,7 +19,8 @@ def load_all(filename: str):
     return t, z, a, sCh, sChL, sChN, sub
 
 
-def group_elecs(sigA, sig_chans):
+def group_elecs(sigA: dict[str, dict[str, ArrayLike]], sig_chans: dict[str, dict[str, list[int]]]
+                ) -> tuple[list, list, list]:
     AUD = dict()
     for cond in ['LS', 'LM', 'JL']:
         condw = cond + 'words'
@@ -36,7 +38,8 @@ def group_elecs(sigA, sig_chans):
     return SM, AUD, PROD
 
 
-def get_sigs(allsigZ, allsigA, sigChans, cond: str):
+def get_sigs(allsigZ: dict[str, dict[str, ArrayLike]], allsigA: dict[str, dict[str, ArrayLike]],
+             sigChans: dict[str, dict[str, list[int]]], cond: str) -> tuple[dict[str, ArrayLike], dict[str, ArrayLike]]:
     out_sig = dict()
     for sig, metric in zip([allsigZ, allsigA], ['Z', 'A']):
         out_sig[metric] = dict()
@@ -51,5 +54,5 @@ def get_sigs(allsigZ, allsigA, sigChans, cond: str):
 
 
 if __name__ == "__main__":
-    Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject = load_all('../data/pydata.mat')
     SM, AUD, PROD = group_elecs(sigA, sigChans)

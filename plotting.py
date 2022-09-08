@@ -1,12 +1,12 @@
 import matplotlib.pyplot as plt
-from calc import get_elbow, dist, do_decomp, par_calc
+from utils.calc import get_elbow, dist, do_decomp, par_calc, ArrayLike
 from sklearn.decomposition import NMF
-from mat_load import group_elecs, get_sigs, load_all
+from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
-from typing import Union, Any, Iterable
+from typing import Union, Iterable
 
 
-def plot_decomp(data, clusters=8, repetitions=10,
+def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
                 mod=NMF(init='random', max_iter=10000, verbose=2)):
     errs = do_decomp(data, clusters, repetitions, mod)
     plot_dist(errs)
@@ -23,7 +23,8 @@ def plot_dist(mat: iter, label: Union[str, int, float] = None,
     return plt.gca()
 
 
-def clustering_subplots(data, label,  sig_titles, colors, weighted):
+def clustering_subplots(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
+                        colors: list[Union[str, list[int]]] = None, weighted: bool = False):
     fig, ax = plt.subplots()
     if weighted:
         group = range(min(np.shape(label)))
@@ -45,7 +46,7 @@ def clustering_subplots(data, label,  sig_titles, colors, weighted):
     return fig, ax
 
 
-def plot_clustering(data: np.ndarray, label: np.ndarray,
+def plot_clustering(data: ArrayLike, label: ArrayLike,
                     sig_titles: Iterable[str] = None, weighted: bool = False,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
 
@@ -75,7 +76,7 @@ def plot_clustering(data: np.ndarray, label: np.ndarray,
     return fig, ax
 
 
-def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
+def plot_clustering_resp(data: ArrayLike, label: ArrayLike,
                     sig_titles: Iterable[str] = None, weighted: bool = False,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
     fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
@@ -100,7 +101,7 @@ def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
     plt.show()
 
 
-def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
+def plot_opt_k(data: ArrayLike, n: int, rep: int, model, methods=None, title=None):
     if methods is None:
         methods = ['euclidean', 'dtw', 'softdtw']
     if title is None:
@@ -125,7 +126,7 @@ def plot_opt_k(data: np.array, n, rep, model, methods=None, title=None):
     return results
 
 
-def alt_plot(X_train, y_pred):
+def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
     plt.figure()
     for yi in range(len(np.unique(y_pred))):
         plt.subplot(len(np.unique(y_pred)), 1, 1 + yi)
