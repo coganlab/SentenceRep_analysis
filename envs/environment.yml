@@ -1,0 +1,16 @@
+
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python<3.10
+  - pip
+  - matplotlib
+  - tqdm
+  - sklearn
+  - tslearn
+  - scipy
+  - numpy
+  - pandas
+  - pip:
+    - -r requirements.txt

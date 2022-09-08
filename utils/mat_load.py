@@ -1,6 +1,6 @@
 from scipy.io import loadmat
 from numpy import where, concatenate
-from calc import ArrayLike
+from utils.calc import ArrayLike
 
 
 def load_all(filename: str):

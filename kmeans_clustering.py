@@ -11,8 +11,8 @@ from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF
 from plotting import plot_opt_k, plot_clustering, alt_plot
 from pandas import DataFrame as df
-from typing import Union
 from utils.calc import ArrayLike, BaseEstimator
+
 
 class ts_spectral_clustering(AgglomerativeClustering):
     def __init__(self, **kwargs):
@@ -86,39 +86,34 @@ def main2(sig: dict[str, ArrayLike], metric: str = 'euclidean'):
     return scores, models
 
 
-def estimate():
+def estimate(x: ArrayLike, estimator: BaseEstimator):
     cv = [(slice(None), slice(None))]
     cv_ts = ms.TimeSeriesSplit(n_splits=2)
-    estimator = NMF(max_iter=100000)
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = np.linspace(0, 1, 5)
-    param_dict_sil = {'n_components': [2, 3, 4], 'init': ['random', 'nndsvd', 'nndsvda'],
-                      'solver': ['mu'], 'beta_loss': np.linspace(-0.5, 3, 8),
-                      'l1_ratio': test}
+    param_grid = {'n_components': [1, 2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
+                    'solver': ['mu'], 'beta_loss': np.linspace(-0.5, 3, 8), 'l1_ratio': test}
+    scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_dict_sil, scoring=create_scorer(silhouette_score),
-                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True)
-    winners = {}
-    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
+                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True, refit='calinski')
     gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]
-    if gs.best_estimator_.__dict__[thing] == 2:
-        gs.param_grid[comp] = [1, 2, 3, 4]
-        gs.scoring = create_scorer(calinski_harabasz_score)
-        gs.fit(df(x))
     winner = gs.best_estimator_
     # keys = list(gs.best_estimator_.__dict__.keys())
     # thing = keys[comp == keys]
 
-    gs.estimator = winner['SM']
+    gs.estimator = winner
     gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     gs.refit = 'calinski'
     gs.param_grid = {comp: [i + 2 for i in range(winner.__dict__[thing] + 2)]}
+    gs.fit(df(x))
+    return gs
 
 
 if __name__ == "__main__":
@@ -126,3 +121,5 @@ if __name__ == "__main__":
     SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     cond = 'LSwords'
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
+    gridsearch = estimate(x, NMF(max_iter=100000))
