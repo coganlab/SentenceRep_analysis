@@ -1,19 +1,46 @@
 from tslearn.clustering import silhouette_score
-from numpy import matlib, array, mean, sqrt, reshape, \
-    vstack, sum, outer, argmax, std, shape, linalg
+from numpy import matlib, array, mean, sqrt, reshape,\
+    vstack, sum, outer, argmax, std, shape, linalg, ndarray, min
+from joblib import Parallel, delayed
+from sklearn.decomposition import NMF
 
 
 def calculate_WSS(centroids, label, points):
     sse = 0
-
     # calculate square of Euclidean distance of each point from its
     # cluster center and add to current WSS
     for i in range(len(points)):
         curr_center = centroids[label[i]]
         sse += (points[i, 0] - curr_center[0]) ** 2 + \
                (points[i, 1] - curr_center[1]) ** 2
-
     return sse
+
+
+def do_decomp(data, clusters=8, repetitions=10, mod=NMF(init='random', max_iter=10000, verbose=2)):
+    data = data - min(data)
+    errs = ndarray([repetitions, clusters])
+    for k in array(range(clusters)):
+        mod.set_params(n_components=k + 1)
+        results = Parallel(-1)(delayed(mat_err)(data, mod) for i in range(repetitions))
+        errs[:, k] = results
+    return errs
+
+
+def weight2label(w):
+    myshape = shape(w)
+    if myshape[0] > myshape[1]:
+        w = w.T
+    return argmax(w, axis=0)
+
+
+def par_calc(data, n, rep, model, method):
+    sil = ndarray([rep, n])
+    var = ndarray([rep, n])
+    wss = ndarray([rep, n])
+    results = Parallel(-1)(delayed(calc_score)(data, n, model, method) for i in range(rep))
+    for i, result in enumerate(results):
+        sil[i, :], var[i, :], wss[i, :] = result
+    return sil, var, wss
 
 
 def calc_score(X, kmax, model, metric='euclidean'):
