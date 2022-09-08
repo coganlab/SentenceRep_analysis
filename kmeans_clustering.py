@@ -1,173 +1,125 @@
 import numpy as np
-from numpy import matlib
-from sklearn.cluster import AgglomerativeClustering, FeatureAgglomeration, ward_tree
-from sklearn.decomposition import NMF
-from tslearn.clustering import silhouette_score, KernelKMeans, KShape
-from tslearn.clustering import TimeSeriesKMeans as KMeans
+from sklearn.cluster import AgglomerativeClustering, ward_tree
+from tslearn.clustering import TimeSeriesKMeans, KShape, silhouette_score
+from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
-from tslearn.barycenters import softdtw_barycenter
-import matplotlib.pyplot as plt
-from joblib import Parallel, delayed
-from mat_load import Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName
-
-allsigZ = sigZ
-allsigA = sigA
-sigZ = {'SM': np.load('data/Z_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('data/Z_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('data/Z_LSwords_aud+go_PROD.npy')}
-sigA = {'SM': np.load('data/A_LSwords_aud+go_SM.npy'),
-        'AUD': np.load('data/A_LSwords_aud+go_AUD.npy'),
-        'PROD': np.load('data/A_LSwords_aud+go_PROD.npy')}
+from tslearn.metrics import gamma_soft_dtw, gak
+from tslearn.preprocessing import TimeSeriesScalerMinMax
+from sklearn.metrics import make_scorer, calinski_harabasz_score
+import sklearn.model_selection as ms
+from utils.mat_load import get_sigs, load_all, group_elecs
+from sklearn.decomposition import NMF
+from plotting import plot_opt_k, plot_clustering, alt_plot
+from pandas import DataFrame as df
+from utils.calc import ArrayLike, BaseEstimator
 
 
-def calculate_WSS(centroids, label, points):
-    sse = 0
-
-    # calculate square of Euclidean distance of each point from its
-    # cluster center and add to current WSS
-    for i in range(len(points)):
-        curr_center = centroids[label[i]]
-        sse += (points[i, 0] - curr_center[0]) ** 2 + \
-               (points[i, 1] - curr_center[1]) ** 2
-
-    return sse
-
-
-def calc_score(X, kmax, model, metric='euclidean'):
-    sil = []
-    var = []
-    wss = []
-    for k in range(1, kmax + 1):
-        model.set_params(n_clusters=k)
-        labels = model.fit_predict(X)
-        if k == 1:
-            pass
+class ts_spectral_clustering(AgglomerativeClustering):
+    def __init__(self, **kwargs):
+        if 'n_neighbors' in kwargs.keys():
+            self.n_neighbors = kwargs.pop('n_neighbors')
         else:
-            sil.append(float(silhouette_score(X, labels, metric=metric, n_jobs=-1)))
-        var.append(float(model.inertia_))
-        wss.append(float(calculate_WSS(model.cluster_centers_, labels, X)))
-    sil = [sil[0]] + sil
-    return sil, var, wss
+            self.n_neighbors = 5
+        if 'metric' in kwargs.keys():
+            self.metric = kwargs.pop('metric')
+        else:
+            self.metric = 'euclidean'
+        super().__init__(**kwargs)
+
+    def fit(self, X, y=None):
+        knn = NearestNeighbors(n_neighbors=self.n_neighbors, metric=self.metric)
+        knn.fit(X)
+        self.connectivity = knn.kneighbors_graph
+        params = self.get_params()
+        return AgglomerativeClustering(**params).fit(self, X)
 
 
-def sk_clustering(k):
-    nbrs = NearestNeighbors(n_neighbors=2, n_jobs=-1).fit(x)
+def sk_clustering(x: ArrayLike, k: int, metric: str = 'euclidean'):
+    kwargs = dict()
+    if metric == 'softdtw':
+        kwargs['gamma'] = gamma_soft_dtw(x)
+    nbrs = NearestNeighbors(n_neighbors=int(np.shape(x)[0] / k / 2), n_jobs=-1,
+                            metric=metric, metric_params=kwargs)
+    nbrs.fit(x)
     connectivity = nbrs.kneighbors_graph(x)
-    ward = AgglomerativeClustering(
-        n_clusters=k, linkage="ward", connectivity=connectivity
-    ).fit(x)
+    ward = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity)
+    ward.fit(x)
     return ward, nbrs
 
 
-def plot_clustering(data: np.ndarray, label: np.ndarray,
-                    error: bool = False, title: str = None):
-    fig, ax = plt.subplots()
-    for i in np.unique(label):
-        w_sigs = data[labels == i]
-        mean, std, tscale, = dist(w_sigs)
-        if error:
-            ax.errorbar(tscale, mean, yerr=std)
+def create_scorer(scorer):
+    def cv_scorer(estimator: BaseEstimator, X: ArrayLike):
+        if '.decomposition.' in str(estimator.__class__):
+            w = estimator.fit_transform(X)
+            cluster_labels = np.where(w.T == np.max(w.T, 0))[0]
         else:
-            ax.plot(tscale, mean)
-        # the x coords of this transformation are data, and the
-        # y coord are axes
-    trans = ax.get_xaxis_transform()
-    ax.text(50, 0, 'aud onset', rotation=90, transform=trans)
-    ax.axvline(175)
-    ax.text(225, 0, 'go cue', rotation=90, transform=trans)
-    if title is not None:
-        plt.title(title)
-    plt.show()
+            estimator.fit(X)
+            cluster_labels = estimator.labels_
+        num_labels = len(set(cluster_labels))
+        num_samples = len(X.index)
+        if num_labels == 1 or num_labels == num_samples:
+            return -1
+        else:
+            return scorer(X, cluster_labels)
+    return cv_scorer
 
 
-def dist(mat: np.array):
-    mean = np.mean(mat, 0)
-    mean = np.reshape(mean, [len(mean)])
-    std = np.std(mat, 0) / np.sqrt(np.shape(mat)[1])
-    std = np.reshape(std, [len(std)])
-    tscale = range(np.shape(mat)[1])
-    return mean, std, tscale
+def main2(sig: dict[str, ArrayLike], metric: str = 'euclidean'):
+    scores = {}
+    models = {}
+    for group, x in sig.items():
+        scores[group] = plot_opt_k(x, 8, 15, TimeSeriesKMeans(verbose=1, n_init=3), [metric])
+        kwargs = {}
+        kwargs['metric'] = metric
+        kwargs['n_jobs'] = -1
+        models[group] = TimeSeriesKMeans(n_clusters=scores[group][metric]['k'],
+                                         n_init=10, verbose=2, **kwargs)
+        models[group].fit(x)
+        weights = models[group].cluster_centers_.squeeze()
+        labels = models[group].predict(x)
+        # labels = np.where((weights == np.max(weights, 0)).T)[1]
+        plot_clustering(x, labels, True, group)
+        # plot_clustering(x, weights, True, group,True)
+        dat = sigZ[group]
+        dat[dat >= 1] = sigZ[group][dat >= 1]
+        alt_plot(dat, labels)
+    return scores, models
 
 
-def get_elbow(data: np.array):
-    nPoints = len(data)
-    allCoord = np.vstack((range(nPoints), data)).T
-    np.array([range(nPoints), data])
-    firstPoint = allCoord[0]
-    lineVec = allCoord[-1] - allCoord[0]
-    lineVecNorm = lineVec / np.sqrt(np.sum(lineVec ** 2))
-    vecFromFirst = allCoord - firstPoint
-    scalarProduct = np.sum(vecFromFirst * matlib.repmat(lineVecNorm, nPoints, 1), axis=1)
-    vecFromFirstParallel = np.outer(scalarProduct, lineVecNorm)
-    vecToLine = vecFromFirst - vecFromFirstParallel
-    distToLine = np.sqrt(np.sum(vecToLine ** 2, axis=1))
-    idxOfBestPoint = np.argmax(distToLine)
-    return idxOfBestPoint
+def estimate(x: ArrayLike, estimator: BaseEstimator):
+    cv = [(slice(None), slice(None))]
+    cv_ts = ms.TimeSeriesSplit(n_splits=2)
+    # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
+    # estimator = AgglomerativeClustering()
+    # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
+    test = np.linspace(0, 1, 5)
+    param_grid = {'n_components': [1, 2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
+                    'solver': ['mu'], 'beta_loss': np.linspace(-0.5, 3, 8), 'l1_ratio': test}
+    scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
+    # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
+    comp = 'n_components'
+    # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
+                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True, refit='calinski')
+    gs.fit(df(x))
+    keys = list(gs.best_estimator_.__dict__.keys())
+    thing = keys[comp == keys]
+    winner = gs.best_estimator_
+    # keys = list(gs.best_estimator_.__dict__.keys())
+    # thing = keys[comp == keys]
 
-
-def par_calc(data, n, rep, model, method):
-    sil = np.ndarray([rep, n])
-    var = np.ndarray([rep, n])
-    wss = np.ndarray([rep, n])
-    results = Parallel(-1)(delayed(calc_score)(data, n, model, method) for i in range(rep))
-    for i, result in enumerate(results):
-        sil[i, :], var[i, :], wss[i, :] = result
-    return sil, var, wss
-
-
-def plot_opt_k(data, n, rep, model, methods=None, title=None):
-    if methods is None:
-        methods = ['euclidean', 'dtw', 'softdtw']
-    if title is None:
-        title = str(len(data))
-    title = "Optimal k for " + title
-    results = {}
-    for method in methods:
-        model.metric = method
-        sil, var, wss = par_calc(data, n, rep, model, method)
-        score = {'sil': sil, 'var': var, 'wss': wss}
-        for key, value in {'sil': sil}.items():
-            mean, std, tscale, = dist(value)
-            plt.errorbar(tscale, mean, yerr=std)
-            plt.ylabel(method + " Silhouette Score")
-            plt.xlabel("K Value")
-            plt.xticks(np.array(range(n)), np.array(range(n)) + 1)
-            plt.title(title)
-            plt.show()
-        score['k'] = get_elbow(np.mean(sil, 0)) + 1
-        results[method] = score
-    return results
+    gs.estimator = winner
+    gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
+    gs.refit = 'calinski'
+    gs.param_grid = {comp: [i + 2 for i in range(winner.__dict__[thing] + 2)]}
+    gs.fit(df(x))
+    return gs
 
 
 if __name__ == "__main__":
-    scores = {}
-    models = {}
-    for group, x in sigZ.items():
-        scores[group] = plot_opt_k(x, 10, 20, KMeans(verbose=1, n_init=3), ['euclidean'])
-        models[group] = KMeans(n_clusters=scores[group]['euclidean']['k'],
-                               metric='euclidean', n_init=10, n_jobs=-1, verbose=2)
-        labels = models[group].fit_predict(x)
-        plot_clustering(sigZ[group], labels, True, group)
-
-    # model = KMeans(n_clusters=4, metric='softdtw', n_init=4, n_jobs=-1, verbose=2)
-    # = KernelKMeans(n_clusters=4, n_jobs=-1, kernel="laplacian", verbose=2)
-    # model = KShape(n_clusters=4, verbose=2)
-    # X = SM - np.min(SM)
-    # errs = []
-    # for i in range(10):
-    #     err = []
-    #     for k in np.array(range(10))+1:
-    #         model2 = NMF(n_components=k, init='random', max_iter=10000)
-    #         W = model2.fit_transform(X)
-    #         H = model2.components_
-    #         err.append(np.linalg.norm(X - W @ H) ** 2 / np.linalg.norm(X) ** 2)
-    #     errs.append(err)
-    # plot_std(errs)
-    # plt.show()
-
-    # model, nbrs = sk_clustering(4)
-    # model.fit(x)
-    # labels = model.fit_predict(x)
-    # plot_clustering(labels, error=True)
-
-    # soft_dtw_graph(SM)
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    cond = 'LSwords'
+    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
+    gridsearch = estimate(x, NMF(max_iter=100000))
