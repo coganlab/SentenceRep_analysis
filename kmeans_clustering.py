@@ -50,6 +50,13 @@ def sk_clustering(x, k, metric='euclidean'):
     return ward, nbrs
 
 
+def weight2label(w):
+    shape = np.shape(w)
+    if shape[0] > shape[1]:
+        w = w.T
+    return np.argmax(w, axis=0)
+
+
 def plot_dist(mat: iter, label: Union[str, int, float] = None,
               color: Union[str, list[int]] = None) -> plt.Axes:
     mean, std = dist(mat)
@@ -212,7 +219,6 @@ def create_scorer(scorer):
             return -1
         else:
             return scorer(X, cluster_labels)
-
     return cv_scorer
 
 
