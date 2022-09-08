@@ -11,9 +11,10 @@ from sklearn.metrics import make_scorer, calinski_harabasz_score
 import sklearn.model_selection as ms
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
-from mat_load import get_sigs, load_all
+from mat_load import get_sigs, load_all, group_elecs
 from calc import calc_score, get_elbow, dist, mat_err
 from pandas import DataFrame as df
+from typing import Union, Any, Iterable
 
 
 class ts_spectral_clustering(AgglomerativeClustering):
@@ -36,11 +37,11 @@ class ts_spectral_clustering(AgglomerativeClustering):
         return AgglomerativeClustering(**params).fit(self, X)
 
 
-def sk_clustering(x,k,metric='euclidean'):
+def sk_clustering(x, k, metric='euclidean'):
     kwargs = dict()
     if metric == 'softdtw':
         kwargs['gamma'] = gamma_soft_dtw(x)
-    nbrs = NearestNeighbors(n_neighbors=int(np.shape(x)[0]/k/2), n_jobs=-1,
+    nbrs = NearestNeighbors(n_neighbors=int(np.shape(x)[0] / k / 2), n_jobs=-1,
                             metric=metric, metric_params=kwargs)
     nbrs.fit(x)
     connectivity = nbrs.kneighbors_graph(x)
@@ -49,45 +50,88 @@ def sk_clustering(x,k,metric='euclidean'):
     return ward, nbrs
 
 
-def plot_clustering(data: np.ndarray, label: np.ndarray,
-                    error: bool = False, title: str = None, weighted=False):
+def plot_dist(mat: iter, label: Union[str, int, float] = None,
+              color: Union[str, list[int]] = None) -> plt.Axes:
+    mean, std = dist(mat)
+    tscale = range(len(mean))
+    plt.errorbar(tscale, mean, yerr=std, label=label, color=color)
+    return plt.gca()
+
+
+def clustering_subplots(data, label,  sig_titles, colors, weighted):
     fig, ax = plt.subplots()
     if weighted:
         group = range(min(np.shape(label)))
     else:
         group = np.unique(label)
-    for i in group:
+    if sig_titles is None:
+        sig_titles = [sig_titles] * len(group)
+    if colors is None:
+        colors = [colors] * len(group)
+    for i, stitle, color in zip(group, sig_titles, colors):
         if not weighted:
             w_sigs = data[label == i]
         else:
             try:
-                w_sigs = np.array([label[i][j]*dat for j, dat in enumerate(data.T)])
+                w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
             except (ValueError, IndexError) as e:
-                w_sigs = np.array([label.T[i][j]*dat for j, dat in enumerate(data)])
-        mean, std = dist(w_sigs)
-        tscale = range(len(mean))
-        if error:
-            ax.errorbar(tscale, mean, yerr=std, label=i+1)
-        else:
-            ax.plot(tscale, mean)
-        # the x coords of this transformation are data, and the
-        # y coord are axes
+                w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
+        ax = plot_dist(w_sigs, stitle, color)
+    return fig, ax
+
+
+def plot_clustering(data: np.ndarray, label: np.ndarray,
+                    sig_titles: Iterable[str] = None, weighted: bool = False,
+                    colors: Iterable[Union[str, list[Union[int, float]]]] = None):
+
+    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+    # the x coords of this transformation are data, and the
+    # y coord are axes
     trans = ax.get_xaxis_transform()
-    ax.text(50, 0.8, 'aud onset', rotation=270, transform=trans)
+    ax.text(50, 0.8, 'Stim onset', rotation=270, transform=trans)
     ax.axvline(175)
     ax.axvline(50, linestyle='--')
     ax.axvline(225, linestyle='--')
-    ax.text(225, 0.87, 'go cue', rotation=270, transform=trans)
-    ax.text(152, 0.6, 'transition',  transform=trans)
-    ax.legend(loc="best")
-    ax.axvspan(150,200,color=(0.5,0.5,0.5,0.15))
-    ax.set_xticks([0,50,100,150,200,225,250,300,350],
-              ['-0.5','0','0.5','1','-0.25','0','0.25','0.75','1.25'])
-    ax.set_xlabel('Time with respect to event (seconds)')
+    # ax.axhline(0, linestyle='--', color='black')
+    ax.text(225, 0.87, 'Go cue', rotation=270, transform=trans)
+    ax.text(160, 0.6, 'Delay', transform=trans)
+    # ax.legend(loc="best")
+    ax.axvspan(150, 200, color=(0.5, 0.5, 0.5, 0.15))
+    ax.set_xticks([0, 50, 100, 150, 200, 225, 250, 300, 350],
+                  ['-0.5', '0', '0.5', '1', '-0.25', '0', '0.25', '0.75', '1.25'])
+    ax.set_xlabel('Time from stimuli or go cue (seconds)')
+    # ax.set_ylabel('Z score')
     ax.set_ylabel('Significance of activity (range [0-1])')
-    ax.set_xlim(0,350)
-    if title is not None:
-        plt.title(title)
+    ax.set_xlim(0, 350)
+    ylims = ax.get_ybound()
+    ax.set_ybound(min(0,ylims[0]),ylims[1])
+    # plt.title(title)
+    plt.show()
+    return fig, ax
+
+
+def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
+                    sig_titles: Iterable[str] = None, weighted: bool = False,
+                    colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
+    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+    trans = ax.get_xaxis_transform()
+    ax.text(100, 0.9, 'onset', rotation=270, transform=trans)
+    ax.axvline(100, linestyle='--')
+    # ax.axvline(50, linestyle='--')
+    # ax.axvline(225, linestyle='--')
+    # ax.text(225, 0.87, 'go cue', rotation=270, transform=trans)
+    # ax.text(152, 0.6, 'transition',  transform=trans)
+    ax.legend(loc="best")
+    # ax.axvspan(150,200,color=(0.5,0.5,0.5,0.15))
+    ax.set_ybound(ybounds)
+    ax.set_yticks([])
+    ax.set_xticks([0, 50, 100, 150, 200],
+                  ['-1', '-0.5', '0', '0.5', '1'])
+    ax.set_xlabel('Time from response (seconds)')
+    # ax.set_ylabel('Significance of activity (range [0-1])')
+    ax.set_xlim(0, 200)
+    # if title is not None:
+    #     plt.title(title)
     plt.show()
 
 
@@ -95,7 +139,7 @@ def do_decomp(data, clusters=8, repetitions=10, mod=NMF(init='random', max_iter=
     data = data - np.min(data)
     errs = np.ndarray([repetitions, clusters])
     for k in np.array(range(clusters)):
-        mod.set_params(n_components=k+1)
+        mod.set_params(n_components=k + 1)
         results = Parallel(-1)(delayed(mat_err)(data, mod) for i in range(repetitions))
         errs[:, k] = results
     mean, std = dist(errs)
@@ -168,6 +212,7 @@ def create_scorer(scorer):
             return -1
         else:
             return scorer(X, cluster_labels)
+
     return cv_scorer
 
 
@@ -188,7 +233,7 @@ def main2(sig, metric='euclidean'):
         plot_clustering(x, labels, True, group)
         # plot_clustering(x, weights, True, group,True)
         dat = sigZ[group]
-        dat[dat>=1] = sigZ[group][dat>=1]
+        dat[dat >= 1] = sigZ[group][dat >= 1]
         alt_plot(dat, labels)
     return scores, models
 
@@ -235,11 +280,35 @@ def estimate():
 
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
-    winners, results, w_sav = np.load('data/nmf.npy',allow_pickle=True)
-    w={}
-    name = {'SM':'Sensory-Motor','AUD':'Auditory','PROD':'Production'}
-    for group, x in sigA.items():
-        # w[group] = winners[group].fit_transform(x)
-        plot_clustering(x, w_sav[group], True, name[group], True)
-        plt.savefig(group + "fig.svg",dpi=300,format='svg')
+    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    npSM = np.array(SM)
+    cond = 'LSwords'
+    SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
+    resp = all_sigA[cond]['Response'][SMresp, :]
+    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
+    winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
+    SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
+    ones = np.ones([244, 1])
+    x = np.array(sigZ['AUD'])
+    labels = np.ones([np.shape(sigZ['AUD'])[0]])
+    x = np.vstack([x,np.array(sigZ['SM'])])
+    labels = np.concatenate([labels, np.ones([np.shape(sigZ['SM'])[0]]) * 2])
+    x = np.vstack([x, np.array(sigZ['PROD'])])
+    labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
+    colors = [[0,0,0],[0.6,0.3,0],[.9,.9,0],[1,0.5,0]]
+    plot_clustering(sigA['SM'], np.ones([244, 1]), None, True,[[1,0,0]])
+                    # ['Working Memory','Visual','Early Prod','Late Prod'], True,
+                    # [[0,1,0],[1,0,0],[0,0,1]])
+    ax = plt.gca()
+    ylims = list(ax.get_ybound())
+    ylims[0] = min(0,ylims[0])
+    # plt.title('Listen-speak')
+    plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
+                         [[1,0,0]],ylims)
+
+    # w={}
+    # name = {'SM':'Sensory-Motor','AUD':'Auditory','PROD':'Production'}
+    # for group, x in sigA.items():
+    #     # w[group] = winners[group].fit_transform(x)
+    #     plot_clustering(x, w_sav[group], True, name[group], True)
+    # plt.savefig(group + "fig.svg",dpi=300,format='svg')
