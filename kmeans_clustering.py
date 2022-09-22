@@ -123,4 +123,4 @@ if __name__ == "__main__":
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
     x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
     gridsearch = estimate(x, NMF(max_iter=100000))
-    np.save('data/gridsearch.npy', gridsearch)
+    np.save('data/gridsearch.npy', gridsearch, allow_pickle=True)
