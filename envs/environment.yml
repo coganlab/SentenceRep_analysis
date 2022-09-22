@@ -1,4 +1,4 @@
-
+name: analysis
 channels:
   - conda-forge
   - defaults
@@ -7,10 +7,11 @@ dependencies:
   - pip
   - matplotlib
   - tqdm
-  - sklearn
+  - scikit-learn
   - tslearn
   - scipy
   - numpy
   - pandas
+  - h5py
   - pip:
     - -r requirements.txt
