@@ -86,15 +86,15 @@ def main2(sig: dict[str, ArrayLike], metric: str = 'euclidean'):
     return scores, models
 
 
-def estimate(x: ArrayLike, estimator: BaseEstimator):
+def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     cv = [(slice(None), slice(None))]
-    cv_ts = ms.TimeSeriesSplit(n_splits=2)
+    cv_ts = ms.TimeSeriesSplit(n_splits=splits)
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = np.linspace(0, 1, 5)
-    param_grid = {'n_components': [1, 2, 3, 4, 5], 'init': ['random', 'nndsvd', 'nndsvda'],
-                    'solver': ['mu'], 'beta_loss': np.linspace(-0.5, 3, 8), 'l1_ratio': test}
+    param_grid = {'n_components': [2, 3, 4, 5], 'init': ['random', 'nndsvda'],
+                    'solver': ['mu','cd'], 'beta_loss': [2], 'l1_ratio': [0]}
     scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
@@ -117,10 +117,29 @@ def estimate(x: ArrayLike, estimator: BaseEstimator):
 
 
 if __name__ == "__main__":
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    import matplotlib.pyplot as plt
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
+    #SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     cond = 'LSwords'
-    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigA['SM']))
-    gridsearch = estimate(x, NMF(max_iter=100000))
-    np.save('data/gridsearch.npy', gridsearch, allow_pickle=True)
+    aud = all_sigA[cond]["AuditoryWhole"]
+    go = all_sigA[cond]["GoWhole"]
+    resp = all_sigA[cond]["ResponseWhole"]
+    newSet = [aud, go, resp]
+    sigConcat = np.concatenate(newSet,axis=1)
+    nonActive = np.where(np.all(np.isclose(sigConcat, 0), axis=1))
+    newSet.append(sigConcat)
+    for i, allign in enumerate(newSet):
+        newSet[i] = np.delete(allign, nonActive, axis=0)
+    [aud, go, resp, sigConcat] = newSet[:]
+    sigSum = np.sum(np.array(newSet[0:2]),axis=0)
+    plt.imshow(sigSum)
+    plt.show()
+    sumAvg = np.mean(sigSum,axis=0)
+    plt.plot(sumAvg)
+    plt.show()
+    #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
+    gridsearch = estimate(x, NMF(max_iter=100000),5)
+
+    #gridsearch.scorer_ = gridsearch.scoring = {}
+    #np.save('data/gridsearch.npy', gridsearch, allow_pickle=True)
