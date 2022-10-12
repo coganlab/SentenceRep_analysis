@@ -95,12 +95,12 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     test = np.linspace(0, 1, 5)
     param_grid = {'n_components': [2, 3, 4], 'init': ['random', 'nnsvd', 'nndsvda'],
                     'solver': ['cd'], 'beta_loss': [2], 'l1_ratio': [0]}
-    scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
+    # scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
-                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True, refit='calinski')
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=create_scorer(calinski_harabasz_score),
+                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True)
     gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]
@@ -131,22 +131,22 @@ if __name__ == "__main__":
     for i, allign in enumerate(newSet):
         newSet[i] = np.delete(allign, nonActive, axis=0)
     [aud, go, resp, sigConcat] = newSet[:]
-    sigSum = np.sum(np.array(newSet[0:2]),axis=0)
-    # plt.imshow(sigSum)
-    # plt.show()
-    # sumAvg = np.mean(sigSum,axis=0)
-    # plt.plot(sumAvg)
+    sigSum = np.sum(np.array(newSet[0:3]),axis=0)
+    plt.imshow(sigSum)
+    sumAvg = np.mean(sigSum,axis=0)
+    plt.plot(sumAvg)
     # plt.show()
     #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
-    gridsearch = estimate(x, NMF(max_iter=100000), 5)
-    estimator = gridsearch.best_estimator_
-    y = estimator.fit_transform(x)
-    decomp_sigs = np.dot(x.T,y)
 
-    gridsearch.scorer_ = gridsearch.scoring = {}
-    np.save('data/gridsearch.npy', [gridsearch, x, y], allow_pickle=True)
-    plt.plot(decomp_sigs)
-    plt.savefig('data/decomp.png')
+    # x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
+    # gridsearch = estimate(x, NMF(max_iter=100000), 2)
+    # estimator = gridsearch.best_estimator_
+    # y = estimator.fit_transform(x)
+    # decomp_sigs = np.dot(x.T,y)
+    #
+    # gridsearch.scorer_ = gridsearch.scoring = {}
+    # np.save('data/gridsearch.npy', [gridsearch, x, y], allow_pickle=True)
+    # plt.plot(decomp_sigs)
+    # plt.savefig('data/decomp.png')
 
 
