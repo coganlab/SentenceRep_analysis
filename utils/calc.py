@@ -105,7 +105,7 @@ def get_elbow(data: ArrayLike):
 
 if __name__ == "__main__":
     from mat_load import load_all, get_sigs
-    from kmeans_clustering import plot_opt_k, KMeans
+    from decomposition import plot_opt_k, KMeans
 
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('../data/pydata.mat')
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans)
