@@ -120,25 +120,38 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
     #SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    #%%
     cond = 'LSwords'
     aud = all_sigA[cond]["AuditoryWhole"]
     go = all_sigA[cond]["GoWhole"]
     resp = all_sigA[cond]["ResponseWhole"]
-    newSet = [aud, go, resp]
+    audz = all_sigZ[cond]["AuditoryWhole"]
+    goz = all_sigZ[cond]["GoWhole"]
+    respz = all_sigZ[cond]["ResponseWhole"]
+    newSet = [aud, go, resp, audz, goz, respz]
     sigConcat = np.concatenate(newSet,axis=1)
     nonActive = np.where(np.all(np.isclose(sigConcat, 0), axis=1))
     newSet.append(sigConcat)
     for i, allign in enumerate(newSet):
         newSet[i] = np.delete(allign, nonActive, axis=0)
-    [aud, go, resp, sigConcat] = newSet[:]
+    [aud, go, resp, audz, goz, respz, sigConcat] = newSet[:]
+    audwt = np.multiply(aud, audz)
+    gowt = np.multiply(go, goz)
+    respwt = np.multiply(resp, respz)
     sigSum = np.sum(np.array(newSet[0:3]),axis=0)
-    plt.imshow(sigSum)
-    sumAvg = np.mean(sigSum,axis=0)
-    plt.plot(sumAvg)
+    middle = (sigSum >= 2)[50:250]
+    start = (sigSum >= 1)[0:50]
+    end = (sigSum >= 1)[250:400]
+    checkedSig = np.concatenate([start, middle, end], axis=0)
+
+    #%%
+    # plt.matshow(sigSum)
+    # sumAvg = np.mean(sigSum,axis=0)
+    # plt.plot(sumAvg)
     # plt.show()
     #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
 
-    # x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
     # gridsearch = estimate(x, NMF(max_iter=100000), 2)
     # estimator = gridsearch.best_estimator_
     # y = estimator.fit_transform(x)
