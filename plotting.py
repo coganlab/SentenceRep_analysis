@@ -8,6 +8,7 @@ from typing import Union, Iterable
 
 def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
                 mod=NMF(init='random', max_iter=10000, verbose=2)):
+    """Plots optimal K based on explained varience"""
     errs = do_decomp(data, clusters, repetitions, mod)
     plot_dist(errs)
     plt.xlabel("K Value")
@@ -17,19 +18,23 @@ def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
 
 def plot_dist(mat: iter, label: Union[str, int, float] = None,
               color: Union[str, list[int]] = None) -> plt.Axes:
+    """Plot the distribution for a single signal"""
     mean, std = dist(mat)
     tscale = range(len(mean))
     plt.errorbar(tscale, mean, yerr=std, label=label, color=color)
     return plt.gca()
 
 
-def clustering_subplots(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
-                        colors: list[Union[str, list[int]]] = None, weighted: bool = False):
+def plot_weight_dist(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
+                     colors: list[Union[str, list[int]]] = None):
+    """Basic distribution plot for weighted signals"""
     fig, ax = plt.subplots()
-    if weighted:
+    if label.shape[0] > 1:
         group = range(min(np.shape(label)))
+        weighted = True
     else:
         group = np.unique(label)
+        weighted = False
     if sig_titles is None:
         sig_titles = [sig_titles] * len(group)
     if colors is None:
@@ -49,8 +54,8 @@ def clustering_subplots(data: ArrayLike, label: ArrayLike, sig_titles: list[str]
 def plot_clustering(data: ArrayLike, label: ArrayLike,
                     sig_titles: Iterable[str] = None, weighted: bool = False,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
-
-    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+    """Stylized multiplot for clustering"""
+    fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
     # the x coords of this transformation are data, and the
     # y coord are axes
     trans = ax.get_xaxis_transform()
@@ -70,16 +75,16 @@ def plot_clustering(data: ArrayLike, label: ArrayLike,
     ax.set_ylabel('Significance of activity (range [0-1])')
     ax.set_xlim(0, 350)
     ylims = ax.get_ybound()
-    ax.set_ybound(min(0,ylims[0]),ylims[1])
+    ax.set_ybound(min(0, ylims[0]), ylims[1])
     # plt.title(title)
     plt.show()
     return fig, ax
 
 
 def plot_clustering_resp(data: ArrayLike, label: ArrayLike,
-                    sig_titles: Iterable[str] = None, weighted: bool = False,
-                    colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
-    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+                         sig_titles: Iterable[str] = None, weighted: bool = False,
+                         colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
+    fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
     trans = ax.get_xaxis_transform()
     ax.text(100, 0.9, 'onset', rotation=270, transform=trans)
     ax.axvline(100, linestyle='--')
@@ -141,8 +146,8 @@ def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
 
 if __name__ == "__main__":
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
-    #SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
-    #npSM = np.array(SM)
+    # SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    # npSM = np.array(SM)
     cond = 'LSwords'
     estimator = NMF(beta_loss=2, init='nndsvd', l1_ratio=0,
                     max_iter=100000, n_components=4)

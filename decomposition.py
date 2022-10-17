@@ -48,10 +48,10 @@ def sk_clustering(x: ArrayLike, k: int, metric: str = 'euclidean'):
 
 
 def create_scorer(scorer):
-    def cv_scorer(estimator: BaseEstimator, X: ArrayLike):
+    def cv_scorer(estimator: BaseEstimator, X: df):
         if '.decomposition.' in str(estimator.__class__):
             w = estimator.fit_transform(X)
-            cluster_labels = np.where(w.T == np.max(w.T, 0))[0]
+            cluster_labels = np.argmax(w,1)
         else:
             estimator.fit(X)
             cluster_labels = estimator.labels_
@@ -93,8 +93,9 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = np.linspace(0, 1, 5)
-    param_grid = {'n_components': [2, 3, 4], 'init': ['random', 'nnsvd', 'nndsvda'],
-                    'solver': ['cd'], 'beta_loss': [2], 'l1_ratio': [0]}
+    param_grid = {'n_components': [2, 3, 4], 'init': ['nndsvda'],
+                    'solver': ['mu','cd'], 'beta_loss': [2,1,0], 'l1_ratio': test,
+                    'alpha_W': test, 'alpha_H': test}
     # scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
@@ -152,10 +153,10 @@ if __name__ == "__main__":
     #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
 
     x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
-    # gridsearch = estimate(x, NMF(max_iter=100000), 2)
-    # estimator = gridsearch.best_estimator_
-    # y = estimator.fit_transform(x)
-    # decomp_sigs = np.dot(x.T,y)
+    gridsearch = estimate(x, NMF(max_iter=100000), 2)
+    estimator = gridsearch.best_estimator_
+    y = estimator.fit_transform(x)
+    decomp_sigs = np.dot(x.T,y)
     #
     # gridsearch.scorer_ = gridsearch.scoring = {}
     # np.save('data/gridsearch.npy', [gridsearch, x, y], allow_pickle=True)

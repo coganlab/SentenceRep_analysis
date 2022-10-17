@@ -2,7 +2,7 @@ clear; clc
 global BOX_DIR
 global RECONDIR
 global DUKEDIR
-% BOX_DIR='C:\Users\ae166\Box';
+BOX_DIR='C:\Users\ae166\Box';
 RECONDIR=[BOX_DIR '/ECoG_Recon'];
 DUKEDIR = [BOX_DIR '/CoganLab/D_Data/SentenceRep'];
 Task=[];
@@ -19,26 +19,26 @@ Task.Base.Time=[-1000 -500];
 
 % % 5 conds
 Task.Conds(1).Name='LSwords';
-% Task.Conds(1).Field(1).Epoch='Auditory';
-% Task.Conds(1).Field(1).Time=[-500 1500];
-% Task.Conds(1).Field(1).Name='AuditoryWhole';
-% Task.Conds(1).Field(1).Epoch='Auditory';
-% Task.Conds(1).Field(1).Time=[-500 3500];
-% Task.Conds(1).Field(2).Name='GoWhole';
-% Task.Conds(1).Field(2).Epoch='Go';
-% Task.Conds(1).Field(2).Time=[-2000 2000];
-% Task.Conds(1).Field(3).Name='ResponseWhole';
-% Task.Conds(1).Field(3).Epoch='ResponseStart';
-% Task.Conds(1).Field(3).Time=[-2500 1500];
-Task.Conds(1).Field(1).Name='AuditoryPart';
 Task.Conds(1).Field(1).Epoch='Auditory';
-Task.Conds(1).Field(1).Time=[-500 2000];
-Task.Conds(1).Field(2).Name='GoPart';
+Task.Conds(1).Field(1).Time=[-500 1500];
+Task.Conds(1).Field(1).Name='AuditoryWhole';
+Task.Conds(1).Field(1).Epoch='Auditory';
+Task.Conds(1).Field(1).Time=[-500 3500];
+Task.Conds(1).Field(2).Name='GoWhole';
 Task.Conds(1).Field(2).Epoch='Go';
-Task.Conds(1).Field(2).Time=[-500 500];
-Task.Conds(1).Field(3).Name='ResponsePart';
+Task.Conds(1).Field(2).Time=[-2000 2000];
+Task.Conds(1).Field(3).Name='ResponseWhole';
 Task.Conds(1).Field(3).Epoch='ResponseStart';
-Task.Conds(1).Field(3).Time=[-500 1500];
+Task.Conds(1).Field(3).Time=[-2500 1500];
+% Task.Conds(1).Field(1).Name='AuditoryPart';
+% Task.Conds(1).Field(1).Epoch='Auditory';
+% Task.Conds(1).Field(1).Time=[-500 2000];
+% Task.Conds(1).Field(2).Name='GoPart';
+% Task.Conds(1).Field(2).Epoch='Go';
+% Task.Conds(1).Field(2).Time=[-500 500];
+% Task.Conds(1).Field(3).Name='ResponsePart';
+% Task.Conds(1).Field(3).Epoch='ResponseStart';
+% Task.Conds(1).Field(3).Time=[-500 1500];
 % Task.Conds(1).Field(1).Name='Delay';
 % Task.Conds(1).Field(1).Epoch='Auditory';
 % Task.Conds(1).Field(1).Time=[0 1400];
@@ -104,6 +104,7 @@ Task.Conds(1).Field(3).Time=[-500 1500];
 if ~exist('Subject','var')
     Subject = popTaskSubjectData(Task);
     Subject(27) = [];
+    Subject([25:27, 29:31]) = [];
 end
 %SNList=26:33;
 %Subject = getSubjects(Subjects,{ 'D73' });

@@ -1,7 +1,6 @@
-import numpy as np
 from tslearn.clustering import silhouette_score
 from numpy import matlib, array, mean, sqrt, reshape, concatenate, \
-    vstack, sum, outer, argmax, std, shape, linalg, ndarray, min, multiply, \
+    vstack, add, outer, argmax, std, shape, linalg, ndarray, min, multiply, \
     linspace
 from joblib import Parallel, delayed
 from sklearn.decomposition import NMF
@@ -124,14 +123,14 @@ def merge(mat1: array, mat2: array, overlap: int, axis: int = 0) -> list[array]:
     """Take two arrays and merge them over the overlap gradually"""
     sl = [slice(None)] * mat1.ndim
     sl[axis] = slice(0, mat1.shape[axis]-overlap)
-    start = mat1[sl]
+    start = mat1[tuple(sl)]
     sl[axis] = slice(mat1.shape[axis]-overlap, mat1.shape[axis])
-    middle1 = multiply(linspace(1, 0, mat1.shape[axis]), mat1[sl])
+    middle1 = multiply(linspace(1, 0, overlap), mat1[tuple(sl)])
     sl[axis] = slice(0, overlap)
-    middle2 = multiply(linspace(0, 1, mat2.shape[axis]), mat2[sl])
-    middle = sum(middle1, middle2)
+    middle2 = multiply(linspace(0, 1, overlap), mat2[tuple(sl)])
+    middle = add(middle1, middle2)
     sl[axis] = slice(overlap, mat2.shape[axis])
-    last = mat2[sl]
+    last = mat2[tuple(sl)]
     return [start, middle, last]
 
 
