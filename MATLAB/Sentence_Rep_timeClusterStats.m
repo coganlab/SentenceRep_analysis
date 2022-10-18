@@ -3,8 +3,8 @@ global BOX_DIR
 global RECONDIR
 global DUKEDIR
 BOX_DIR='C:\Users\ae166\Box';
-RECONDIR=[BOX_DIR '/ECoG_Recon'];
-DUKEDIR = [BOX_DIR '/CoganLab/D_Data/SentenceRep'];
+RECONDIR=[BOX_DIR filesep 'ECoG_Recon'];
+DUKEDIR = fullfile(BOX_DIR, 'CoganLab', 'D_Data', 'SentenceRep');
 Task=[];
 Task.Name='SentenceRep';
 % 
@@ -140,7 +140,7 @@ for iSN=1:length(SNList)
     baseTimeRange(2)=baseTimeRange(2)+500;
     % To make the base only be LS condition
     % notLSwordsIdx = find(condIdx~=5);
-    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx));%,notLSwordsIdx')));
+    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx)));%,notLSwordsIdx')));
     ieegBase=trialIEEG(Trials,chanIdx,baseEpoch,baseTimeRange);
     sample_rate = Subject(SN).Experiment.recording.sample_rate;
     for iC=1:length(Task.Conds)
@@ -169,8 +169,8 @@ for iSN=1:length(SNList)
             
 %             save([DUKEDIR '\Stats\timePerm\' Subject(SN).Name '_' Task.Name '_' ...
 %                 Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat'],'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
-              save([DUKEDIR '\Stats\timePerm\' Subject(SN).Name '_' Task.Name '_' ...
-                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat'],'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
+              save(fullfile(DUKEDIR, 'Stats', 'timePerm', [Subject(SN).Name '_' Task.Name '_' ...
+                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat']),'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
               clear chanSig ieegCARHG ieegBaseCARHG ieegCARHGZ ieegBaseCARHGZ
         end
     end

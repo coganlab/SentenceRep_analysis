@@ -63,7 +63,7 @@ def create_scorer(scorer):
             try:
                 return scorer(X, cluster_labels, **kwargs)
             except ValueError:
-                return scorer(X, np.argmax(cluster_labels, 1), **kwargs)
+                return scorer(X, np.argmax(cluster_labels, 0), **kwargs)
     return cv_scorer
 
 
