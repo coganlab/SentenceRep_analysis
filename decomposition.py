@@ -92,9 +92,9 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    test = np.linspace(0, 1, 5)
-    param_grid = {'n_components': [2, 3, 4], 'init': ['nndsvda'],
-                    'solver': ['mu','cd'], 'beta_loss': [2,1,0], 'l1_ratio': test,
+    test = [0] #np.linspace(0, 1, 5)
+    param_grid = {'n_components': [2, 3, 4, 5], 'init': ['nndsvda'],
+                    'solver': ['mu','cd'], 'beta_loss': [2], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
     # scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
