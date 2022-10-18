@@ -19,8 +19,8 @@ Task.Base.Time=[-1000 -500];
 
 % % 5 conds
 Task.Conds(1).Name='LSwords';
-Task.Conds(1).Field(1).Epoch='Auditory';
-Task.Conds(1).Field(1).Time=[-500 1500];
+% Task.Conds(1).Field(1).Epoch='Auditory';
+% Task.Conds(1).Field(1).Time=[-500 1500];
 Task.Conds(1).Field(1).Name='AuditoryWhole';
 Task.Conds(1).Field(1).Epoch='Auditory';
 Task.Conds(1).Field(1).Time=[-500 3500];
@@ -67,7 +67,16 @@ Task.Conds(1).Field(3).Time=[-2500 1500];
 % Task.Conds(2).Field(3).Epoch='ResponseStart';
 % Task.Conds(2).Field(3).Time=[-1000 4000];
 
-% Task.Conds(3).Name='JLwords';
+Task.Conds(3).Name='JLwords';
+Task.Conds(3).Field(1).Name='AuditoryWhole';
+Task.Conds(3).Field(1).Epoch='Auditory';
+Task.Conds(3).Field(1).Time=[-500 3500];
+Task.Conds(3).Field(2).Name='GoWhole';
+Task.Conds(3).Field(2).Epoch='Go';
+Task.Conds(3).Field(2).Time=[-2000 2000];
+Task.Conds(3).Field(3).Name='ResponseWhole';
+Task.Conds(3).Field(3).Epoch='ResponseStart';
+Task.Conds(3).Field(3).Time=[-2500 1500];
 % Task.Conds(3).Field = [];
 % Task.Conds(3).Field(1).Name='AuditorywDelay';
 % Task.Conds(3).Field(1).Epoch='Auditory';
@@ -88,7 +97,16 @@ Task.Conds(1).Field(3).Time=[-2500 1500];
 % Task.Conds(4).Field(2).Epoch='Go';
 % Task.Conds(4).Field(2).Time=[-500 4000];
 
-% Task.Conds(5).Name='LMwords';
+Task.Conds(5).Name='LMwords';
+Task.Conds(5).Field(1).Name='AuditoryWhole';
+Task.Conds(5).Field(1).Epoch='Auditory';
+Task.Conds(5).Field(1).Time=[-500 3500];
+Task.Conds(5).Field(2).Name='GoWhole';
+Task.Conds(5).Field(2).Epoch='Go';
+Task.Conds(5).Field(2).Time=[-2000 2000];
+Task.Conds(5).Field(3).Name='ResponseWhole';
+Task.Conds(5).Field(3).Epoch='ResponseStart';
+Task.Conds(5).Field(3).Time=[-2500 1500];
 % Task.Conds(5).Field = [];
 % Task.Conds(5).Field(1).Name='AuditorywDelay';
 % Task.Conds(5).Field(1).Epoch='Auditory';
