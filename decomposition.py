@@ -5,7 +5,8 @@ from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.metrics import gamma_soft_dtw, gak
 from tslearn.preprocessing import TimeSeriesScalerMinMax
-from sklearn.metrics import fowlkes_mallows_score, calinski_harabasz_score, homogeneity_completeness_v_measure
+from sklearn.metrics import fowlkes_mallows_score, calinski_harabasz_score, \
+    homogeneity_score, completeness_score, v_measure_score
 import sklearn.model_selection as ms
 from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF
@@ -60,10 +61,7 @@ def create_scorer(scorer):
         if num_labels == 1 or num_labels == num_samples:
             return -1
         else:
-            try:
-                return scorer(X, cluster_labels, **kwargs)
-            except ValueError:
-                return scorer(X, np.argmax(cluster_labels, 0), **kwargs)
+            return scorer(X, cluster_labels, **kwargs)
     return cv_scorer
 
 
@@ -100,7 +98,8 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
                     'solver': ['mu'], 'beta_loss': [2,1,0], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
     scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score),
-               'hcv': create_scorer(homogeneity_completeness_v_measure), 'fowlkes': create_scorer(fowlkes_mallows_score)}
+               'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
+               'v': create_scorer(v_measure_score), 'fowlkes': create_scorer(fowlkes_mallows_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
