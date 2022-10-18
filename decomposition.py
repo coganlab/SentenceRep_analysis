@@ -5,7 +5,7 @@ from tslearn.utils import to_sklearn_dataset
 from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
 from tslearn.metrics import gamma_soft_dtw, gak
 from tslearn.preprocessing import TimeSeriesScalerMinMax
-from sklearn.metrics import make_scorer, calinski_harabasz_score
+from sklearn.metrics import fowlkes_mallows_score, calinski_harabasz_score, homogeneity_completeness_v_measure
 import sklearn.model_selection as ms
 from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF
@@ -48,7 +48,7 @@ def sk_clustering(x: ArrayLike, k: int, metric: str = 'euclidean'):
 
 
 def create_scorer(scorer):
-    def cv_scorer(estimator: BaseEstimator, X: df):
+    def cv_scorer(estimator: BaseEstimator, X: df, **kwargs):
         if '.decomposition.' in str(estimator.__class__):
             w = estimator.fit_transform(X)
             cluster_labels = np.argmax(w,1)
@@ -60,7 +60,10 @@ def create_scorer(scorer):
         if num_labels == 1 or num_labels == num_samples:
             return -1
         else:
-            return scorer(X, cluster_labels)
+            try:
+                return scorer(X, cluster_labels, **kwargs)
+            except ValueError:
+                return scorer(X, np.argmax(cluster_labels, 1), **kwargs)
     return cv_scorer
 
 
@@ -94,14 +97,15 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = [0] #np.linspace(0, 1, 5)
     param_grid = {'n_components': [2, 3, 4, 5], 'init': ['nndsvda'],
-                    'solver': ['mu','cd'], 'beta_loss': [2], 'l1_ratio': test,
+                    'solver': ['mu'], 'beta_loss': [2,1,0], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
-    # scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
+    scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score),
+               'hcv': create_scorer(homogeneity_completeness_v_measure), 'fowlkes': create_scorer(fowlkes_mallows_score)}
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=create_scorer(calinski_harabasz_score),
-                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True)
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
+                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True, refit='calinski')
     gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]

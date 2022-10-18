@@ -139,8 +139,8 @@ for iSN=1:length(SNList)
     baseTimeRange(1)=baseTimeRange(1)-500;
     baseTimeRange(2)=baseTimeRange(2)+500;
     % To make the base only be LS condition
-    notLSwordsIdx = find(condIdx~=5);
-    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx,notLSwordsIdx')));
+    % notLSwordsIdx = find(condIdx~=5);
+    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx));%,notLSwordsIdx')));
     ieegBase=trialIEEG(Trials,chanIdx,baseEpoch,baseTimeRange);
     sample_rate = Subject(SN).Experiment.recording.sample_rate;
     for iC=1:length(Task.Conds)

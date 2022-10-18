@@ -39,15 +39,15 @@ end = (sigSum >= 1)[:,250:400]
 checkedSig = np.concatenate([start, middle, end], axis=1)
 maybe = np.vstack([(sigSum>1)[0:980],(sigSum>1)[1200:]])
 # %% Data Plotting
-plt.matshow(stitched)
+# plt.matshow(stitched)
 # plt.plot(np.mean(stitched, axis=0))
 
 # %% Grid search decomposition
-x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSumZ))
-gridsearch = estimate(x, NMF(max_iter=100000), 4)
+x = to_sklearn_dataset(TimeSeriesScalerMinMax((0.0001, 3)).fit_transform(sigSumZ))
+gridsearch = estimate(x, NMF(max_iter=100000), 2)
 res = df(gridsearch.cv_results_)
 estimator = gridsearch.best_estimator_
-estimator.n_components = 3
+# estimator.n_components = 3
 y = estimator.fit_transform(x)
 # %% decomposition plotting
 plot_weight_dist(x, y)#,["PROD", "SM", "AUD"],["blue","red","lime"])
