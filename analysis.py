@@ -46,7 +46,7 @@ maybe = np.vstack([(sigSum>1)[0:980],(sigSum>1)[1200:]])
 x = to_sklearn_dataset(TimeSeriesScalerMinMax((0.0001, 3)).fit_transform(sigSumZ))
 gridsearch = estimate(x, NMF(max_iter=100000), 2)
 res = df(gridsearch.cv_results_)
-estimator = gridsearch.best_estimator_
+estimator = NMF(max_iter=100000, solver='mu', beta_loss=1, )#gridsearch.best_estimator_
 # estimator.n_components = 3
 y = estimator.fit_transform(x)
 # %% decomposition plotting

@@ -98,13 +98,15 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
                     'solver': ['mu'], 'beta_loss': [2,1,0], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
     scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score),
-               'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
-               'v': create_scorer(v_measure_score), 'fowlkes': create_scorer(fowlkes_mallows_score)}
+               #'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
+               #'v': create_scorer(v_measure_score),
+               #'fowlkes': create_scorer(fowlkes_mallows_score)
+               }
     # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
     comp = 'n_components'
     # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
-                         cv=cv_ts, n_jobs=-1, verbose=2, error_score=0, return_train_score=True, refit='calinski')
+    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring, error_score="raise",
+                         cv=cv_ts, n_jobs=-1, verbose=2, return_train_score=True, refit='sil')
     gs.fit(df(x))
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]
