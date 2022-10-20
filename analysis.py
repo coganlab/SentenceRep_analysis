@@ -30,16 +30,18 @@ for i, allign in enumerate(newSet):
 audwt = np.multiply(aud, audz)
 gowt = np.multiply(go, goz)
 respwt = np.multiply(resp, respz)
+# %% Generate the summed signals
+sigSum = np.sum(np.array(newSet[0:3]), axis=0)
+sigSumWt = np.sum(np.array([audwt,gowt,respwt]), axis=0)
+sigSumZ = np.sum(np.array(newSet[3:6]), axis=0)
+
+# %% Generate the stitched signals
 stitched = stitch_mats([aud[:, 0:150], go[:, 150:400],
                         resp[:, 150:400]], [0,0], axis=1)
 stitchedz = stitch_mats([audz[:, 0:150], goz[:, 150:400],
                             respz[:, 150:400]], [0,0], axis=1)
 stitchedwt = stitch_mats([audwt[:, 0:150], gowt[:, 150:400],
                             respwt[:, 150:400]], [0,0], axis=1)
-# %% Generate the summed signals
-sigSum = np.sum(np.array(newSet[0:3]), axis=0)
-sigSumWt = np.sum(np.array([audwt,gowt,respwt]), axis=0)
-sigSumZ = np.sum(np.array(newSet[3:6]), axis=0)
 # %% Data Plotting
 # plt.matshow(stitched)
 # plt.plot(np.mean(stitched, axis=0))
