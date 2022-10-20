@@ -52,10 +52,10 @@ def plot_weight_dist(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = 
 
 
 def plot_clustering(data: ArrayLike, label: ArrayLike,
-                    sig_titles: Iterable[str] = None, weighted: bool = False,
+                    sig_titles: Iterable[str] = None,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
     """Stylized multiplot for clustering"""
-    fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
+    fig, ax = plot_weight_dist(data, label, sig_titles, colors)
     # the x coords of this transformation are data, and the
     # y coord are axes
     trans = ax.get_xaxis_transform()
