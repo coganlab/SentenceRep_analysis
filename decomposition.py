@@ -95,9 +95,9 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = [0] #np.linspace(0, 1, 5)
     param_grid = {'n_components': [2, 3, 4], 'init': ['nndsvda'],
-                    'solver': ['mu'], 'beta_loss': [2,1,0], 'l1_ratio': test,
+                    'solver': ['mu'], 'beta_loss': [2,1,0.5], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
-    scoring = {#'sil': create_scorer(silhouette_score),
+    scoring = {'sil': create_scorer(silhouette_score),
                'calinski': create_scorer(calinski_harabasz_score),
                #'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
                #'v': create_scorer(v_measure_score),
