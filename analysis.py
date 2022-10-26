@@ -4,6 +4,7 @@ from utils.calc import ArrayLike, BaseEstimator, stitch_mats
 from decomposition import estimate, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
 
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
 import numpy as np
 from pandas import DataFrame as df
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -64,30 +65,33 @@ respwt = np.multiply(resp, respz)
 # sigSumZ = np.sum(np.array(newSet[3:6]), axis=0)
 # %% 3d nmf
 # Fit an ensemble of models, 4 random replicates / optimization runs per model rank
-ensemble = tt.Ensemble(fit_method="ncp_hals")
-ensemble.fit(data_3d, ranks=range(1, 6), replicates=4)
-varience =np.mean(np.array([np.square(np.array(ensemble.objectives(i))) for i in range(1,6)]),1)
-fig, axes = plt.subplots(1, 2)
-tt.plot_objective(ensemble, ax=axes[0])   # plot reconstruction error as a function of num components.
-tt.plot_similarity(ensemble, ax=axes[1])  # plot model similarity as a function of num components.
-fig.tight_layout()
+# ensemble = tt.Ensemble(fit_method="ncp_hals")
+# ensemble.fit(data_3d, ranks=range(1, 6), replicates=4)
+# varience = 1-np.mean(np.array([np.square(np.array(ensemble.objectives(i))) for i in range(1,6)]),1)
+# fig, axes = plt.subplots(1, 2)
+# tt.plot_objective(ensemble, ax=axes[0])   # plot reconstruction error as a function of num components.
+# tt.plot_similarity(ensemble, ax=axes[1])  # plot model similarity as a function of num components.
+# fig.tight_layout()
 
 # Plot the low-d factors for an example model, e.g. rank-2, first optimization run / replicate.
-num_components = 2
-replicate = 0
-tt.plot_factors(ensemble.factors(num_components)[replicate])
-plt.show()# plot the low-d factors
+# num_components = 2
+# replicate = 0
+# tt.plot_factors(ensemble.factors(num_components)[replicate])
+# plt.show()# plot the low-d factors
 
 # Time shifted
-rot_data = np.rot90(data_3d,axes=(0,2)) # time X trials X chans now
-fit = []
-sim = []
-for rank in range(1,6):
-    fit.append(fit_shifted_cp(data_3d,rank=rank, max_shift_axis1=0.00000000001))
-    if rank == 1:
-        sim.append(1)
-    else:
-        sim.append(tt.kruskal_align(fit[-1].factors,fit[-2].factors, permute_U=True, permute_V=True))
+# rot_data = np.rot90(data_3d,axes=(0,2)) # time X trials X chans now
+data_nonneg = data_3d - np.min(data_3d)
+# fit = []
+# sim = []
+# for rank in range(1,6):
+#     fit.append(fit_shifted_cp(data_3d,rank=rank, max_shift_axis1=0.0000001,))
+#     if rank == 1:
+#         sim.append(1)
+#     else:
+#         sim.append(tt.kruskal_align(fit[-1].factors,fit[-2].factors, permute_U=True, permute_V=True))
+results = Parallel(-1, verbose=0)(delayed(fit_shifted_cp)(
+    data_nonneg.copy(), i,n_restarts=5,max_shift_axis1=15, max_iter=10000) for i in range(1,9))
 # %% Generate the stitched signals
 # stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
 # stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)
