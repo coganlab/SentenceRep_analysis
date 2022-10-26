@@ -6,3 +6,8 @@ scipy
 tslearn
 scikit-learn
 matplotlib
+click
+astor
+wrapt
+Cython
+git+https://github.com/ahwillia/tensortools

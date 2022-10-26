@@ -93,11 +93,11 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    test = [0] #np.linspace(0, 1, 5)
-    param_grid = {'n_components': [2, 3, 4], 'init': ['nndsvda'],
+    test = np.linspace(0, 1, 5)
+    param_grid = {'n_components': [3], 'init': ['nndsvda'],
                     'solver': ['mu'], 'beta_loss': [2,1,0.5], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
-    scoring = {'sil': create_scorer(silhouette_score),
+    scoring = {#'sil': create_scorer(silhouette_score),
                'calinski': create_scorer(calinski_harabasz_score),
                #'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
                #'v': create_scorer(v_measure_score),
@@ -112,14 +112,14 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     keys = list(gs.best_estimator_.__dict__.keys())
     thing = keys[comp == keys]
     winner = gs.best_estimator_
-    # keys = list(gs.best_estimator_.__dict__.keys())
-    # thing = keys[comp == keys]
+    keys = list(gs.best_estimator_.__dict__.keys())
+    thing = keys[comp == keys]
 
-    # gs.estimator = winner
+    gs.estimator = winner
     # gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
     # gs.refit = 'calinski'
-    # gs.param_grid = {comp: [i + 2 for i in range(winner.__dict__[thing] + 2)]}
-    # gs.fit(df(x))
+    gs.param_grid = {comp: [2, 3, 4, 5, 6]}
+    gs.fit(df(x))
     return gs
 
 
