@@ -17,6 +17,7 @@ data = loadmat("data/pydata_3d.mat", simplify_cells=True)
 names_3d = data['channelNames']
 trialInfo_3d = data["trialInfo"]
 listen_speak_3d = data["listenSpeak"]
+Subject_3d = data["subj"]
 del data
 concat_3d = np.concatenate(list(listen_speak_3d.values()), 2)
 # good and non white matter channels
@@ -64,55 +65,62 @@ respwt = np.multiply(resp, respz)
 # %% 3d nmf
 # Fit an ensemble of models, 4 random replicates / optimization runs per model rank
 ensemble = tt.Ensemble(fit_method="ncp_hals")
-ensemble.fit(data_3d, ranks=range(1, 9), replicates=5)
-varience =[np.subtract(np.array(ensemble.objectives(i)), np.array(ensemble.objectives(i-1))) for i in range(2,9)]
+ensemble.fit(data_3d, ranks=range(1, 6), replicates=4)
+varience =np.mean(np.array([np.square(np.array(ensemble.objectives(i))) for i in range(1,6)]),1)
 fig, axes = plt.subplots(1, 2)
 tt.plot_objective(ensemble, ax=axes[0])   # plot reconstruction error as a function of num components.
 tt.plot_similarity(ensemble, ax=axes[1])  # plot model similarity as a function of num components.
 fig.tight_layout()
 
 # Plot the low-d factors for an example model, e.g. rank-2, first optimization run / replicate.
-num_components = 3
+num_components = 2
 replicate = 0
 tt.plot_factors(ensemble.factors(num_components)[replicate])
 plt.show()# plot the low-d factors
 
 # Time shifted
 rot_data = np.rot90(data_3d,axes=(0,2)) # time X trials X chans now
-fit = fit_shifted_cp(data_3d,rank=3,max_shift_axis0=0, max_shift_axis1=0)
+fit = []
+sim = []
+for rank in range(1,6):
+    fit.append(fit_shifted_cp(data_3d,rank=rank, max_shift_axis1=0.00000000001))
+    if rank == 1:
+        sim.append(1)
+    else:
+        sim.append(tt.kruskal_align(fit[-1].factors,fit[-2].factors, permute_U=True, permute_V=True))
 # %% Generate the stitched signals
-stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
-stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)
-stitchedwt = stitch_mats([audwt, gowt, respwt], [0, 0], axis=1)
-# %% Data Plotting
-# plt.matshow(sigSum)
-# plt.plot(np.mean(stitched, axis=0))
-
-# %% Grid search decomposition
-x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
-gridsearch = estimate(x, NMF(max_iter=100000), 2)
-res = df(gridsearch.cv_results_)
-estimator = gridsearch.best_estimator_
-# estimator.n_components = 3
-y = estimator.fit_transform(x)
-# %% decomposition plotting
-plot_weight_dist(x, y, ["PROD", "SM", "AUD"],["blue","red","lime"])
-plt.legend()
-# prod = sig_chans3[np.argmax(y,1)==0]
-# aud = sig_chans3[np.argmax(y,1)==1]
-# sm = sig_chans3[np.argmax(y,1)==2]
-# y_true = np.concatenate([[0]*len(PROD), [1]*len(AUD), [2]*len(SM)])
-y_true = [0 if chan in PROD else 2 if chan in AUD else 1 for chan in sig_chans3]
-ConfusionMatrixDisplay.from_predictions(y_true,np.argmax(y,1),normalize='true',display_labels=["PROD", "AUD", "SM"])
-# alt_plot(x,np.argmax(y,1))
-# decomp_sigs = np.dot(x.T, y)
-# plt.plot(decomp_sigs)
-# %% save data
-gridsearch.scorer_ = gridsearch.scoring = {}
-np.save('data/gridsearch_stack2.npy', [gridsearch, x, y], allow_pickle=True)
-# plt.plot(decomp_sigs)
-plt.savefig('data/decomp_stack2.png')
-# %% load data
-# new, x, y = np.load('data/gridsearch_stitchedwt.npy', allow_pickle=True)[:]
-# res = df(new.cv_results_)
-# estimator = new.best_estimator_
+# stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
+# stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)
+# stitchedwt = stitch_mats([audwt, gowt, respwt], [0, 0], axis=1)
+# # %% Data Plotting
+# # plt.matshow(sigSum)
+# # plt.plot(np.mean(stitched, axis=0))
+#
+# # %% Grid search decomposition
+# x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
+# gridsearch = estimate(x, NMF(max_iter=100000), 2)
+# res = df(gridsearch.cv_results_)
+# estimator = gridsearch.best_estimator_
+# # estimator.n_components = 3
+# y = estimator.fit_transform(x)
+# # %% decomposition plotting
+# plot_weight_dist(x, y, ["PROD", "SM", "AUD"],["blue","red","lime"])
+# plt.legend()
+# # prod = sig_chans3[np.argmax(y,1)==0]
+# # aud = sig_chans3[np.argmax(y,1)==1]
+# # sm = sig_chans3[np.argmax(y,1)==2]
+# # y_true = np.concatenate([[0]*len(PROD), [1]*len(AUD), [2]*len(SM)])
+# y_true = [0 if chan in PROD else 2 if chan in AUD else 1 for chan in sig_chans3]
+# ConfusionMatrixDisplay.from_predictions(y_true,np.argmax(y,1),normalize='true',display_labels=["PROD", "AUD", "SM"])
+# # alt_plot(x,np.argmax(y,1))
+# # decomp_sigs = np.dot(x.T, y)
+# # plt.plot(decomp_sigs)
+# # %% save data
+# gridsearch.scorer_ = gridsearch.scoring = {}
+# np.save('data/gridsearch_stack2.npy', [gridsearch, x, y], allow_pickle=True)
+# # plt.plot(decomp_sigs)
+# plt.savefig('data/decomp_stack2.png')
+# # %% load data
+# # new, x, y = np.load('data/gridsearch_stitchedwt.npy', allow_pickle=True)[:]
+# # res = df(new.cv_results_)
+# # estimator = new.best_estimator_

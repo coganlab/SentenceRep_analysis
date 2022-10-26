@@ -140,5 +140,7 @@ end
 
 %% 
 listenSpeak = data.ls;
-channelNames = [HGZ_data_start.channelName];
+dat = HGZ_data_start;
+dat([15,23,25,27])=[];
+channelNames = [dat.channelName];
 save('../data/pydata_3d.mat','listenSpeak','trialInfo','subj','channelNames')
