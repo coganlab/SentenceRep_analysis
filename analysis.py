@@ -10,8 +10,8 @@ from pandas import DataFrame as df
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from scipy.io import loadmat
 import tensorly.decomposition as td
-import tensortools as tt
-from tensortools.cpwarp import fit_shifted_cp
+import tensorly as tl
+from tensorly import metrics
 
 Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
 sigMatChansName = sigMatChansName["LSwords"]['AuditorytoResponse']
@@ -31,8 +31,8 @@ all_sig_chans = list(set(all_sig_chans.ravel()))
 cond = 'LSwords'
 resp = all_sigA[cond]["Response"]
 respz = all_sigZ[cond]["Response"]
-aud = all_sigA[cond]["AuditorywDelay"][:,:150]
-audz = all_sigZ[cond]["AuditorywDelay"][:,:150]
+aud = all_sigA[cond]["AuditorywDelay"]
+audz = all_sigZ[cond]["AuditorywDelay"]
 part = all_sigA[cond]["StartPart"]
 partz = all_sigZ[cond]["StartPart"]
 go = all_sigA[cond]["DelaywGo"]
@@ -57,6 +57,8 @@ for i, allign in enumerate(newSet): #active channels during condition
     newSet[i] = newSet[i][active]
 [aud, go, resp, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
 data_3d = concat_3d[np.isin(names_3d,sigMatChansName),:,:]
+concat_perm = sigConcat[np.isin(sigMatChansName,names_3d),:]
+mask = np.repeat(concat_perm[:,np.newaxis,:],data_3d.shape[1],axis=1)
 audwt = np.multiply(aud, audz)
 gowt = np.multiply(go, goz)
 respwt = np.multiply(resp, respz)
@@ -83,12 +85,17 @@ respwt = np.multiply(resp, respz)
 # Tensorly decomposition
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
-decomp = td.non_negative_parafac_hals(data_3d, rank=3)
+data_t = tl.tensor(data_3d)
+recon_err = []
+decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
+    data_3d, i, n_iter_max=1000, init='random',mask=mask, verbose=True) for i in range(1,11) for j in range(10))
+for i in range(len(decomp)):
+    tucker_reconstruction_as = tl.cp_to_tensor(decomp[i])
+    recon_err.append(1-np.square(metrics.regression.RMSE(data_t, tucker_reconstruction_as)))
+plt.plot(recon_err)
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
-# results = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac_hals)(
-#     data_3d, i, n_iter_max=10000) for i in range(1,6))
-tt.plot_factors(decomp)
+# tt.plot_factors(decomp)
 # %% Generate the stitched signals
 # stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
 # stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)

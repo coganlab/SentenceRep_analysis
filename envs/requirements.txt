@@ -1,7 +1,2 @@
 pytest
 pytest-pycodestyle
-click
-astor
-wrapt
-Cython
-git+https://github.com/ahwillia/tensortools

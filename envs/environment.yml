@@ -13,6 +13,8 @@ dependencies:
   - scipy
   - numpy
   - pandas
+  - Cython
+  - nose
   - tensorly
   - pip:
     - -r requirements.txt

@@ -1,8 +1,6 @@
 from scipy.io import loadmat
 from numpy import where, concatenate
 from utils.calc import ArrayLike
-from h5py import File, Dataset
-import numpy as np
 
 
 def load_all(filename: str) -> tuple[dict, dict, dict, dict, dict, dict, list[dict]]:
