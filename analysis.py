@@ -9,6 +9,7 @@ import numpy as np
 from pandas import DataFrame as df
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from scipy.io import loadmat
+import tensorly.decomposition as td
 import tensortools as tt
 from tensortools.cpwarp import fit_shifted_cp
 
@@ -79,19 +80,15 @@ respwt = np.multiply(resp, respz)
 # tt.plot_factors(ensemble.factors(num_components)[replicate])
 # plt.show()# plot the low-d factors
 
-# Time shifted
-# rot_data = np.rot90(data_3d,axes=(0,2)) # time X trials X chans now
-data_nonneg = data_3d - np.min(data_3d)
-# fit = []
-# sim = []
-# for rank in range(1,6):
-#     fit.append(fit_shifted_cp(data_3d,rank=rank, max_shift_axis1=0.0000001,))
-#     if rank == 1:
-#         sim.append(1)
-#     else:
-#         sim.append(tt.kruskal_align(fit[-1].factors,fit[-2].factors, permute_U=True, permute_V=True))
-results = Parallel(-1, verbose=0)(delayed(fit_shifted_cp)(
-    data_nonneg.copy(), i,n_restarts=5,max_shift_axis1=15, max_iter=10000) for i in range(1,9))
+# Tensorly decomposition
+# core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
+# factors = td.parafac(data_3d, rank=3)
+decomp = td.non_negative_parafac_hals(data_3d, rank=3)
+# decomp.ndim = 3
+# data_nonneg = data_3d - np.min(data_3d)
+# results = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac_hals)(
+#     data_3d, i, n_iter_max=10000) for i in range(1,6))
+tt.plot_factors(decomp)
 # %% Generate the stitched signals
 # stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
 # stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)

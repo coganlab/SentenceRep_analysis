@@ -1,11 +1,5 @@
 pytest
 pytest-pycodestyle
-pandas
-numpy
-scipy
-tslearn
-scikit-learn
-matplotlib
 click
 astor
 wrapt
