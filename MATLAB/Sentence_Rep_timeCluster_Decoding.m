@@ -129,7 +129,7 @@ for iC=1:size(chanBinAll{1},2)
         end
     end
 end
-
+%%
 
 
 AUD1=intersect(sigChans{1}{1},sigChans{5}{1}); % LS LM
@@ -140,7 +140,7 @@ AUD=setdiff(AUD2,SM);
 PROD=setdiff(PROD1,SM);
 
 
-%%
+
 
 
 % these are significant channels that start after aud onset
@@ -153,7 +153,7 @@ iiAUD=find(sigMatStartTime{1}{1}(idxAUD)>=50);
 
 SM2=intersect(SM,sigChans{1}{1}(idxSM(iiSM)));
 AUD2=intersect(AUD,sigChans{1}{1}(idxAUD(iiAUD)));
-
+%%
 numFolds=10; %; 5%?
 
 for iC=1:1 %size(chanBinAll{1},2)
@@ -161,8 +161,8 @@ for iC=1:1 %size(chanBinAll{1},2)
         elecCounter=0;
         for iSN=1:size(chanBinAll,2)
             [condIdx noiseIdx noResponseIdx]=SentenceRepConds(Subject(iSN).Trials);
-            load([DUKEDIR '\Stats\timePerm\' Subject(iSN).Name '_' Subject(iSN).Task '_' ...
-                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '.mat']);
+            load(fullfile(DUKEDIR, 'Stats', 'timePerm', [Subject(iSN).Name '_' Task.Name '_' ...
+                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat']));
             
             if iC<=2
                 Trials=Subject(iSN).Trials(setdiff(find(condIdx==iC),cat(2,noiseIdx,noResponseIdx)));
@@ -210,7 +210,8 @@ for iC=1:1 %size(chanBinAll{1},2)
             if ~isempty(SMsGlobal)
                 for iChan=1:length(SMsGlobal)
                     tmp=sq(ieegCARHGZs(SMsLocal(iChan),:,51:size(ieegCARHGZs,3)-50));
-                    sig2analyzeAllFeature=tmp(:,find(sigMatA{iC}{iF}(SMsGlobal(iChan),:)==1));
+                    sig2analyzeAllFeature=tmp(:,find(sigMatA.(Task.Conds(iC).Name).( ...
+                        Task.Conds(iC).Field(iF).Name)(SMsGlobal(iChan),:)==1));
                     numDim=size(sig2analyzeAllFeature,2)-20;
                     
                     accAll = 0;
@@ -237,7 +238,8 @@ for iC=1:1 %size(chanBinAll{1},2)
                         pTest = labels(test);
                         gTrain=ieegTrain;
                         gTest=ieegTest;
-                        [lossVect,aucVect] = scoreSelect(gTrain,pTrain,numDim,numFolds); % Hyper parameter tuning
+                        varVect = zeros([1,numDim]);
+                        [lossVect,aucVect] = scoreSelect(gTrain,pTrain,varVect,1,numFolds); % Hyper parameter tuning
                         [~,optimDim] = min(mean(lossVect,1)); % Selecting the optimal principal components
                         %        mean(squeeze(aucVect(:,nDim,:)),1)
                         [lossMod,Cmat,yhat,aucVect] = pcaDecode(gTrain,gTest,pTrain,...
@@ -258,7 +260,8 @@ for iC=1:1 %size(chanBinAll{1},2)
             if ~isempty(AUDsGlobal)
                 for iChan=1:length(AUDsGlobal)
                     tmp=sq(ieegCARHGZs(AUDsLocal(iChan),:,51:size(ieegCARHGZs,3)-50));
-                    sig2analyzeAllFeature=tmp(:,find(sigMatA{iC}{iF}(AUDsGlobal(iChan),:)==1));
+                    sig2analyzeAllFeature=tmp(:,find(sigMatA.(Task.Conds(iC).Name).( ...
+                        Task.Conds(iC).Field(iF).Name)(AUDsGlobal(iChan),:)==1));
                     numDim=size(sig2analyzeAllFeature,2)-5;
                     
                     accAll = 0;
@@ -304,7 +307,8 @@ for iC=1:1 %size(chanBinAll{1},2)
             if ~isempty(PRODsGlobal)
                 for iChan=1:length(PRODsGlobal)
                     tmp=sq(ieegCARHGZs(PRODsLocal(iChan),:,51:size(ieegCARHGZs,3)-50));
-                    sig2analyzeAllFeature=tmp(:,find(sigMatA{iC}{iF}(PRODsGlobal(iChan),:)==1));
+                    sig2analyzeAllFeature=tmp(:,find(sigMatA.(Task.Conds(iC).Name).( ...
+                        Task.Conds(iC).Field(iF).Name)(PRODsGlobal(iChan),:)==1));
                     numDim=size(sig2analyzeAllFeature,2)-5;
                     
                     accAll = 0;
@@ -331,7 +335,8 @@ for iC=1:1 %size(chanBinAll{1},2)
                         pTest = labels(test);
                         gTrain=ieegTrain;
                         gTest=ieegTest;
-                        [lossVect,aucVect] = scoreSelect(gTrain,pTrain,numDim,numFolds); % Hyper parameter tuning
+                        varVect = zeros([1,numDim]);
+                        [lossVect,aucVect] = scoreSelect(gTrain,pTrain,varVect,1,numFolds); % Hyper parameter tuning
                         [~,optimDim] = min(mean(lossVect,1)); % Selecting the optimal principal components
                         %        mean(squeeze(aucVect(:,nDim,:)),1)
                         [lossMod,Cmat,yhat,aucVect] = pcaDecode(gTrain,gTest,pTrain,...

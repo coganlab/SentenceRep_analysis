@@ -25,6 +25,19 @@ def plot_dist(mat: iter, label: Union[str, int, float] = None,
     return plt.gca()
 
 
+def plot_factors(factors: list[ArrayLike],
+                 col_titles: list[str] = ("Channel", "Trial", "Time")):
+    fig, axs = plt.subplots(factors[0].shape[1], len(factors))
+    for i, axr in enumerate(axs):
+        for j, axc in enumerate(axr):
+            axc.plot(factors[j][:,i])
+            # if j == 0:
+            #     plt.ylabel("factor " + str(i))
+            # if i == 0:
+            #     plt.title(col_titles[j])
+    return fig, axs
+
+
 def plot_weight_dist(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
                      colors: list[Union[str, list[int]]] = None):
     """Basic distribution plot for weighted signals"""

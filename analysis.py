@@ -1,5 +1,5 @@
 from utils.mat_load import get_sigs, load_all, group_elecs
-from plotting import plot_clustering, plot_weight_dist, alt_plot
+from plotting import plot_dist, plot_weight_dist, alt_plot
 from utils.calc import ArrayLike, BaseEstimator, stitch_mats
 from decomposition import estimate, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
 
@@ -85,16 +85,24 @@ respwt = np.multiply(resp, respz)
 # Tensorly decomposition
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
+k = 9
+reps = 3
 data_t = tl.tensor(data_3d)
-decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
-    data_t, i, n_iter_max=1000, init='random', mask=mask, verbose=True
-    ) for i in range(1,9) for j in range(3))
-recon_err = np.ndarray(np.array(decomp).shape)
-for j in range(len(decomp)):
-    for i in range(len(decomp[0])):
-        tucker_reconstruction_as = tl.cp_to_tensor(decomp[i][j])
-        recon_err[i,j] = 1-metrics.regression.MSE(data_t, tucker_reconstruction_as)
-plt.boxplot(np.array(recon_err).T)
+decomp_hals = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac_hals)(
+    data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
+    ) for i in range(1, k + 1) for j in range(reps))
+decomp_data = np.ndarray((k, reps), dtype='O')
+recon_err = np.ndarray((k, reps))
+recon = np.ndarray((k, reps) + data_t.shape)
+for j in range(reps):
+    for i in range(k):
+        reconstruction_as = tl.cp_to_tensor(decomp[i+j*k])
+        recon_err[i, j] = 1-metrics.regression.MSE(
+            np.multiply(data_t, mask), reconstruction_as)
+        decomp_data[i, j] = decomp[i+j*k]
+        recon[i,j,:,:,:] = reconstruction_as[:,:,:]
+plt.boxplot(recon_err.T)
+plot_dist(recon[3,0])
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
 # tt.plot_factors(decomp)
