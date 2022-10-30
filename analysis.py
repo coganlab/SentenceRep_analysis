@@ -86,13 +86,15 @@ respwt = np.multiply(resp, respz)
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
 data_t = tl.tensor(data_3d)
-recon_err = []
 decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
-    data_3d, i, n_iter_max=1000, init='random',mask=mask, verbose=True) for i in range(1,11) for j in range(10))
-for i in range(len(decomp)):
-    tucker_reconstruction_as = tl.cp_to_tensor(decomp[i])
-    recon_err.append(1-np.square(metrics.regression.RMSE(data_t, tucker_reconstruction_as)))
-plt.plot(recon_err)
+    data_t, i, n_iter_max=1000, init='random', mask=mask, verbose=True
+    ) for i in range(1,9) for j in range(3))
+recon_err = np.ndarray(np.array(decomp).shape)
+for j in range(len(decomp)):
+    for i in range(len(decomp[0])):
+        tucker_reconstruction_as = tl.cp_to_tensor(decomp[i][j])
+        recon_err[i,j] = 1-metrics.regression.MSE(data_t, tucker_reconstruction_as)
+plt.boxplot(np.array(recon_err).T)
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
 # tt.plot_factors(decomp)
