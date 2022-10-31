@@ -158,31 +158,30 @@ def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
 
 
 if __name__ == "__main__":
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
-    # SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
-    # npSM = np.array(SM)
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    npSM = np.array(SM)
     cond = 'LSwords'
-    estimator = NMF(beta_loss=2, init='nndsvd', l1_ratio=0,
-                    max_iter=100000, n_components=4)
-    # SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
-    # resp = all_sigA[cond]['Response'][SMresp, :]
-    # sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    # winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
-    # SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
-    # ones = np.ones([244, 1])
-    # x = np.array(sigZ['AUD'])
-    # labels = np.ones([np.shape(sigZ['AUD'])[0]])
-    # x = np.vstack([x, np.array(sigZ['SM'])])
-    # labels = np.concatenate([labels, np.ones([np.shape(sigZ['SM'])[0]]) * 2])
-    # x = np.vstack([x, np.array(sigZ['PROD'])])
-    # labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
+    SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
+    resp = all_sigA[cond]['Response'][SMresp, :]
+    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
+    winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
+    SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
+    ones = np.ones([244, 1])
+    x = np.array(sigZ['AUD'])
+    labels = np.ones([np.shape(sigZ['AUD'])[0]])
+    x = np.vstack([x, np.array(sigZ['SM'])])
+    labels = np.concatenate([labels, np.ones([np.shape(sigZ['SM'])[0]]) * 2])
+    x = np.vstack([x, np.array(sigZ['PROD'])])
+    labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
     colors = [[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]]
-    plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
+    # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
+    plot_clustering(sigA['SM'], w_sav['SM'])
     # ['Working Memory','Visual','Early Prod','Late Prod'], True,
     # [[0,1,0],[1,0,0],[0,0,1]])
     ax = plt.gca()
     ylims = list(ax.get_ybound())
     ylims[0] = min(0, ylims[0])
     # plt.title('Listen-speak')
-    plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
-                         [[1, 0, 0]], ylims)
+    # plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
+    #                      [[1, 0, 0]], ylims)
