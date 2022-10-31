@@ -16,10 +16,10 @@ def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
     plt.show()
 
 
-def plot_dist(mat: iter, label: Union[str, int, float] = None,
+def plot_dist(mat: iter, mask: ArrayLike = None, label: Union[str, int, float] = None,
               color: Union[str, list[int]] = None) -> plt.Axes:
     """Plot the distribution for a single signal"""
-    mean, std = dist(mat)
+    mean, std = dist(mat, mask)
     tscale = range(len(mean))
     plt.errorbar(tscale, mean, yerr=std, label=label, color=color)
     return plt.gca()
@@ -38,8 +38,8 @@ def plot_factors(factors: list[ArrayLike],
     return fig, axs
 
 
-def plot_weight_dist(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
-                     colors: list[Union[str, list[int]]] = None):
+def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
+                     sig_titles: list[str] = None, colors: list[Union[str, list[int]]] = None):
     """Basic distribution plot for weighted signals"""
     fig, ax = plt.subplots()
     if label.shape[0] > 1:
@@ -56,19 +56,20 @@ def plot_weight_dist(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = 
         if not weighted:
             w_sigs = data[label == i]
         else:
-            try:
-                w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
-            except (ValueError, IndexError) as e:
-                w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
-        ax = plot_dist(w_sigs, stitle, color)
+            w_sigs = np.multiply(data.T, label[:, i]).T
+            # try:
+            #     w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
+            # except (ValueError, IndexError) as e:
+            #     w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
+        ax = plot_dist(w_sigs, mask, stitle, color)
     return fig, ax
 
 
-def plot_clustering(data: ArrayLike, label: ArrayLike,
+def plot_clustering(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
                     sig_titles: Iterable[str] = None,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
     """Stylized multiplot for clustering"""
-    fig, ax = plot_weight_dist(data, label, sig_titles, colors)
+    fig, ax = plot_weight_dist(data, label, mask, sig_titles, colors)
     # the x coords of this transformation are data, and the
     # y coord are axes
     trans = ax.get_xaxis_transform()
@@ -175,9 +176,10 @@ if __name__ == "__main__":
     x = np.vstack([x, np.array(sigZ['PROD'])])
     labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
     colors = [[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]]
+    names = ['Working Memory','Visual','Early Prod','Late Prod']
     # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
-    plot_clustering(sigA['SM'], w_sav['SM'])
-    # ['Working Memory','Visual','Early Prod','Late Prod'], True,
+    plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
+    plot_weight_dist(all_sigZ[cond]['Response'][SMresp,:], SMrespw, resp, sig_titles=names, colors=colors)
     # [[0,1,0],[1,0,0],[0,0,1]])
     ax = plt.gca()
     ylims = list(ax.get_ybound())

@@ -1,7 +1,7 @@
 from tslearn.clustering import silhouette_score
 from numpy import matlib, array, mean, sqrt, reshape, concatenate, \
     vstack, add, outer, argmax, std, shape, linalg, ndarray, min, multiply, \
-    linspace
+    linspace, ones, sum, divide
 from joblib import Parallel, delayed
 from sklearn.decomposition import NMF
 from typing import Union
@@ -66,15 +66,19 @@ def calc_score(X: ArrayLike, kmax: int, model: BaseEstimator, metric='euclidean'
     return sil, var, wss
 
 
-def dist(mat: ArrayLike):
-    avg = mean(mat, 0)
-    avg = reshape(avg, [len(avg)])
-    stdev = std(mat, 0) / sqrt(shape(mat)[1])
-    stdev = reshape(stdev, [len(stdev)])
+def dist(mat: ArrayLike, mask: ArrayLike = None, axis: int = 0) -> tuple[ArrayLike, ArrayLike]:
+    if mask is None:
+        mask = ones(shape(mat))
+    else:
+        assert shape(mat) == shape(mask)
+    avg = divide(sum(mat, axis), sum(mask, axis))
+    avg = reshape(avg, [shape(avg)[axis]])
+    stdev = std(mat, axis) / sqrt(shape(mat)[axis+1])
+    stdev = reshape(stdev, [shape(stdev)[axis]])
     return avg, stdev
 
 
-def mat_err(data: ArrayLike, mod: BaseEstimator):
+def mat_err(data: ArrayLike, mod: BaseEstimator) -> float:
     W = mod.fit_transform(data)
     H = mod.components_
     error = linalg.norm(data - W @ H) ** 2 / linalg.norm(data) ** 2
