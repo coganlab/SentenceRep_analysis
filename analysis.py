@@ -1,5 +1,5 @@
 from utils.mat_load import get_sigs, load_all, group_elecs
-from plotting import plot_dist, plot_weight_dist, alt_plot
+from plotting import plot_factors, plot_weight_dist, alt_plot
 from utils.calc import ArrayLike, BaseEstimator, stitch_mats
 from decomposition import estimate, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
 
@@ -13,7 +13,7 @@ import tensorly.decomposition as td
 import tensorly as tl
 from tensorly import metrics
 
-Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata_part.mat')
 sigMatChansName = sigMatChansName["LSwords"]['AuditorytoResponse']
 data = loadmat("data/pydata_3d.mat", simplify_cells=True)
 names_3d = data['channelNames']
@@ -86,9 +86,9 @@ respwt = np.multiply(resp, respz)
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
 k = 9
-reps = 3
+reps = 10
 data_t = tl.tensor(data_3d)
-decomp_hals = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac_hals)(
+decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
     data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
     ) for i in range(1, k + 1) for j in range(reps))
 decomp_data = np.ndarray((k, reps), dtype='O')
@@ -102,7 +102,7 @@ for j in range(reps):
         decomp_data[i, j] = decomp[i+j*k]
         recon[i,j,:,:,:] = reconstruction_as[:,:,:]
 plt.boxplot(recon_err.T)
-plot_dist(recon[3,0])
+plot_factors(recon[3,0].factors)
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
 # tt.plot_factors(decomp)
