@@ -30,7 +30,7 @@ Task.Conds(1).Field(3).Epoch='Go';
 Task.Conds(1).Field(3).Time=[-500 1500];
 Task.Conds(1).Field(4).Name='Response';
 Task.Conds(1).Field(4).Epoch='ResponseStart';
-Task.Conds(1).Field(5).Time=[-1000 1000];
+Task.Conds(1).Field(4).Time=[-1000 1000];
 
 Task.Conds(2).Name='LSsentences';
 Task.Conds(2).Field(1).Name='AuditorywDelay';
@@ -71,7 +71,7 @@ Task.Conds(5).Field(2).Epoch='Auditory';
 Task.Conds(5).Field(2).Time=[-500 1500];
 Task.Conds(5).Field(3).Name='DelaywGo';
 Task.Conds(5).Field(3).Epoch='Go';
-Task.Conds(5).Field(4).Time=[-500 1500];
+Task.Conds(5).Field(3).Time=[-500 1500];
 
 
 if ~exist('Subject','var')
