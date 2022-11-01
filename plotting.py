@@ -86,7 +86,7 @@ def plot_clustering(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
                   ['-0.5', '0', '0.5', '1', '-0.25', '0', '0.25', '0.75', '1.25'])
     ax.set_xlabel('Time from stimuli or go cue (seconds)')
     # ax.set_ylabel('Z score')
-    ax.set_ylabel('Significance of activity (range [0-1])')
+    ax.set_ylabel('Z-score')
     ax.set_xlim(0, 350)
     ylims = ax.get_ybound()
     ax.set_ybound(min(0, ylims[0]), ylims[1])
@@ -179,6 +179,7 @@ if __name__ == "__main__":
     names = ['Working Memory','Visual','Early Prod','Late Prod']
     # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
     plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
+    plt.legend(loc="best")
     plot_weight_dist(all_sigZ[cond]['Response'][SMresp,:], SMrespw, resp, sig_titles=names, colors=colors)
     # [[0,1,0],[1,0,0],[0,0,1]])
     ax = plt.gca()

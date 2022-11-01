@@ -71,7 +71,7 @@ def dist(mat: ArrayLike, mask: ArrayLike = None, axis: int = 0) -> tuple[ArrayLi
         mask = ones(shape(mat))
     else:
         assert shape(mat) == shape(mask)
-    avg = divide(sum(mat, axis), sum(mask, axis))
+    avg = divide(sum(multiply(mat, mask), axis), sum(mask, axis))
     avg = reshape(avg, [shape(avg)[axis]])
     stdev = std(mat, axis) / sqrt(shape(mat)[axis+1])
     stdev = reshape(stdev, [shape(stdev)[axis]])
