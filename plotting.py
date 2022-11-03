@@ -176,7 +176,7 @@ if __name__ == "__main__":
     x = np.vstack([x, np.array(sigZ['PROD'])])
     labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
     colors = [[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]]
-    names = ['Working Memory','Visual','Early Prod','Late Prod']
+    names = ['Working Memory','Visual','Motor','Auditory']
     # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
     plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
     plot_weight_dist(all_sigZ[cond]['Response'][SMresp,:], SMrespw, resp, sig_titles=names, colors=colors)

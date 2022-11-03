@@ -10,10 +10,9 @@ from sklearn.metrics import fowlkes_mallows_score, calinski_harabasz_score, \
 import sklearn.model_selection as ms
 from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF
-from plotting import plot_opt_k, plot_clustering, alt_plot
+from plotting import plot_opt_k, plot_clustering, alt_plot, plot_weight_dist
 from pandas import DataFrame as df
-from utils.calc import ArrayLike, BaseEstimator
-
+from utils.calc import ArrayLike, BaseEstimator, stitch_mats
 
 class ts_spectral_clustering(AgglomerativeClustering):
     def __init__(self, **kwargs):
@@ -93,8 +92,8 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    test = np.linspace(0, 1, 5)
-    param_grid = {'n_components': [3], 'init': ['nndsvda'],
+    test = np.linspace(0, 1, 3)
+    param_grid = {'n_components': [4], 'init': ['nndsvda'],
                     'solver': ['mu'], 'beta_loss': [2,1,0.5], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
     scoring = {#'sil': create_scorer(silhouette_score),
@@ -125,31 +124,20 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
-    #SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     #%%
     cond = 'LSwords'
-    aud = all_sigA[cond]["AuditoryWhole"]
-    go = all_sigA[cond]["GoWhole"]
-    resp = all_sigA[cond]["ResponseWhole"]
-    audz = all_sigZ[cond]["AuditoryWhole"]
-    goz = all_sigZ[cond]["GoWhole"]
-    respz = all_sigZ[cond]["ResponseWhole"]
-    newSet = [aud, go, resp, audz, goz, respz]
-    sigConcat = np.concatenate(newSet,axis=1)
-    nonActive = np.where(np.all(np.isclose(sigConcat, 0), axis=1))
-    newSet.append(sigConcat)
-    for i, allign in enumerate(newSet):
-        newSet[i] = np.delete(allign, nonActive, axis=0)
-    [aud, go, resp, audz, goz, respz, sigConcat] = newSet[:]
-    audwt = np.multiply(aud, audz)
-    gowt = np.multiply(go, goz)
-    respwt = np.multiply(resp, respz)
-    sigSum = np.sum(np.array(newSet[0:3]),axis=0)
-    middle = (sigSum >= 2)[50:250]
-    start = (sigSum >= 1)[0:50]
-    end = (sigSum >= 1)[250:400]
-    checkedSig = np.concatenate([start, middle, end], axis=0)
+    resp = all_sigA[cond]["Response"]
+    respz = all_sigZ[cond]["Response"]
+    aud = all_sigA[cond]["AuditorywDelay"]
+    audz = all_sigZ[cond]["AuditorywDelay"]
+    part = all_sigA[cond]["StartPart"]
+    partz = all_sigZ[cond]["StartPart"]
+    go = all_sigA[cond]["DelaywGo"]
+    goz = all_sigZ[cond]["DelaywGo"]
+    stitched = stitch_mats([aud[SM, 0:175], go[SM, :]], [0], axis=1)
+    stitchedz = stitch_mats([audz[SM, 0:175], goz[SM, :]], [0], axis=1)
 
     #%%
     # plt.matshow(sigSum)
@@ -158,11 +146,13 @@ if __name__ == "__main__":
     # plt.show()
     #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
 
-    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 3)).fit_transform(sigSum))
-    gridsearch = estimate(x, NMF(max_iter=100000), 2)
+    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitchedz))
+    gridsearch = estimate(x, NMF(max_iter=100000, tol=1e-6), 2)
     estimator = gridsearch.best_estimator_
     y = estimator.fit_transform(x)
-    decomp_sigs = np.dot(x.T,y)
+    res = df(gridsearch.cv_results_)
+    plot_weight_dist(x,y,stitched)
+
     #
     # gridsearch.scorer_ = gridsearch.scoring = {}
     # np.save('data/gridsearch.npy', [gridsearch, x, y], allow_pickle=True)
