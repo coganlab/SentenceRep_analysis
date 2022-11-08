@@ -13,6 +13,8 @@ from sklearn.decomposition import NMF
 from plotting import plot_opt_k, plot_clustering, alt_plot, plot_weight_dist
 from pandas import DataFrame as df
 from utils.calc import ArrayLike, BaseEstimator, stitch_mats
+import tensorly.decomposition as td
+import tensorly as tl
 
 class ts_spectral_clustering(AgglomerativeClustering):
     def __init__(self, **kwargs):
@@ -93,7 +95,7 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
     # estimator = AgglomerativeClustering()
     # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
     test = np.linspace(0, 1, 3)
-    param_grid = {'n_components': [4], 'init': ['nndsvda'],
+    param_grid = {'n_components': [4], 'init': ['nndsvda','random'],
                     'solver': ['mu'], 'beta_loss': [2,1,0.5], 'l1_ratio': test,
                     'alpha_W': test, 'alpha_H': test}
     scoring = {#'sil': create_scorer(silhouette_score),
@@ -124,7 +126,7 @@ def estimate(x: ArrayLike, estimator: BaseEstimator, splits: int = 5):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata_part.mat')
     SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     #%%
     cond = 'LSwords'
@@ -146,12 +148,18 @@ if __name__ == "__main__":
     # plt.show()
     #sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
 
-    x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitchedz))
-    gridsearch = estimate(x, NMF(max_iter=100000, tol=1e-6), 2)
-    estimator = gridsearch.best_estimator_
-    y = estimator.fit_transform(x)
-    res = df(gridsearch.cv_results_)
-    plot_weight_dist(x,y,stitched)
+    # x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
+    # gridsearch = estimate(x, NMF(max_iter=100000, tol=1e-8), 3)
+    # estimator = gridsearch.best_estimator_
+    # estimator.n_components = 4
+    # y = estimator.fit_transform(to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched)))
+    # res = df(gridsearch.cv_results_)
+    decomp = td.non_negative_parafac
+    tens = td.CP_NN_HALS(3, n_iter_max=10000, init='random', exact=True, tol=1e-7)
+    tens.mask = tl.tensor(stitched)
+    tens.fit(tl.tensor(stitchedz))
+    y = tens.decomposition_.factors[0]
+    plot_weight_dist(stitchedz, y)
 
     #
     # gridsearch.scorer_ = gridsearch.scoring = {}

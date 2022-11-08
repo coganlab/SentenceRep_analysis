@@ -14,12 +14,13 @@ import tensorly as tl
 from tensorly import metrics
 
 Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata_part.mat')
-sigMatChansName = sigMatChansName["LSwords"]['AuditorytoResponse']
+sigMatChansName = sigMatChansName["LSwords"]['AuditorywDelay']
 data = loadmat("data/pydata_3d.mat", simplify_cells=True)
 names_3d = data['channelNames']
 trialInfo_3d = data["trialInfo"]
 listen_speak_3d = data["listenSpeak"]
 Subject_3d = data["subj"]
+trial_mask = data["trialMask"]
 del data
 concat_3d = np.concatenate(list(listen_speak_3d.values()), 2)
 # good and non white matter channels
@@ -49,16 +50,18 @@ goz = all_sigZ[cond]["DelaywGo"]
 # goz = all_sigZ[cond]["GoWhole"]
 
 sigConcat = np.concatenate([part,aud, go, resp], axis=1)
-newSet = [aud, go, resp, audz, goz, respz, sigConcat, sigMatChansName]
+newSet = [part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName]
 active = np.where(np.any(sigConcat == 1, axis=1))[0]
 # sig_chans2 = np.intersect1d(active,all_sig_chans)
 # sig_chans3 = np.concatenate([SM, AUD, PROD])
 for i, allign in enumerate(newSet): #active channels during condition
     newSet[i] = newSet[i][active]
-[aud, go, resp, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
+[part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
 data_3d = concat_3d[np.isin(names_3d,sigMatChansName),:,:]
 concat_perm = sigConcat[np.isin(sigMatChansName,names_3d),:]
-mask = np.repeat(concat_perm[:,np.newaxis,:],data_3d.shape[1],axis=1)
+trial_mask_2 = trial_mask[np.isin(names_3d,sigMatChansName),:]
+mask = np.einsum('ij,ik->ikj',concat_perm,trial_mask_2)
+partwt = np.multiply(part, partz)
 audwt = np.multiply(aud, audz)
 gowt = np.multiply(go, goz)
 respwt = np.multiply(resp, respz)
@@ -85,9 +88,17 @@ respwt = np.multiply(resp, respz)
 # Tensorly decomposition
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
+# %%
 k = 9
 reps = 10
 data_t = tl.tensor(data_3d)
+# hals = td.CP_NN_HALS(3,100000,'random',exact=True,verbose=True)
+# hals.mask=mask
+# decomp = []
+# for i in range(1, k + 1):
+#     hals.rank = i
+#     decomp.append(Parallel(-1, verbose=1)(delayed(hals.fit_transform)(
+#         data_t) for j in range(reps)))
 decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
     data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
     ) for i in range(1, k + 1) for j in range(reps))
@@ -103,20 +114,21 @@ for j in range(reps):
         recon[i,j,:,:,:] = reconstruction_as[:,:,:]
 plt.boxplot(recon_err.T)
 plot_factors(recon[3,0].factors)
+
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
 # tt.plot_factors(decomp)
 # %% Generate the stitched signals
-# stitched = stitch_mats([aud, go, resp], [0, 0], axis=1)
-# stitchedz = stitch_mats([audz, goz, respz], [0, 0], axis=1)
-# stitchedwt = stitch_mats([audwt, gowt, respwt], [0, 0], axis=1)
+stitched = stitch_mats([aud[SM,0:175], go[SM,:]], [0], axis=1)
+stitchedz = stitch_mats([partz, audz, goz, respz], [0, 0, 0], axis=1)
+stitchedwt = stitch_mats([partwt, audwt, gowt, respwt], [0, 0, 0], axis=1)
 # # %% Data Plotting
 # # plt.matshow(sigSum)
 # # plt.plot(np.mean(stitched, axis=0))
 #
-# # %% Grid search decomposition
-# x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
-# gridsearch = estimate(x, NMF(max_iter=100000), 2)
+# %% Grid search decomposition
+x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
+# gridsearch = estimate(x, NMF(max_iter=100000), 5)
 # res = df(gridsearch.cv_results_)
 # estimator = gridsearch.best_estimator_
 # # estimator.n_components = 3

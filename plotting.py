@@ -166,7 +166,7 @@ if __name__ == "__main__":
     SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
     resp = all_sigA[cond]['Response'][SMresp, :]
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
+    winners, results, w_sav, names = np.load('data/nmf.npy', allow_pickle=True)
     SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
     ones = np.ones([244, 1])
     x = np.array(sigZ['AUD'])
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
     plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
     plt.legend(loc="best")
-    plot_weight_dist(all_sigZ[cond]['Response'][SMresp,:], SMrespw, resp, sig_titles=names, colors=colors)
+    plot_weight_dist(all_sigZ[cond]['Response'][SM,:], SMrespw, resp, sig_titles=names, colors=colors)
     # [[0,1,0],[1,0,0],[0,0,1]])
     ax = plt.gca()
     ylims = list(ax.get_ybound())
