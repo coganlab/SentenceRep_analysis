@@ -1,15 +1,16 @@
 from utils.mat_load import get_sigs, load_all, group_elecs
 from plotting import plot_factors, plot_weight_dist, alt_plot
 from utils.calc import ArrayLike, BaseEstimator, stitch_mats
-from decomposition import estimate, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
+from decomposition import estimate, varimax, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
 
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 import numpy as np
 from pandas import DataFrame as df
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay,mean_squared_error
 from scipy.io import loadmat
 import tensorly.decomposition as td
+from tensorly.decomposition._nn_cp import initialize_cp
 import tensorly as tl
 from tensorly import metrics
 
@@ -57,14 +58,21 @@ active = np.where(np.any(sigConcat == 1, axis=1))[0]
 for i, allign in enumerate(newSet): #active channels during condition
     newSet[i] = newSet[i][active]
 [part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
+sigConcatz = np.concatenate([partz,audz, goz, respz], axis=1)
 data_3d = concat_3d[np.isin(names_3d,sigMatChansName),:,:]
 concat_perm = sigConcat[np.isin(sigMatChansName,names_3d),:]
 trial_mask_2 = trial_mask[np.isin(names_3d,sigMatChansName),:]
 mask = np.einsum('ij,ik->ikj',concat_perm,trial_mask_2)
-partwt = np.multiply(part, partz)
-audwt = np.multiply(aud, audz)
-gowt = np.multiply(go, goz)
-respwt = np.multiply(resp, respz)
+mask2 = mask.copy()
+mask2.dtype=bool
+mask2=np.invert(mask2)
+data_m = np.ma.array(data_3d,mask=mask2)
+data_2d = data_m.mean(1)
+train = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(data_2d))
+# partwt = np.multiply(part, partz)
+# audwt = np.multiply(aud, audz)
+# gowt = np.multiply(go, goz)
+# respwt = np.multiply(resp, respz)
 # %% Generate the summed signals
 # sigSum = np.sum(np.array(newSet[0:3]), axis=0)
 # sigSumWt = np.sum(np.array([audwt, gowt, respwt]), axis=0)
@@ -89,53 +97,55 @@ respwt = np.multiply(resp, respz)
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
 # %%
-k = 9
-reps = 10
+k = 5
+reps = 2
 data_t = tl.tensor(data_3d)
-# hals = td.CP_NN_HALS(3,100000,'random',exact=True,verbose=True)
-# hals.mask=mask
+decomp = td.CP_NN(rank=3,verbose=2, mask=mask)
+# data_cp = decomp.fit_transform(data_t)
+# reconstruction_as = tl.cp_to_tensor(data_cp,mask)
+# error = metrics.regression.MSE(reconstruction_as)
 # decomp = []
 # for i in range(1, k + 1):
-#     hals.rank = i
+#     td.CP_NN(rank=i,verbose=2, mask=mask)
 #     decomp.append(Parallel(-1, verbose=1)(delayed(hals.fit_transform)(
 #         data_t) for j in range(reps)))
-decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
-    data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
-    ) for i in range(1, k + 1) for j in range(reps))
-decomp_data = np.ndarray((k, reps), dtype='O')
-recon_err = np.ndarray((k, reps))
-recon = np.ndarray((k, reps) + data_t.shape)
-for j in range(reps):
-    for i in range(k):
-        reconstruction_as = tl.cp_to_tensor(decomp[i+j*k])
-        recon_err[i, j] = 1-metrics.regression.MSE(
-            np.multiply(data_t, mask), reconstruction_as)
-        decomp_data[i, j] = decomp[i+j*k]
-        recon[i,j,:,:,:] = reconstruction_as[:,:,:]
-plt.boxplot(recon_err.T)
-plot_factors(recon[3,0].factors)
+# decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
+#     data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
+#     ) for i in range(1, k + 1) for j in range(reps))
+# decomp_data = np.ndarray((k, reps), dtype='O')
+# recon_err = np.ndarray((k, reps))
+# recon = np.ndarray((k, reps) + data_t.shape)
+# for j in range(reps):
+#     for i in range(k):
+#         reconstruction_as = tl.cp_to_tensor(decomp[i][j])
+#         recon_err[i,j] = 1-metrics.regression.MSE(
+#             np.multiply(data_t, mask), reconstruction_as)
+#         # decomp_data[j,i] = decomp[i][k]
+#         recon[i,j,:,:,:] = reconstruction_as[:,:,:]
+# plt.boxplot(recon_err.T)
+# plot_factors(recon[3,0].factors)
 
 # decomp.ndim = 3
 # data_nonneg = data_3d - np.min(data_3d)
 # tt.plot_factors(decomp)
 # %% Generate the stitched signals
-stitched = stitch_mats([aud[SM,0:175], go[SM,:]], [0], axis=1)
-stitchedz = stitch_mats([partz, audz, goz, respz], [0, 0, 0], axis=1)
-stitchedwt = stitch_mats([partwt, audwt, gowt, respwt], [0, 0, 0], axis=1)
+# stitched = stitch_mats([aud[SM,0:175], go[SM,:]], [0], axis=1)
+# stitchedz = stitch_mats([partz, audz, goz, respz], [0, 0, 0], axis=1)
+# stitchedwt = stitch_mats([partwt, audwt, gowt, respwt], [0, 0, 0], axis=1)
 # # %% Data Plotting
 # # plt.matshow(sigSum)
 # # plt.plot(np.mean(stitched, axis=0))
 #
 # %% Grid search decomposition
-x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(stitched))
-# gridsearch = estimate(x, NMF(max_iter=100000), 5)
-# res = df(gridsearch.cv_results_)
-# estimator = gridsearch.best_estimator_
-# # estimator.n_components = 3
-# y = estimator.fit_transform(x)
+x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigConcat))
+gridsearch = estimate(x, NMF(max_iter=100000,init='random',), 5)
+res = df(gridsearch.cv_results_)
+estimator = gridsearch.best_estimator_
+estimator.n_components = 3
+y = estimator.fit_transform(x)
 # # %% decomposition plotting
-# plot_weight_dist(x, y, ["PROD", "SM", "AUD"],["blue","red","lime"])
-# plt.legend()
+plot_weight_dist(sigConcatz, y, ["PROD", "SM", "AUD"],["blue","red","lime"])
+plt.legend()
 # # prod = sig_chans3[np.argmax(y,1)==0]
 # # aud = sig_chans3[np.argmax(y,1)==1]
 # # sm = sig_chans3[np.argmax(y,1)==2]

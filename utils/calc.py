@@ -70,7 +70,11 @@ def dist(mat: ArrayLike, mask: ArrayLike = None, axis: int = 0) -> tuple[ArrayLi
     if mask is None:
         mask = ones(shape(mat))
     else:
-        assert shape(mat) == shape(mask)
+        try:
+            assert shape(mat) == shape(mask)
+        except AssertionError as e:
+            print(str(shape(mat)),'=/=',str(shape(mask)))
+            raise e
     avg = divide(sum(multiply(mat, mask), axis), sum(mask, axis))
     avg = reshape(avg, [shape(avg)[axis]])
     stdev = std(mat, axis) / sqrt(shape(mat)[axis+1])
