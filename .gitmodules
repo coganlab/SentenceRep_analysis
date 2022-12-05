@@ -4,3 +4,6 @@
 [submodule "IEEG_Pipelines"]
 	path = IEEG_Pipelines
 	url = git@github.com:coganlab/IEEG_Pipelines.git
+[submodule "MEP-Orthogonal-NMF"]
+	path = MEPONMF
+	url = git@github.com:salar96/MEP-Orthogonal-NMF.git

@@ -3,12 +3,16 @@ from plotting import plot_factors, plot_weight_dist, alt_plot
 from utils.calc import ArrayLike, BaseEstimator, stitch_mats
 from decomposition import estimate, varimax, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
 
+import matplotlib as mpl
+
+mpl.use('TKAgg')
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 import numpy as np
 from pandas import DataFrame as df
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay,mean_squared_error
 from scipy.io import loadmat
+from scipy import signal
 import tensorly.decomposition as td
 from tensorly.decomposition._nn_cp import initialize_cp
 import tensorly as tl
@@ -53,14 +57,15 @@ goz = all_sigZ[cond]["DelaywGo"]
 sigConcat = np.concatenate([part,aud, go, resp], axis=1)
 newSet = [part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName]
 active = np.where(np.any(sigConcat == 1, axis=1))[0]
-# sig_chans2 = np.intersect1d(active,all_sig_chans)
+sig_chans2 = np.intersect1d(active,all_sig_chans)
 # sig_chans3 = np.concatenate([SM, AUD, PROD])
 for i, allign in enumerate(newSet): #active channels during condition
-    newSet[i] = newSet[i][active]
+    newSet[i] = newSet[i][sig_chans2]
 [part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
-sigConcatz = np.concatenate([partz,audz, goz, respz], axis=1)
+sigConcatz = np.concatenate([partz,audz[:,:175], goz, respz], axis=1)
 data_3d = concat_3d[np.isin(names_3d,sigMatChansName),:,:]
 concat_perm = sigConcat[np.isin(sigMatChansName,names_3d),:]
+sigConcat = np.concatenate([part,aud[:,:175], go, resp], axis=1)
 trial_mask_2 = trial_mask[np.isin(names_3d,sigMatChansName),:]
 mask = np.einsum('ij,ik->ikj',concat_perm,trial_mask_2)
 mask2 = mask.copy()
@@ -97,13 +102,38 @@ train = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(data_2d)
 # core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
 # factors = td.parafac(data_3d, rank=3)
 # %%
-k = 5
-reps = 2
-data_t = tl.tensor(data_3d)
-decomp = td.CP_NN(rank=3,verbose=2, mask=mask)
+
+from MEPONMF.onmf_DA import DA
+from MEPONMF.onmf_DA import ONMF_DA
+k = 20
+param = dict(tol=1e-6, alpha=1.01,
+           purturb=0.5, verbos=1, normalize=False)
+model2 = DA(**param,K=k, max_iter=1000)
+model2.fit(data_2d,Px='auto')
+Y,P = model2.cluster()
+# W, H, model = ONMF_DA.func(sigConcatz, k=k, **param, auto_weighting=False)
+model2.plot_criticals(log=True)
+plt.show()
+# k = model.return_true_number()
+# W, H, model2 = ONMF_DA.func(stitched, k=k, **param, auto_weighting=True)
+# model2 = DA(**param,K=k, max_iter=1000)
+# model2.fit(stitched,Px='auto')
+# Y,P = model2.cluster()
+# model2.plot_criticals(log=True)
+# plt.show()
+# plot_weight_dist(stitchedz, Y)
+# model2.pie_chart()
+# plot_weight_dist(data_2d.T,fit.fit.W)
+# k = 5
+# reps = 2
+# data_t = tl.tensor(data_3d)
+# decomp = td.CP_NN_HALS(rank=4,verbose=2, mask=mask,exact=True)
 # data_cp = decomp.fit_transform(data_t)
 # reconstruction_as = tl.cp_to_tensor(data_cp,mask)
-# error = metrics.regression.MSE(reconstruction_as)
+# error = metrics.regression.MSE(data_t,reconstruction_as)
+# plot_factors(data_cp.factors)
+# y =data_cp.factors[0]
+# plot_weight_dist(data_2d[:, 50:425], y,concat_perm[:, 50:425])
 # decomp = []
 # for i in range(1, k + 1):
 #     td.CP_NN(rank=i,verbose=2, mask=mask)
@@ -124,28 +154,20 @@ decomp = td.CP_NN(rank=3,verbose=2, mask=mask)
 #         recon[i,j,:,:,:] = reconstruction_as[:,:,:]
 # plt.boxplot(recon_err.T)
 # plot_factors(recon[3,0].factors)
-
-# decomp.ndim = 3
-# data_nonneg = data_3d - np.min(data_3d)
-# tt.plot_factors(decomp)
-# %% Generate the stitched signals
-# stitched = stitch_mats([aud[SM,0:175], go[SM,:]], [0], axis=1)
-# stitchedz = stitch_mats([partz, audz, goz, respz], [0, 0, 0], axis=1)
-# stitchedwt = stitch_mats([partwt, audwt, gowt, respwt], [0, 0, 0], axis=1)
-# # %% Data Plotting
-# # plt.matshow(sigSum)
-# # plt.plot(np.mean(stitched, axis=0))
 #
 # %% Grid search decomposition
-x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(sigConcat))
-gridsearch = estimate(x, NMF(max_iter=100000,init='random',), 5)
-res = df(gridsearch.cv_results_)
-estimator = gridsearch.best_estimator_
-estimator.n_components = 3
-y = estimator.fit_transform(x)
-# # %% decomposition plotting
-plot_weight_dist(sigConcatz, y, ["PROD", "SM", "AUD"],["blue","red","lime"])
-plt.legend()
+# x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(np.multiply(sigConcatz,sigConcat)))
+# # gridsearch = estimate(x, NMF(max_iter=100000,init='nndsvda',alpha_W=0,
+# #                              alpha_H=0.75, verbose=2), 5)
+# # res = df(gridsearch.cv_results_)
+# # estimator = gridsearch.best_estimator_
+# estimator = NMF(max_iter=100000,init='nndsvda',alpha_W=0,
+#                              alpha_H=0.5, verbose=2)
+# estimator.n_components = 4
+# y = estimator.fit_transform(x)
+# # # %% decomposition plotting
+# plot_weight_dist(sigConcatz[:, 50:425], y, sigConcat[:, 50:425])
+#, ["PROD", "SM", "AUD"],["blue","red","lime"])
 # # prod = sig_chans3[np.argmax(y,1)==0]
 # # aud = sig_chans3[np.argmax(y,1)==1]
 # # sm = sig_chans3[np.argmax(y,1)==2]

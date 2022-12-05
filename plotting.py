@@ -21,7 +21,10 @@ def plot_dist(mat: iter, mask: ArrayLike = None, label: Union[str, int, float] =
     """Plot the distribution for a single signal"""
     mean, std = dist(mat, mask)
     tscale = range(len(mean))
-    plt.errorbar(tscale, mean, yerr=std, label=label, color=color)
+    p = plt.plot(tscale, mean, label=label, color=color)
+    if color is None:
+        color = p[-1].get_color()
+    plt.fill_between(tscale, mean - std, mean + std, alpha=0.2, color=color)
     return plt.gca()
 
 
@@ -42,7 +45,7 @@ def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
                      sig_titles: list[str] = None, colors: list[Union[str, list[int]]] = None):
     """Basic distribution plot for weighted signals"""
     fig, ax = plt.subplots()
-    if label.shape[0] > 1:
+    if len(label.shape) > 1:
         group = range(min(np.shape(label)))
         weighted = True
     else:
