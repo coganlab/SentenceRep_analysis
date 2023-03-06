@@ -1,12 +1,13 @@
-from tslearn.clustering import silhouette_score
-from numpy import matlib, array, mean, sqrt, reshape, concatenate, \
-    vstack, add, outer, argmax, std, shape, linalg, ndarray, min, multiply, \
-    linspace, ones, sum, divide
+# from tslearn.clustering import silhouette_score
+from numpy import matlib, array, sqrt, reshape, concatenate, vstack, add,\
+    outer, argmax, std, shape, linalg, ndarray, min, multiply, linspace, ones,\
+    sum, divide, log, pi, zeros, mean, newaxis
 from joblib import Parallel, delayed
 from sklearn.decomposition import NMF
 from typing import Union
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
+from sklearn.metrics import pairwise_distances
 
 
 def calculate_WSS(centroids: ArrayLike, label: list, points: ArrayLike) -> ArrayLike:
@@ -80,6 +81,67 @@ def dist(mat: ArrayLike, mask: ArrayLike = None, axis: int = 0) -> tuple[ArrayLi
     stdev = std(mat, axis) / sqrt(shape(mat)[axis+1])
     stdev = reshape(stdev, [shape(stdev)[axis]])
     return avg, stdev
+
+
+def bic_onmf(X, W, H, k):
+    """
+    Here, X is the original data matrix, W and H are the non-negative factor
+    matrices from the ONMF decomposition, and k is the number of factors
+    used in the decomposition. The function first computes the residual sum
+    of squares (RSS) as the sum of squared errors between the original data
+    and the reconstructed data from the ONMF factorization. It then
+    estimates the error variance sigma2 as the ratio of the RSS to the
+    number of elements in the data matrix, and computes the log-likelihood
+    of the data given the factorization using the formula described in the
+    previous answer. Finally, it calculates the BIC using the formula -2 *
+    log(L) + k * log(n * p) and returns the result.
+    """
+    n, p = X.shape
+    RSS = sum((X - W @ H.T)**2)
+    sigma2 = RSS / (n * p)
+    L = -0.5 * (n * p * log(2 * pi * sigma2) + n * p * log(RSS / n))
+    bic = -2 * L + k * log(n * p)
+    return bic
+
+
+def ch_onmf(X, W, n_clusters=None):
+    """
+    Here, X is the original data matrix, W and H are the non-negative factor
+    matrices from the ONMF decomposition. The function first computes the
+    centroid of each cluster defined by the columns of W by taking the mean
+    of the data points assigned to that cluster. It then computes the total
+    sum of squares (TSS), which is the sum of squared distances between each
+    data point and the mean of all data points. It computes the
+    between-cluster sum of squares (BSS), which is the sum of squared
+    distances between each cluster centroid and the mean of all data points,
+    weighted by the number of data points assigned to that cluster. Finally,
+    it computes the within-cluster sum of squares (WSS), which is the sum of
+    squared distances between each data point and its assigned cluster
+    centroid, weighted by the assignment weights in W.
+    """
+
+    if n_clusters is None:
+        n_clusters = W.shape[1]
+    n_samples = X.shape[0]
+
+    # Compute the centroid of each cluster
+    centroids = zeros((n_clusters, X.shape[1]))
+    for i in range(n_clusters):
+        centroids[i] = mean(X[W[:, i] > 0], axis=0)
+
+    # Compute the total sum of squares
+    # TSS = sum(pairwise_distances(X, mean(X, axis=0, keepdims=True))**2)
+
+    # Compute the between-cluster sum of squares
+    BSS = sum(sum(W[:, i, newaxis] * pairwise_distances(centroids[i, newaxis, :], mean(X, axis=0, keepdims=True))**2) for i in range(n_clusters))
+
+    # Compute the within-cluster sum of squares
+    WSS = sum(sum(W[:, i, newaxis] * pairwise_distances(X, centroids[i, newaxis, :])**2) for i in range(n_clusters))
+
+    # Compute the CH index
+    ch = (BSS / (n_clusters - 1)) / (WSS / (n_samples - n_clusters))
+
+    return ch
 
 
 def mat_err(data: ArrayLike, mod: BaseEstimator) -> float:

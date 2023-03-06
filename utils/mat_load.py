@@ -19,7 +19,8 @@ def load_all(filename: str) -> tuple[dict, dict, dict, dict, dict, dict, list[di
     return t, z, a, sCh, sChL, sChN, sub
 
 
-def group_elecs(sigA: dict[str, dict[str, ArrayLike]], sig_chans: dict[str, dict[str, list[int]]]
+def group_elecs(sigA: dict[str, dict[str, ArrayLike]],
+                sig_chans: dict[str, dict[str, list[int]]]
                 ) -> tuple[list, list, list]:
     AUD = dict()
     for cond in ['LS', 'LM', 'JL']:

@@ -1,9 +1,14 @@
-import matplotlib.pyplot as plt
+
 from utils.calc import get_elbow, dist, do_decomp, par_calc, ArrayLike
 from sklearn.decomposition import NMF
 from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
 from typing import Union, Iterable
+import matplotlib as mpl
+mpl.use("TkAgg")
+import matplotlib.pyplot as plt
+
+
 
 
 def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
@@ -162,6 +167,7 @@ def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
 
 
 if __name__ == "__main__":
+    mpl.use('TkAgg', force=True)
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     npSM = np.array(SM)
