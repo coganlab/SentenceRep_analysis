@@ -11,6 +11,7 @@ path = fullfile(userpath, 'MATLAB-env' );
 addpath(genpath(path));
 path = fullfile('..','IEEG_Pipelines','MATLAB');
 addpath(genpath(path));
+OUT_DIR = fullfile(DUKEDIR, 'Stats', 'timePerm');
 
 %% Task
 Task=[];
@@ -39,20 +40,20 @@ Task.Conds(1).Field(2).Time=[-0.5 1.5];
 % Task.Conds(1).Field(4).Name='AuditorytoResponse';
 % Task.Conds(1).Field(4).Epoch='Auditory';
 % Task.Conds(1).Field(4).Time=[-1000 3000];
-Task.Conds(1).Field(3).Name='Response';
-Task.Conds(1).Field(3).Epoch='ResponseStart';
-Task.Conds(1).Field(3).Time=[-1 1];
+% Task.Conds(1).Field(3).Name='Response';
+% Task.Conds(1).Field(3).Epoch='ResponseStart';
+% Task.Conds(1).Field(3).Time=[-1 1];
 
-Task.Conds(2).Name='LSsentences';
-Task.Conds(2).Field(1).Name='AuditorywDelay';
-Task.Conds(2).Field(1).Epoch='Auditory';
-Task.Conds(2).Field(1).Time=[-0.5 5];
-Task.Conds(2).Field(2).Name='DelaywGo';
-Task.Conds(2).Field(2).Epoch='Go';
-Task.Conds(2).Field(2).Time=[-0.5 4];
-Task.Conds(2).Field(3).Name='Response';
-Task.Conds(2).Field(3).Epoch='ResponseStart';
-Task.Conds(2).Field(3).Time=[-1 4];
+% Task.Conds(2).Name='LSsentences';
+% Task.Conds(2).Field(1).Name='AuditorywDelay';
+% Task.Conds(2).Field(1).Epoch='Auditory';
+% Task.Conds(2).Field(1).Time=[-0.5 5];
+% Task.Conds(2).Field(2).Name='DelaywGo';
+% Task.Conds(2).Field(2).Epoch='Go';
+% Task.Conds(2).Field(2).Time=[-0.5 4];
+% Task.Conds(2).Field(3).Name='Response';
+% Task.Conds(2).Field(3).Epoch='ResponseStart';
+% Task.Conds(2).Field(3).Time=[-1 4];
 
 Task.Conds(3).Name='JLwords';
 Task.Conds(3).Field(1).Name='AuditorywDelay';
@@ -62,13 +63,13 @@ Task.Conds(3).Field(2).Name='DelaywGo';
 Task.Conds(3).Field(2).Epoch='Go';
 Task.Conds(3).Field(2).Time=[-0.5 1.5];
 
-Task.Conds(4).Name='JLsentences';
-Task.Conds(4).Field(1).Name='AuditorywDelay';
-Task.Conds(4).Field(1).Epoch='Auditory';
-Task.Conds(4).Field(1).Time=[-0.5 5];
-Task.Conds(4).Field(2).Name='DelaywGo';
-Task.Conds(4).Field(2).Epoch='Go';
-Task.Conds(4).Field(2).Time=[-0.5 4];
+% Task.Conds(4).Name='JLsentences';
+% Task.Conds(4).Field(1).Name='AuditorywDelay';
+% Task.Conds(4).Field(1).Epoch='Auditory';
+% Task.Conds(4).Field(1).Time=[-0.5 5];
+% Task.Conds(4).Field(2).Name='DelaywGo';
+% Task.Conds(4).Field(2).Epoch='Go';
+% Task.Conds(4).Field(2).Time=[-0.5 4];
 
 Task.Conds(5).Name='LMwords';
 Task.Conds(5).Field(1).Name='AuditorywDelay';
@@ -157,11 +158,13 @@ for iSN=1:length(SNList)
             chanSig = extractTimePermCluster(ieegFieldHG,ieegBaseHG);         
             channelNames = {Subject(SN).ChannelInfo(chanIdx).Name};
             
-            if ~exist([DUKEDIR '\Stats\timePerm\'])
-                mkdir([DUKEDIR '\Stats\timePerm\'])
+            if ~exist(OUT_DIR)
+                mkdir(OUT_DIR)
             end
-            save(fullfile(DUKEDIR, 'Stats', 'timePerm', [Subject(SN).Name '_' Task.Name '_' ...
-                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat']),'chanSig','channelNames','ieegFieldHG','ieegBaseHG');
+            save(fullfile(OUT_DIR, [Subject(SN).Name '_' Task.Name '_' ...
+                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name ...
+                '_' Task.Base.Name '.mat']),'chanSig','channelNames', ...
+                'ieegFieldHG','ieegBaseHG');
         end
     end
 end
