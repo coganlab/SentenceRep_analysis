@@ -101,23 +101,9 @@ timeExtract = [-1.5 2];
 SNList=1:length(Subject);
 for iSN=1:length(SNList)
     SN=SNList(iSN);
-    Trials=Subject(SN).Trials;
     counterN=0;
     counterNR=0;
-    noiseIdx=0;
-    noResponseIdx=0;
-    for iTrials=1:length(Trials)
-        if Trials(iTrials).Noisy==1
-            noiseIdx(counterN+1)=iTrials;
-            counterN=counterN+1;
-        end
-        if Trials(iTrials).NoResponse==1
-            noResponseIdx(counterNR+1)=iTrials;
-            counterNR=counterNR+1;
-        end
-    end
-   
-    condIdx=ones(length(Subject(SN).Trials),1);
+    [condIdx, noiseIdx, noResponseIdx]=SentenceRepConds(Subject(SN).Trials);
     chanIdx=Subject(SN).goodChannels;
     baseEpoch=Task.Base.Epoch;
     baseTimeRange=Task.Base.Time;    
