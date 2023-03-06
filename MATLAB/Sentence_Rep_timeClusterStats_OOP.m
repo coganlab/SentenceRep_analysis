@@ -85,7 +85,7 @@ end
 
 %%
 fDown = 100; %Downsampled Sampling Frequency
-timeExtract = [-1.5 2];
+timeExtract = [-1 2];
 
 % HGZ_data_start = extractHGDataWithROI(Subject, Epoch='Start', fdown=100, ...
 %     Time=[0,0.5], baseTimeRange=baseTimeRange, baseName=baseName);
@@ -121,11 +121,11 @@ for iSN=1:length(SNList)
    
     for iC=1:length(Task.Conds)
         for iF=1:length(Task.Conds(iC).Field)
-          %  if iC<=2
+             if iC<=2
                 Trials=Subject(SN).Trials(setdiff(find(condIdx==iC),cat(2,noiseIdx,noResponseIdx)));
-         %   else
-         %       Trials=Subject(SN).Trials(setdiff(find(condIdx==iC),noiseIdx));
-         %   end
+             else
+                Trials=Subject(SN).Trials(setdiff(find(condIdx==iC),noiseIdx));
+             end
             
             Epoch=Task.Conds(iC).Field(iF).Epoch;
             fieldTimeRange=Task.Conds(iC).Field(iF).Time;          
