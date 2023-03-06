@@ -3,23 +3,24 @@ from numpy import where, concatenate
 from utils.calc import ArrayLike
 
 
-def load_all(filename: str):
+def load_all(filename: str) -> tuple[dict, dict, dict, dict, dict, dict, list[dict]]:
     d = loadmat(filename, simplify_cells=True)
-    t = d['Task']
-    z = d['allSigZ']
-    a = d['sigMatA']
+    t: dict = d['Task']
+    z: dict = d['allSigZ']
+    a: dict = d['sigMatA']
     # reduce indexing by 1 because python is 0-indexed
     for cond, epochs in d['sigChans'].items():
         for epoch, vals in epochs.items():
-            d['sigChans'][cond][epoch] = vals - 1
-    sCh = d['sigChans']
-    sChL = d['sigMatChansLoc']
-    sChN = d['sigMatChansName']
-    sub = d['Subject']
+            d['sigChans'][cond][epoch]: ArrayLike = vals - 1
+    sCh: dict = d['sigChans']
+    sChL: dict = d['sigMatChansLoc']
+    sChN: dict = d['sigMatChansName']
+    sub: list = d['Subject']
     return t, z, a, sCh, sChL, sChN, sub
 
 
-def group_elecs(sigA: dict[str, dict[str, ArrayLike]], sig_chans: dict[str, dict[str, list[int]]]
+def group_elecs(sigA: dict[str, dict[str, ArrayLike]],
+                sig_chans: dict[str, dict[str, list[int]]]
                 ) -> tuple[list, list, list]:
     AUD = dict()
     for cond in ['LS', 'LM', 'JL']:
@@ -53,6 +54,19 @@ def get_sigs(allsigZ: dict[str, dict[str, ArrayLike]], allsigA: dict[str, dict[s
     return out_sig['Z'], out_sig['A']
 
 
+def get_bad_trials(subject: list[dict]):
+    """Remove bad channels and trials from a dataset
+
+    :param subject:
+    :return:
+    """
+    for sub in subject:
+        for trial in sub['Trials']:
+            pass
+    pass
+
+
 if __name__ == "__main__":
-    Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject = load_all('../data/pydata.mat')
-    SM, AUD, PROD = group_elecs(sigA, sigChans)
+    Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
+
+    # SM, AUD, PROD = group_elecs(sigA, sigChans)

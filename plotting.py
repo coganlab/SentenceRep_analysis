@@ -1,13 +1,19 @@
-import matplotlib.pyplot as plt
+
 from utils.calc import get_elbow, dist, do_decomp, par_calc, ArrayLike
 from sklearn.decomposition import NMF
 from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
 from typing import Union, Iterable
+import matplotlib as mpl
+mpl.use("TkAgg")
+import matplotlib.pyplot as plt
+
+
 
 
 def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
                 mod=NMF(init='random', max_iter=10000, verbose=2)):
+    """Plots optimal K based on explained varience"""
     errs = do_decomp(data, clusters, repetitions, mod)
     plot_dist(errs)
     plt.xlabel("K Value")
@@ -15,21 +21,41 @@ def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
     plt.show()
 
 
-def plot_dist(mat: iter, label: Union[str, int, float] = None,
+def plot_dist(mat: iter, mask: ArrayLike = None, label: Union[str, int, float] = None,
               color: Union[str, list[int]] = None) -> plt.Axes:
-    mean, std = dist(mat)
+    """Plot the distribution for a single signal"""
+    mean, std = dist(mat, mask)
     tscale = range(len(mean))
-    plt.errorbar(tscale, mean, yerr=std, label=label, color=color)
+    p = plt.plot(tscale, mean, label=label, color=color)
+    if color is None:
+        color = p[-1].get_color()
+    plt.fill_between(tscale, mean - std, mean + std, alpha=0.2, color=color)
     return plt.gca()
 
 
-def clustering_subplots(data: ArrayLike, label: ArrayLike, sig_titles: list[str] = None,
-                        colors: list[Union[str, list[int]]] = None, weighted: bool = False):
+def plot_factors(factors: list[ArrayLike],
+                 col_titles: list[str] = ("Channel", "Trial", "Time")):
+    fig, axs = plt.subplots(factors[0].shape[1], len(factors))
+    for i, axr in enumerate(axs):
+        for j, axc in enumerate(axr):
+            axc.plot(factors[j][:,i])
+            # if j == 0:
+            #     plt.ylabel("factor " + str(i))
+            # if i == 0:
+            #     plt.title(col_titles[j])
+    return fig, axs
+
+
+def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
+                     sig_titles: list[str] = None, colors: list[Union[str, list[int]]] = None):
+    """Basic distribution plot for weighted signals"""
     fig, ax = plt.subplots()
-    if weighted:
+    if len(label.shape) > 1:
         group = range(min(np.shape(label)))
+        weighted = True
     else:
         group = np.unique(label)
+        weighted = False
     if sig_titles is None:
         sig_titles = [sig_titles] * len(group)
     if colors is None:
@@ -38,19 +64,20 @@ def clustering_subplots(data: ArrayLike, label: ArrayLike, sig_titles: list[str]
         if not weighted:
             w_sigs = data[label == i]
         else:
-            try:
-                w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
-            except (ValueError, IndexError) as e:
-                w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
-        ax = plot_dist(w_sigs, stitle, color)
+            w_sigs = np.multiply(data.T, label[:, i]).T
+            # try:
+            #     w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
+            # except (ValueError, IndexError) as e:
+            #     w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
+        ax = plot_dist(w_sigs, mask, stitle, color)
     return fig, ax
 
 
-def plot_clustering(data: ArrayLike, label: ArrayLike,
-                    sig_titles: Iterable[str] = None, weighted: bool = False,
+def plot_clustering(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
+                    sig_titles: Iterable[str] = None,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
-
-    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+    """Stylized multiplot for clustering"""
+    fig, ax = plot_weight_dist(data, label, mask, sig_titles, colors)
     # the x coords of this transformation are data, and the
     # y coord are axes
     trans = ax.get_xaxis_transform()
@@ -67,19 +94,19 @@ def plot_clustering(data: ArrayLike, label: ArrayLike,
                   ['-0.5', '0', '0.5', '1', '-0.25', '0', '0.25', '0.75', '1.25'])
     ax.set_xlabel('Time from stimuli or go cue (seconds)')
     # ax.set_ylabel('Z score')
-    ax.set_ylabel('Significance of activity (range [0-1])')
+    ax.set_ylabel('Z-score')
     ax.set_xlim(0, 350)
     ylims = ax.get_ybound()
-    ax.set_ybound(min(0,ylims[0]),ylims[1])
+    ax.set_ybound(min(0, ylims[0]), ylims[1])
     # plt.title(title)
     plt.show()
     return fig, ax
 
 
 def plot_clustering_resp(data: ArrayLike, label: ArrayLike,
-                    sig_titles: Iterable[str] = None, weighted: bool = False,
-                    colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
-    fig, ax = clustering_subplots(data, label,  sig_titles, colors, weighted)
+                         sig_titles: Iterable[str] = None, weighted: bool = False,
+                         colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
+    fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
     trans = ax.get_xaxis_transform()
     ax.text(100, 0.9, 'onset', rotation=270, transform=trans)
     ax.axvline(100, linestyle='--')
@@ -140,6 +167,7 @@ def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
 
 
 if __name__ == "__main__":
+    mpl.use('TkAgg', force=True)
     Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
     SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
     npSM = np.array(SM)
@@ -147,7 +175,7 @@ if __name__ == "__main__":
     SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
     resp = all_sigA[cond]['Response'][SMresp, :]
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
+    winners, results, w_sav, names = np.load('data/nmf.npy', allow_pickle=True)
     SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
     ones = np.ones([244, 1])
     x = np.array(sigZ['AUD'])
@@ -157,12 +185,15 @@ if __name__ == "__main__":
     x = np.vstack([x, np.array(sigZ['PROD'])])
     labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
     colors = [[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]]
-    plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
-    # ['Working Memory','Visual','Early Prod','Late Prod'], True,
+    names = ['Working Memory','Visual','Motor','Auditory']
+    # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
+    plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
+    plt.legend(loc="best")
+    plot_weight_dist(all_sigZ[cond]['Response'][SM,:], SMrespw, resp, sig_titles=names, colors=colors)
     # [[0,1,0],[1,0,0],[0,0,1]])
     ax = plt.gca()
     ylims = list(ax.get_ybound())
     ylims[0] = min(0, ylims[0])
     # plt.title('Listen-speak')
-    plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
-                         [[1, 0, 0]], ylims)
+    # plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
+    #                      [[1, 0, 0]], ylims)

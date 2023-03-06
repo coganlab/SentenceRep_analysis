@@ -1,5 +1,8 @@
 function subjects = getSubjects(obj,names)
     subs = {};
+    if ischar(names)
+        names = string(names);
+    end
     fields = fieldnames(obj);
     for iSN = 1:length(names)
         name = names{iSN};

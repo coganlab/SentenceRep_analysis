@@ -1,9 +1,10 @@
 name: analysis
 channels:
-  - conda-forge
   - defaults
+  - conda-forge
+  - tensorly
 dependencies:
-  - python<3.10
+  - python<3.11
   - pip
   - matplotlib
   - tqdm
@@ -12,6 +13,8 @@ dependencies:
   - scipy
   - numpy
   - pandas
-  - h5py
+  - Cython
+  - nose
+  - tensorly
   - pip:
     - -r requirements.txt

@@ -3,8 +3,8 @@ global BOX_DIR
 global RECONDIR
 global DUKEDIR
 BOX_DIR='C:\Users\ae166\Box';
-RECONDIR=[BOX_DIR '/ECoG_Recon'];
-DUKEDIR = [BOX_DIR '/CoganLab/D_Data/SentenceRep'];
+RECONDIR=[BOX_DIR filesep 'ECoG_Recon'];
+DUKEDIR = fullfile(BOX_DIR, 'CoganLab', 'D_Data', 'SentenceRep');
 Task=[];
 Task.Name='SentenceRep';
 % 
@@ -14,27 +14,25 @@ Task.Name='SentenceRep';
 
 Task.Base.Name='Start';
 Task.Base.Epoch='Start';
-Task.Base.Time=[-1000 -500];
+Task.Base.Time=[-500 0];
+
+
 % % 5 conds
 Task.Conds(1).Name='LSwords';
-Task.Conds(1).Field(1).Name='Delay';
-Task.Conds(1).Field(1).Epoch='Auditory';
-Task.Conds(1).Field(1).Time=[0 1400];
-Task.Conds(1).Field(1).Name='AuditorywDelay';
-Task.Conds(1).Field(1).Epoch='Auditory';
-Task.Conds(1).Field(1).Time=[-500 1500];
-Task.Conds(1).Field(2).Name='DelaywGo';
-Task.Conds(1).Field(2).Epoch='Go';
-Task.Conds(1).Field(2).Time=[-500 1500];
-Task.Conds(1).Field(3).Name='AuditorytoResponse';
-Task.Conds(1).Field(3).Epoch='Auditory';
-Task.Conds(1).Field(3).Time=[-1000 3000];
-Task.Conds(1).Field(4).Name='Response';
-Task.Conds(1).Field(4).Epoch='ResponseStart';
-Task.Conds(1).Field(4).Time=[-1000 1000];
-% 
+% Task.Conds(1).Field(1).Name='StartPart';
+% Task.Conds(1).Field(1).Epoch='Start';
+% Task.Conds(1).Field(1).Time=[0 500];
+% Task.Conds(1).Field(2).Name='AuditorywDelay';
+% Task.Conds(1).Field(2).Epoch='Auditory';
+% Task.Conds(1).Field(2).Time=[-500 1500];
+% Task.Conds(1).Field(3).Name='DelaywGo';
+% Task.Conds(1).Field(3).Epoch='Go';
+% Task.Conds(1).Field(3).Time=[-500 1500];
+Task.Conds(1).Field(1).Name='Response';
+Task.Conds(1).Field(1).Epoch='ResponseStart';
+Task.Conds(1).Field(1).Time=[-1000 1000];
+
 Task.Conds(2).Name='LSsentences';
-Task.Conds(2).Field = [];
 Task.Conds(2).Field(1).Name='AuditorywDelay';
 Task.Conds(2).Field(1).Epoch='Auditory';
 Task.Conds(2).Field(1).Time=[-500 5000];
@@ -46,19 +44,17 @@ Task.Conds(2).Field(3).Epoch='ResponseStart';
 Task.Conds(2).Field(3).Time=[-1000 4000];
 
 Task.Conds(3).Name='JLwords';
-Task.Conds(3).Field = [];
-Task.Conds(3).Field(1).Name='AuditorywDelay';
-Task.Conds(3).Field(1).Epoch='Auditory';
-Task.Conds(3).Field(1).Time=[-500 1500];
-Task.Conds(3).Field(2).Name='DelaywGo';
-Task.Conds(3).Field(2).Epoch='Go';
+Task.Conds(3).Field(1).Name='StartPart';
+Task.Conds(3).Field(1).Epoch='Start';
+Task.Conds(3).Field(1).Time=[0 500];
+Task.Conds(3).Field(2).Name='AuditorywDelay';
+Task.Conds(3).Field(2).Epoch='Auditory';
 Task.Conds(3).Field(2).Time=[-500 1500];
-Task.Conds(3).Field(3).Name='AuditorytoResponse';
-Task.Conds(3).Field(3).Epoch='Auditory';
-Task.Conds(3).Field(3).Time=[-1000 3000];
+Task.Conds(3).Field(3).Name='DelaywGo';
+Task.Conds(3).Field(3).Epoch='Go';
+Task.Conds(3).Field(3).Time=[-500 1500];
 
 Task.Conds(4).Name='JLsentences';
-Task.Conds(4).Field = [];
 Task.Conds(4).Field(1).Name='AuditorywDelay';
 Task.Conds(4).Field(1).Epoch='Auditory';
 Task.Conds(4).Field(1).Time=[-500 5000];
@@ -67,24 +63,22 @@ Task.Conds(4).Field(2).Epoch='Go';
 Task.Conds(4).Field(2).Time=[-500 4000];
 
 Task.Conds(5).Name='LMwords';
-Task.Conds(5).Field = [];
-Task.Conds(5).Field(1).Name='AuditorywDelay';
-Task.Conds(5).Field(1).Epoch='Auditory';
-Task.Conds(5).Field(1).Time=[-500 1500];
-Task.Conds(5).Field(2).Name='DelaywGo';
-Task.Conds(5).Field(2).Epoch='Go';
+Task.Conds(5).Field(1).Name='StartPart';
+Task.Conds(5).Field(1).Epoch='Start';
+Task.Conds(5).Field(1).Time=[0 500];
+Task.Conds(5).Field(2).Name='AuditorywDelay';
+Task.Conds(5).Field(2).Epoch='Auditory';
 Task.Conds(5).Field(2).Time=[-500 1500];
-Task.Conds(5).Field(3).Name='AuditorytoResponse';
-Task.Conds(5).Field(3).Epoch='Auditory';
-Task.Conds(5).Field(3).Time=[-1000 3000];
+Task.Conds(5).Field(3).Name='DelaywGo';
+Task.Conds(5).Field(3).Epoch='Go';
+Task.Conds(5).Field(3).Time=[-500 1500];
 
 
 if ~exist('Subject','var')
-    Subjects = popTaskSubjectData(Task);
-    Subjects(27) = [];
+    Subject = popTaskSubjectData(Task);
 end
 %SNList=26:33;
-Subject = getSubjects(Subjects,{ 'D73' });
+%Subject = getSubjects(Subjects,{ 'D73' });
 
 SNList=1:length(Subject);
 %%
@@ -98,8 +92,8 @@ for iSN=1:length(SNList)
     baseTimeRange(1)=baseTimeRange(1)-500;
     baseTimeRange(2)=baseTimeRange(2)+500;
     % To make the base only be LS condition
-    notLSwordsIdx = find(condIdx~=5);
-    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx,notLSwordsIdx')));
+    % notLSwordsIdx = find(condIdx~=5);
+    Trials=Subject(SN).Trials(setdiff(1:length(Subject(SN).Trials),cat(2,noiseIdx)));%,notLSwordsIdx')));
     ieegBase=trialIEEG(Trials,chanIdx,baseEpoch,baseTimeRange);
     sample_rate = Subject(SN).Experiment.recording.sample_rate;
     for iC=1:length(Task.Conds)
@@ -128,8 +122,8 @@ for iSN=1:length(SNList)
             
 %             save([DUKEDIR '\Stats\timePerm\' Subject(SN).Name '_' Task.Name '_' ...
 %                 Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat'],'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
-              save([DUKEDIR '\Stats\timePerm\' Subject(SN).Name '_' Task.Name '_' ...
-                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat'],'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
+              save(fullfile(DUKEDIR, 'Stats', 'timePerm', [Subject(SN).Name '_' Task.Name '_' ...
+                Task.Conds(iC).Name '_' Task.Conds(iC).Field(iF).Name '_' Task.Base.Name '.mat']),'chanSig','ieegCARHG','ieegBaseCARHG','ieegCARHGZ','ieegBaseCARHGZ');
               clear chanSig ieegCARHG ieegBaseCARHG ieegCARHGZ ieegBaseCARHGZ
         end
     end
@@ -186,7 +180,3 @@ function chanSig = getSigs(ieeg,ieegBase, name)
         display(iChan)
     end
 end
-
-
-
-
