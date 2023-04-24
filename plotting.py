@@ -5,10 +5,8 @@ from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
 from typing import Union, Iterable
 import matplotlib as mpl
-mpl.use("TkAgg")
+from ieeg.viz import plot_dist
 import matplotlib.pyplot as plt
-
-
 
 
 def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
@@ -19,18 +17,6 @@ def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
     plt.xlabel("K Value")
     plt.xticks(np.array(range(clusters)), np.array(range(clusters)) + 1)
     plt.show()
-
-
-def plot_dist(mat: iter, mask: ArrayLike = None, label: Union[str, int, float] = None,
-              color: Union[str, list[int]] = None) -> plt.Axes:
-    """Plot the distribution for a single signal"""
-    mean, std = dist(mat, mask)
-    tscale = range(len(mean))
-    p = plt.plot(tscale, mean, label=label, color=color)
-    if color is None:
-        color = p[-1].get_color()
-    plt.fill_between(tscale, mean - std, mean + std, alpha=0.2, color=color)
-    return plt.gca()
 
 
 def plot_factors(factors: list[ArrayLike],
@@ -65,10 +51,6 @@ def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
             w_sigs = data[label == i]
         else:
             w_sigs = np.multiply(data.T, label[:, i]).T
-            # try:
-            #     w_sigs = np.array([label[i][j] * dat for j, dat in enumerate(data.T)])
-            # except (ValueError, IndexError) as e:
-            #     w_sigs = np.array([label.T[i][j] * dat for j, dat in enumerate(data)])
         ax = plot_dist(w_sigs, mask, stitle, color)
     return fig, ax
 

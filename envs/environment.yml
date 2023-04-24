@@ -1,20 +1,15 @@
 name: analysis
 channels:
   - defaults
-  - conda-forge
-  - tensorly
 dependencies:
-  - python<3.11
+  - python<3.12
   - pip
   - matplotlib
   - tqdm
   - scikit-learn
-  - tslearn
   - scipy
   - numpy
   - pandas
-  - Cython
-  - nose
-  - tensorly
+  - tensorly::tensorly
   - pip:
-    - -r requirements.txt
+    - -r ../IEEG_Pipelines/envs/requirements.txt
