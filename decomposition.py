@@ -12,11 +12,12 @@ from utils.mat_load import get_sigs, load_all, group_elecs
 from sklearn.decomposition import NMF, FactorAnalysis
 from plotting import plot_opt_k, plot_clustering, alt_plot, plot_weight_dist
 from pandas import DataFrame as df
-from utils.calc import ArrayLike, BaseEstimator, stitch_mats
+from utils.calc import ArrayLike, BaseEstimator
 from sklearn.utils import safe_mask
 import tensorly.decomposition as td
 import tensorly as tl
 from scipy.linalg import eig
+from ieeg.calc.utils import stitch_mats
 
 
 class ts_spectral_clustering(AgglomerativeClustering):

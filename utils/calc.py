@@ -135,36 +135,6 @@ def mat_err(data: ArrayLike, mod: BaseEstimator) -> float:
     return error
 
 
-def stitch_mats(mats: list[array], overlaps: list[int], axis: int = 0) -> array:
-    """break up the matrices into their overlapping and non-overlapping parts then stitch them back together
-    :param mats: list of matrices to stitch together
-    :param overlaps: list of the number of overlapping rows between each matrix
-    :param axis: axis to stitch along
-    :return: stitched matrix
-    """
-    stitches = [mats[0]]
-    if len(mats) != len(overlaps) + 1:
-        raise ValueError("The number of matrices must be one more than the number of overlaps")
-    for i, over in enumerate(overlaps):
-        stitches = stitches[:-2] + merge(stitches[-1], mats[i+1], over, axis)
-    return concatenate(stitches, axis=axis)
-
-
-def merge(mat1: array, mat2: array, overlap: int, axis: int = 0) -> list[array]:
-    """Take two arrays and merge them over the overlap gradually"""
-    sl = [slice(None)] * mat1.ndim
-    sl[axis] = slice(0, mat1.shape[axis]-overlap)
-    start = mat1[tuple(sl)]
-    sl[axis] = slice(mat1.shape[axis]-overlap, mat1.shape[axis])
-    middle1 = multiply(linspace(1, 0, overlap), mat1[tuple(sl)])
-    sl[axis] = slice(0, overlap)
-    middle2 = multiply(linspace(0, 1, overlap), mat2[tuple(sl)])
-    middle = add(middle1, middle2)
-    sl[axis] = slice(overlap, mat2.shape[axis])
-    last = mat2[tuple(sl)]
-    return [start, middle, last]
-
-
 if __name__ == "__main__":
     from mat_load import load_all, get_sigs
     from decomposition import plot_opt_k, KMeans

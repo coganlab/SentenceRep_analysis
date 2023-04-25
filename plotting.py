@@ -1,5 +1,5 @@
 
-from utils.calc import do_decomp, par_calc, ArrayLike
+from utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
 from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
@@ -7,11 +7,11 @@ from typing import Union, Iterable
 import matplotlib as mpl
 from ieeg.viz import plot_dist
 from ieeg.calc.stats import dist
-from ieeg.utils import get_elbow
+from ieeg.calc.utils import get_elbow
 import matplotlib.pyplot as plt
 
 
-def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
+def plot_decomp(data: np.ndarray, clusters: int = 8, repetitions: int = 10,
                 mod=NMF(init='random', max_iter=10000, verbose=2)):
     """Plots optimal K based on explained varience"""
     errs = do_decomp(data, clusters, repetitions, mod)
@@ -21,7 +21,7 @@ def plot_decomp(data: ArrayLike, clusters: int = 8, repetitions: int = 10,
     plt.show()
 
 
-def plot_factors(factors: list[ArrayLike],
+def plot_factors(factors: list[np.ndarray],
                  col_titles: list[str] = ("Channel", "Trial", "Time")):
     fig, axs = plt.subplots(factors[0].shape[1], len(factors))
     for i, axr in enumerate(axs):
@@ -34,7 +34,7 @@ def plot_factors(factors: list[ArrayLike],
     return fig, axs
 
 
-def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
+def plot_weight_dist(data: np.ndarray, label: np.ndarray, mask: np.ndarray = None,
                      sig_titles: list[str] = None, colors: list[Union[str, list[int]]] = None):
     """Basic distribution plot for weighted signals"""
     fig, ax = plt.subplots()
@@ -57,7 +57,7 @@ def plot_weight_dist(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
     return fig, ax
 
 
-def plot_clustering(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
+def plot_clustering(data: np.ndarray, label: np.ndarray, mask: np.ndarray = None,
                     sig_titles: Iterable[str] = None,
                     colors: Iterable[Union[str, list[Union[int, float]]]] = None):
     """Stylized multiplot for clustering"""
@@ -87,7 +87,7 @@ def plot_clustering(data: ArrayLike, label: ArrayLike, mask: ArrayLike = None,
     return fig, ax
 
 
-def plot_clustering_resp(data: ArrayLike, label: ArrayLike,
+def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
                          sig_titles: Iterable[str] = None, weighted: bool = False,
                          colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
     fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
@@ -112,7 +112,7 @@ def plot_clustering_resp(data: ArrayLike, label: ArrayLike,
     plt.show()
 
 
-def plot_opt_k(data: ArrayLike, n: int, rep: int, model, methods=None, title=None):
+def plot_opt_k(data: np.ndarray, n: int, rep: int, model, methods=None, title=None):
     if methods is None:
         methods = ['euclidean', 'dtw', 'softdtw']
     if title is None:
@@ -137,7 +137,7 @@ def plot_opt_k(data: ArrayLike, n: int, rep: int, model, methods=None, title=Non
     return results
 
 
-def alt_plot(X_train: ArrayLike, y_pred: ArrayLike):
+def alt_plot(X_train: np.ndarray, y_pred: np.ndarray):
     plt.figure()
     for yi in range(len(np.unique(y_pred))):
         plt.subplot(len(np.unique(y_pred)), 1, 1 + yi)
