@@ -3,6 +3,7 @@ import os
 import numpy as np
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_dist, plot_clustering
+from ieeg.viz.mri import get_sub_dir
 from ieeg.calc.utils import stitch_mats
 import matplotlib.pyplot as plt
 from utils.mat_load import load_intermediates, group_elecs
