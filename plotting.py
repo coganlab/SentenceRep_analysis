@@ -34,82 +34,29 @@ def plot_factors(factors: list[np.ndarray],
     return fig, axs
 
 
-def plot_weight_dist(data: np.ndarray, label: np.ndarray, mask: np.ndarray = None,
-                     sig_titles: list[str] = None, colors: list[Union[str, list[int]]] = None):
-    """Basic distribution plot for weighted signals"""
-    fig, ax = plt.subplots()
-    if len(label.shape) > 1:
-        group = range(min(np.shape(label)))
-        weighted = True
-    else:
-        group = np.unique(label)
-        weighted = False
-    if sig_titles is None:
-        sig_titles = [sig_titles] * len(group)
-    if colors is None:
-        colors = [colors] * len(group)
-    for i, stitle, color in zip(group, sig_titles, colors):
-        if not weighted:
-            w_sigs = data[label == i]
-        else:
-            w_sigs = np.multiply(data.T, label[:, i]).T
-        ax = plot_dist(w_sigs, mask, stitle, color)
-    return fig, ax
-
-
-def plot_clustering(data: np.ndarray, label: np.ndarray, mask: np.ndarray = None,
-                    sig_titles: Iterable[str] = None,
-                    colors: Iterable[Union[str, list[Union[int, float]]]] = None):
-    """Stylized multiplot for clustering"""
-    fig, ax = plot_weight_dist(data, label, mask, sig_titles, colors)
-    # the x coords of this transformation are data, and the
-    # y coord are axes
-    trans = ax.get_xaxis_transform()
-    ax.text(50, 0.8, 'Stim onset', rotation=270, transform=trans)
-    ax.axvline(175)
-    ax.axvline(50, linestyle='--')
-    ax.axvline(225, linestyle='--')
-    # ax.axhline(0, linestyle='--', color='black')
-    ax.text(225, 0.87, 'Go cue', rotation=270, transform=trans)
-    ax.text(160, 0.6, 'Delay', transform=trans)
-    # ax.legend(loc="best")
-    ax.axvspan(150, 200, color=(0.5, 0.5, 0.5, 0.15))
-    ax.set_xticks([0, 50, 100, 150, 200, 225, 250, 300, 350],
-                  ['-0.5', '0', '0.5', '1', '-0.25', '0', '0.25', '0.75', '1.25'])
-    ax.set_xlabel('Time from stimuli or go cue (seconds)')
-    # ax.set_ylabel('Z score')
-    ax.set_ylabel('Z-score')
-    ax.set_xlim(0, 350)
-    ylims = ax.get_ybound()
-    ax.set_ybound(min(0, ylims[0]), ylims[1])
-    # plt.title(title)
-    plt.show()
-    return fig, ax
-
-
-def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
-                         sig_titles: Iterable[str] = None, weighted: bool = False,
-                         colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
-    fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
-    trans = ax.get_xaxis_transform()
-    ax.text(100, 0.9, 'onset', rotation=270, transform=trans)
-    ax.axvline(100, linestyle='--')
-    # ax.axvline(50, linestyle='--')
-    # ax.axvline(225, linestyle='--')
-    # ax.text(225, 0.87, 'go cue', rotation=270, transform=trans)
-    # ax.text(152, 0.6, 'transition',  transform=trans)
-    ax.legend(loc="best")
-    # ax.axvspan(150,200,color=(0.5,0.5,0.5,0.15))
-    ax.set_ybound(ybounds)
-    ax.set_yticks([])
-    ax.set_xticks([0, 50, 100, 150, 200],
-                  ['-1', '-0.5', '0', '0.5', '1'])
-    ax.set_xlabel('Time from response (seconds)')
-    # ax.set_ylabel('Significance of activity (range [0-1])')
-    ax.set_xlim(0, 200)
-    # if title is not None:
-    #     plt.title(title)
-    plt.show()
+# def plot_clustering_resp(data: np.ndarray, label: np.ndarray,
+#                          sig_titles: Iterable[str] = None, weighted: bool = False,
+#                          colors: Iterable[Union[str, list[Union[int, float]]]] = None, ybounds=None):
+#     fig, ax = plot_weight_dist(data, label, sig_titles, colors, weighted)
+#     trans = ax.get_xaxis_transform()
+#     ax.text(100, 0.9, 'onset', rotation=270, transform=trans)
+#     ax.axvline(100, linestyle='--')
+#     # ax.axvline(50, linestyle='--')
+#     # ax.axvline(225, linestyle='--')
+#     # ax.text(225, 0.87, 'go cue', rotation=270, transform=trans)
+#     # ax.text(152, 0.6, 'transition',  transform=trans)
+#     ax.legend(loc="best")
+#     # ax.axvspan(150,200,color=(0.5,0.5,0.5,0.15))
+#     ax.set_ybound(ybounds)
+#     ax.set_yticks([])
+#     ax.set_xticks([0, 50, 100, 150, 200],
+#                   ['-1', '-0.5', '0', '0.5', '1'])
+#     ax.set_xlabel('Time from response (seconds)')
+#     # ax.set_ylabel('Significance of activity (range [0-1])')
+#     ax.set_xlim(0, 200)
+#     # if title is not None:
+#     #     plt.title(title)
+#     plt.show()
 
 
 def plot_opt_k(data: np.ndarray, n: int, rep: int, model, methods=None, title=None):
@@ -161,7 +108,6 @@ if __name__ == "__main__":
     sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
     winners, results, w_sav, names = np.load('data/nmf.npy', allow_pickle=True)
     SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
-    ones = np.ones([244, 1])
     x = np.array(sigZ['AUD'])
     labels = np.ones([np.shape(sigZ['AUD'])[0]])
     x = np.vstack([x, np.array(sigZ['SM'])])
