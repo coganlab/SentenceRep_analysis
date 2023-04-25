@@ -1,4 +1,4 @@
-[submodule "MATLAB/MATLAB-env"]
+[submodule "MATLAB/env"]
 	path = MATLAB/env
 	url = git@github.com:coganlab/MATLAB-env.git
 [submodule "IEEG_Pipelines"]

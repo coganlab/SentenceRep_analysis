@@ -1,11 +1,13 @@
 
-from utils.calc import get_elbow, dist, do_decomp, par_calc, ArrayLike
+from utils.calc import do_decomp, par_calc, ArrayLike
 from sklearn.decomposition import NMF
 from utils.mat_load import group_elecs, get_sigs, load_all
 import numpy as np
 from typing import Union, Iterable
 import matplotlib as mpl
 from ieeg.viz import plot_dist
+from ieeg.calc.stats import dist
+from ieeg.utils import get_elbow
 import matplotlib.pyplot as plt
 
 

@@ -67,22 +67,6 @@ def calc_score(X: ArrayLike, kmax: int, model: BaseEstimator, metric='euclidean'
     return sil, var, wss
 
 
-def dist(mat: ArrayLike, mask: ArrayLike = None, axis: int = 0) -> tuple[ArrayLike, ArrayLike]:
-    if mask is None:
-        mask = ones(shape(mat))
-    else:
-        try:
-            assert shape(mat) == shape(mask)
-        except AssertionError as e:
-            print(str(shape(mat)),'=/=',str(shape(mask)))
-            raise e
-    avg = divide(sum(multiply(mat, mask), axis), sum(mask, axis))
-    avg = reshape(avg, [shape(avg)[axis]])
-    stdev = std(mat, axis) / sqrt(shape(mat)[axis+1])
-    stdev = reshape(stdev, [shape(stdev)[axis]])
-    return avg, stdev
-
-
 def bic_onmf(X, W, H, k):
     """
     Here, X is the original data matrix, W and H are the non-negative factor
@@ -149,29 +133,6 @@ def mat_err(data: ArrayLike, mod: BaseEstimator) -> float:
     H = mod.components_
     error = linalg.norm(data - W @ H) ** 2 / linalg.norm(data) ** 2
     return error
-
-
-def get_elbow(data: ArrayLike):
-    """ Draws a line between the first and last points in a dataset and finds the point furthest from that line.
-
-    :param data:
-    :return:
-    """
-    nPoints = len(data)
-    allCoord = vstack((range(nPoints), data)).T
-    array([range(nPoints), data])
-    firstPoint = allCoord[0]
-    lineVec = allCoord[-1] - allCoord[0]
-    lineVecNorm = lineVec / sqrt(sum(lineVec ** 2))
-    vecFromFirst = allCoord - firstPoint
-    scalarProduct = sum(vecFromFirst * matlib.repmat(lineVecNorm, nPoints, 1), axis=1)
-    vecFromFirstParallel = outer(scalarProduct, lineVecNorm)
-    vecToLine = vecFromFirst - vecFromFirstParallel
-    distToLine = sqrt(sum(vecToLine ** 2, axis=1))
-    # set distance to points below lineVec to 0
-    distToLine[vecToLine[:, 1] < 0] = 0
-    idxOfBestPoint = argmax(distToLine)
-    return idxOfBestPoint
 
 
 def stitch_mats(mats: list[array], overlaps: list[int], axis: int = 0) -> array:
