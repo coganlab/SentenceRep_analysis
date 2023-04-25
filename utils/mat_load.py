@@ -1,72 +1,100 @@
-from scipy.io import loadmat
-from numpy import where, concatenate
-from utils.calc import ArrayLike
+import numpy as np
+import os
+from bids import BIDSLayout
+from ieeg import Doubles, PathLike
+import mne
 
 
-def load_all(filename: str) -> tuple[dict, dict, dict, dict, dict, dict, list[dict]]:
-    d = loadmat(filename, simplify_cells=True)
-    t: dict = d['Task']
-    z: dict = d['allSigZ']
-    a: dict = d['sigMatA']
-    # reduce indexing by 1 because python is 0-indexed
-    for cond, epochs in d['sigChans'].items():
-        for epoch, vals in epochs.items():
-            d['sigChans'][cond][epoch]: ArrayLike = vals - 1
-    sCh: dict = d['sigChans']
-    sChL: dict = d['sigMatChansLoc']
-    sChN: dict = d['sigMatChansName']
-    sub: list = d['Subject']
-    return t, z, a, sCh, sChL, sChN, sub
+def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
+                       value_type: str = "zscore",
+                       derivatives_folder: PathLike = 'stats') -> (
+        dict[dict[str, mne.Epochs]], dict[np.ndarray], list[str]):
+
+    allowed = ["zscore", "power", "significance"]
+    match value_type:
+        case "zscore":
+            reader = mne.read_epochs
+            suffix = "zscore-epo"
+        case "power":
+            reader = mne.read_epochs
+            suffix = "power-epo"
+        case "significance":
+            reader = mne.read_evokeds
+            suffix = "mask-ave"
+        case _:
+            raise ValueError(f"value_type must be one of {allowed}, instead"
+                             f" got {value_type}")
+    chn_names = []
+    epochs = dict()
+    all_sig = dict()
+    for cond in conds.keys():
+        all_sig[cond] = np.empty((0, 200))
+    folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
+    for subject in layout.get_subjects():
+        epochs[subject] = dict()
+        for cond in conds.keys():
+            try:
+                epochs[subject][cond] = reader(os.path.join(
+                    folder, f"{subject}_{cond}_{suffix}.fif"))
+            except FileNotFoundError as e:
+                mne.utils.logger.warn(e)
+                continue
+
+            if suffix.endswith("epo"):
+                sig = epochs[subject][cond].average()
+                names = [subject + '-' + ch for ch in sig.ch_names]
+
+                # add new channels to list if not already there
+                chn_names = chn_names + [ch for ch in names if
+                                         ch not in chn_names]
+            else:
+                sig = epochs[subject][cond][0]
+
+            # add new channels to power and significance matrix
+            all_sig[cond] = np.vstack((all_sig[cond], sig.get_data()))
+
+    return epochs, all_sig, chn_names
 
 
-def group_elecs(sigA: dict[str, dict[str, ArrayLike]],
-                sig_chans: dict[str, dict[str, list[int]]]
-                ) -> tuple[list, list, list]:
-    AUD = dict()
-    for cond in ['LS', 'LM', 'JL']:
-        condw = cond + 'words'
-        elecs = where(sigA[condw]['AuditorywDelay'][:, 50:175] == 1)[0]
-        AUD[cond] = set(elecs) & set(sig_chans[condw]['AuditorywDelay'])
+def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
+                conds: dict[str, Doubles]
+                ) -> (list[int], list[int], list[int], list[int]):
+    sig_chans = []
+    AUD = []
+    SM = []
+    PROD = []
+    for i, name in enumerate(names):
+        for cond in conds.keys():
+            if np.any(all_sig[cond][i] == 1):
+                sig_chans.append(i)
+                break
 
-    AUD1 = AUD['LS'] & AUD['LM']
-    AUD2 = AUD1 & AUD['JL']
-    PROD1 = set(sig_chans['LSwords']['DelaywGo']) & set(sig_chans['LMwords']['DelaywGo'])
-    SM = list(AUD1 & PROD1)
-    AUD = list(AUD2 - set(SM))
-    PROD = list(PROD1 - set(SM))
-    for group in [SM, AUD, PROD]:
-        group.sort()
-    return SM, AUD, PROD
+        audls_is = np.any(all_sig['aud_ls'][i][50:175] == 1)
+        audlm_is = np.any(all_sig['aud_lm'][i][50:175] == 1)
+        audjl_is = np.any(all_sig['aud_jl'][i][50:175] == 1)
+        mime_is = np.any(all_sig['go_lm'][i] == 1)
+        speak_is = np.any(all_sig['go_ls'][i] == 1)
 
-
-def get_sigs(allsigZ: dict[str, dict[str, ArrayLike]], allsigA: dict[str, dict[str, ArrayLike]],
-             sigChans: dict[str, dict[str, list[int]]], cond: str) -> tuple[dict[str, ArrayLike], dict[str, ArrayLike]]:
-    out_sig = dict()
-    for sig, metric in zip([allsigZ, allsigA], ['Z', 'A']):
-        out_sig[metric] = dict()
-        for group, idx in zip(['SM', 'AUD', 'PROD'], group_elecs(allsigA, sigChans)):
-            blend = sig[cond]['AuditorywDelay'][idx, 150:175] / 2 + \
-                    sig[cond]['DelaywGo'][idx, 0:25] / 2
-            out_sig[metric][group] = concatenate((sig[cond]['AuditorywDelay'][idx, :150],
-                                                  blend,
-                                                  sig[cond]['DelaywGo'][idx, 25:]), axis=1)
-
-    return out_sig['Z'], out_sig['A']
-
-
-def get_bad_trials(subject: list[dict]):
-    """Remove bad channels and trials from a dataset
-
-    :param subject:
-    :return:
-    """
-    for sub in subject:
-        for trial in sub['Trials']:
-            pass
-    pass
+        if audls_is and audlm_is and mime_is and speak_is:
+            SM.append(i)
+        elif audls_is and audlm_is and audjl_is:
+            AUD.append(i)
+        elif mime_is and speak_is:
+            PROD.append(i)
+    return AUD, SM, PROD, sig_chans
 
 
 if __name__ == "__main__":
-    Task, sigZ, sigA, sigChans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-
-    # SM, AUD, PROD = group_elecs(sigA, sigChans)
+    from ieeg.io import get_data
+    HOME = os.path.expanduser("~")
+    LAB_root = os.path.join(HOME, "Box", "CoganLab")
+    layout = get_data("SentenceRep", root=LAB_root)
+    conds = {"resp": (-1, 1),
+             "aud_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
+    epochs, all_power, names = load_intermediates(layout, conds, "power")
+    signif, all_sig, _ = load_intermediates(layout, conds, "significance")
