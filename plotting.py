@@ -1,14 +1,10 @@
 
 from utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
-from utils.mat_load import group_elecs, get_sigs, load_all
+from utils.mat_load import group_elecs
 import numpy as np
-from typing import Union, Iterable
-import matplotlib as mpl
-from ieeg.viz import plot_dist
 from ieeg.calc.stats import dist
 from ieeg.calc.utils import get_elbow
-import matplotlib.pyplot as plt
 
 
 def plot_decomp(data: np.ndarray, clusters: int = 8, repetitions: int = 10,
@@ -98,32 +94,35 @@ def alt_plot(X_train: np.ndarray, y_pred: np.ndarray):
 
 
 if __name__ == "__main__":
+    import matplotlib as mpl
     mpl.use('TkAgg', force=True)
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
-    npSM = np.array(SM)
-    cond = 'LSwords'
-    SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
-    resp = all_sigA[cond]['Response'][SMresp, :]
-    sigZ, sigA = get_sigs(all_sigZ, all_sigA, sig_chans, cond)
-    winners, results, w_sav, names = np.load('data/nmf.npy', allow_pickle=True)
-    SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
-    x = np.array(sigZ['AUD'])
-    labels = np.ones([np.shape(sigZ['AUD'])[0]])
-    x = np.vstack([x, np.array(sigZ['SM'])])
-    labels = np.concatenate([labels, np.ones([np.shape(sigZ['SM'])[0]]) * 2])
-    x = np.vstack([x, np.array(sigZ['PROD'])])
-    labels = np.concatenate([labels, np.ones([np.shape(sigZ['PROD'])[0]]) * 3])
-    colors = [[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]]
-    names = ['Working Memory','Visual','Motor','Auditory']
-    # plot_clustering(sigA['SM'], np.ones([244, 1]), None, True, [[1, 0, 0]])
-    plot_clustering(sigZ['SM'], w_sav['SM'], sigA['SM'], sig_titles=names, colors=colors)
-    plt.legend(loc="best")
-    plot_weight_dist(all_sigZ[cond]['Response'][SM,:], SMrespw, resp, sig_titles=names, colors=colors)
-    # [[0,1,0],[1,0,0],[0,0,1]])
-    ax = plt.gca()
-    ylims = list(ax.get_ybound())
-    ylims[0] = min(0, ylims[0])
-    # plt.title('Listen-speak')
-    # plot_clustering_resp(resp, np.ones([180, 1]), ['SM'], True,
-    #                      [[1, 0, 0]], ylims)
+    import mne
+    import os
+    import numpy as np
+    from ieeg.io import get_data
+    from ieeg.viz.utils import plot_dist, plot_clustering
+    from ieeg.viz.mri import get_sub_dir, plot_on_average
+    import matplotlib.pyplot as plt
+    from utils.mat_load import load_intermediates, group_elecs
+
+    # %% check if currently running a slurm job
+    HOME = os.path.expanduser("~")
+    if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+        LAB_root = os.path.join(HOME, "workspace", "CoganLab")
+    else:  # if not then set box directory
+        LAB_root = os.path.join(HOME, "Box", "CoganLab")
+    layout = get_data("SentenceRep", root=LAB_root)
+    conds = {"resp": (-1, 1),
+             "aud_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
+
+    # %% Load the data
+    epochs, all_power, names = load_intermediates(layout, conds, "zscore")
+
+    data = {"D" + str(int(k[1:])): v['resp'] for k, v in epochs.items() if v}
+    # %%
+    plot_on_average(data, get_sub_dir())
