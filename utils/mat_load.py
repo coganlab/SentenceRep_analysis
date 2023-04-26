@@ -42,13 +42,15 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
 
             if suffix.endswith("epo"):
                 sig = epochs[subject][cond].average()
-                names = [subject + '-' + ch for ch in sig.ch_names]
-
-                # add new channels to list if not already there
-                chn_names = chn_names + [ch for ch in names if
-                                         ch not in chn_names]
             else:
                 sig = epochs[subject][cond][0]
+                epochs[subject][cond] = epochs[subject][cond][0]
+
+            names = [subject + '-' + ch for ch in sig.ch_names]
+
+            # add new channels to list if not already there
+            chn_names = chn_names + [ch for ch in names if
+                                     ch not in chn_names]
 
             # add new channels to power and significance matrix
             all_sig[cond] = np.vstack((all_sig[cond], sig.get_data()))

@@ -121,8 +121,10 @@ if __name__ == "__main__":
              "go_jl": (-0.5, 1.5)}
 
     # %% Load the data
-    epochs, all_power, names = load_intermediates(layout, conds, "zscore")
+    # epochs, all_power, names = load_intermediates(layout, conds, "zscore")
+    signif, all_sig, names = load_intermediates(layout, conds, "significance")
+    AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
 
-    data = {"D" + str(int(k[1:])): v['resp'] for k, v in epochs.items() if v}
+    data = {"D" + str(int(k[1:])): v['resp'] for k, v in signif.items() if v}
     # %%
-    plot_on_average(data, get_sub_dir())
+    plot_on_average(data, picks=SM)
