@@ -25,7 +25,7 @@ conds = {"resp": (-1, 1),
          "go_jl": (-0.5, 1.5)}
 
 # %% Load the data
-epochs, all_power, names = load_intermediates(layout, conds, "zscore")
+epochs, all_power, names = load_intermediates(layout, conds, "power")
 signif, all_sig, _ = load_intermediates(layout, conds, "significance")
 
 # %% plot significant channels
@@ -46,12 +46,12 @@ labels = np.concatenate([np.ones([len(AUD)]), np.ones([len(SM)]) * 2,
 plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
                 colors=[[0,1,0],[1,0,0],[0,0,1]])
 
-
-# cond = 'go_jl'
-# plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color='g')
-# plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
-# plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
-# plt.legend()
-# plt.xlabel("Time(s)")
-# plt.ylabel("High Gamma Power (V)")
-# plt.title("Go")
+# %%
+cond = 'go_ls'
+plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color='g')
+plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
+plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
+plt.legend()
+plt.xlabel("Time(s)")
+plt.ylabel("High Gamma Power (V)")
+plt.title("Go")
