@@ -47,11 +47,16 @@ plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
                 colors=[[0,1,0],[1,0,0],[0,0,1]])
 
 # %%
-cond = 'go_ls'
-plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color='g')
-plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
-plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
-plt.legend()
-plt.xlabel("Time(s)")
-plt.ylabel("High Gamma Power (V)")
-plt.title("Go")
+# cond = 'go_ls'
+# for sub in layout.get_subjects():
+#     if sub == 'D0018':
+#         continue
+#     SUB = [s for s in sig_chans if sub in names[s]]
+#     plot_dist(all_power[cond][SUB], times=conds[cond], label=sub)
+# plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color='g')
+# plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
+# plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
+# plt.legend()
+# plt.xlabel("Time(s)")
+# plt.ylabel("High Gamma Power (V)")
+# plt.title("Go")
