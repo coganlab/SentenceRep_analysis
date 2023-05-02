@@ -2,10 +2,11 @@ import mne
 import os
 import numpy as np
 from ieeg.io import get_data
-from ieeg.viz.utils import plot_dist, plot_clustering
+from ieeg.viz.utils import plot_dist
 from ieeg.viz.mri import get_sub_dir
 from ieeg.calc.utils import stitch_mats
 import matplotlib.pyplot as plt
+from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs
 
 
@@ -25,11 +26,16 @@ conds = {"resp": (-1, 1),
          "go_jl": (-0.5, 1.5)}
 
 # %% Load the data
-epochs, all_power, names = load_intermediates(layout, conds, "power")
+epochs, all_power, names = load_intermediates(layout, conds, "zscore")
 signif, all_sig, _ = load_intermediates(layout, conds, "significance")
 
 # %% plot significant channels
 AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
+
+# %% Check subjects
+data = np.vstack([d for i, d in enumerate(all_power['resp']) if i in sig_chans])
+names_d = [d for i, d in enumerate(names) if i in sig_chans]
+compare_subjects(data, names_d)
 
 # %% plot groups
 aud_c = "aud_ls"
@@ -49,7 +55,7 @@ plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
 # %%
 # cond = 'go_ls'
 # for sub in layout.get_subjects():
-#     if sub == 'D0018':
+#     if not ('D007' in sub or 'D006' in sub):
 #         continue
 #     SUB = [s for s in sig_chans if sub in names[s]]
 #     plot_dist(all_power[cond][SUB], times=conds[cond], label=sub)
