@@ -33,9 +33,19 @@ signif, all_sig, _ = load_intermediates(layout, conds, "significance")
 AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
 
 # %% Check subjects
-data = np.vstack([d for i, d in enumerate(all_power['resp']) if i in sig_chans])
-names_d = [d for i, d in enumerate(names) if i in sig_chans]
+data = np.vstack([d for i, d in enumerate(all_power['resp']) if i in PROD])
+names_d = [d for i, d in enumerate(names) if i in PROD]
 compare_subjects(data, names_d)
+
+# remove bad subjects
+bads = ['D0059', 'D0018']
+for bad in bads:
+    all_power = all_power[slice(bad not in n for n in names), :]
+    all_sig = all_sig[slice(bad not in n for n in names), :]
+    names = [n for n in names if bad not in n]
+
+AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
+
 
 # %% plot groups
 aud_c = "aud_ls"
