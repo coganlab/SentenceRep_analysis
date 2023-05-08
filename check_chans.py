@@ -14,7 +14,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 3
+    subject = 5
 
 # Load the data
 TASK = "SentenceRep"
@@ -71,4 +71,4 @@ spec._data = rescale(resp_s._data, base_s._data, mode='ratio', axis=2,
 figs = chan_grid(spec, size=(16, 12), vmin=0.7, vmax=1.4)
 for i, f in enumerate(figs):
     f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
-                           f'{subj}_response_{i}'))
+                           f'{subj}_response_{i + 1}'))
