@@ -6,6 +6,7 @@ from ieeg.calc.scaling import rescale
 import os
 from mne.time_frequency import tfr_morlet, tfr_array_morlet
 import numpy as np
+import pickle
 
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -68,7 +69,10 @@ spec._data = rescale(resp_s._data, base_s._data, mode='ratio', axis=2,
 
 # %% plotting
 
-figs = chan_grid(spec, size=(16, 12), vmin=0.7, vmax=1.4)
+figs = chan_grid(spec, size=(16, 12), vmin=0.7, vmax=1.4, show=False)
 for i, f in enumerate(figs):
-    f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
-                           f'{subj}_response_{i + 1}'))
+    with open(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
+                           f'{subj}_response_{i + 1}.pkl'), 'wb') as file:
+        pickle.dump(f, file)
+    # f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
+    #                        f'{subj}_response_{i + 1}'))
