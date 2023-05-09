@@ -1,12 +1,10 @@
-import mne
 from ieeg.viz.utils import chan_grid
-from ieeg.io import get_data, raw_from_layout
+from ieeg.io import get_data, raw_from_layout, save_derivative
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data
 from ieeg.calc.scaling import rescale
 import os
-from mne.time_frequency import tfr_morlet, tfr_array_morlet
+from mne.time_frequency import tfr_morlet
 import numpy as np
-import pickle
 
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -15,7 +13,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 5
+    subject = 8
 
 # Load the data
 TASK = "SentenceRep"
@@ -25,17 +23,17 @@ filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                        extension='.edf', desc='clean', preload=False)
 
 # %% fix SentenceRep events
-from events import fix_annotations  # noqa E402
-fix_annotations(filt)
-
-# %% Crop raw data to minimize processing time
-new = crop_empty_data(filt)
+from mevents import fix_annotations  # noqa E402
+new = crop_empty_data(filt,)
 
 good = new.copy()
+fix_annotations(good)
 
-good.info['bads'] = channel_outlier_marker(new, 3, 2)
+# %% Crop raw data to minimize processing time
+
+good.info['bads'] = channel_outlier_marker(good, 3, 2)
 good.drop_channels(good.info['bads'])
-good.info['bads'] += channel_outlier_marker(new, 4, 2)
+good.info['bads'] += channel_outlier_marker(good, 4, 2)
 good.drop_channels(good.info['bads'])
 good.load_data()
 
@@ -57,10 +55,10 @@ cyc = np.linspace(0.5, 30, len(freqs))
 #
 
 base_s = tfr_morlet(base, freqs, n_jobs=7, verbose=10, average=True,
-                    n_cycles=cyc, return_itc=False, decim=20)
+                    n_cycles=cyc, return_itc=False, decim=20, use_fft=True)
 base_s.crop(tmin=-0.5, tmax=0)
 resp_s = tfr_morlet(resp, freqs, n_jobs=7, verbose=10, average=True,
-                    n_cycles=cyc, return_itc=False, decim=20)
+                    n_cycles=cyc, return_itc=False, decim=20, use_fft=True)
 resp_s.crop(tmin=-1, tmax=1)
 
 spec = resp_s.copy()
@@ -71,8 +69,9 @@ spec._data = rescale(resp_s._data, base_s._data, mode='ratio', axis=2,
 
 figs = chan_grid(spec, size=(16, 12), vmin=0.7, vmax=1.4, show=False)
 for i, f in enumerate(figs):
-    with open(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
-                           f'{subj}_response_{i + 1}.pkl'), 'wb') as file:
-        pickle.dump(f, file)
-    # f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
-    #                        f'{subj}_response_{i + 1}'))
+    f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
+                           f'{subj}_response_{i + 1}'))
+assert False
+# %% save bad channels
+filt.info['bads'] = spec.info['bads']
+save_derivative(filt, layout, 'clean', True)
