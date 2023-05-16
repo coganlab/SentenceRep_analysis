@@ -6,6 +6,7 @@ from ieeg.calc.scaling import rescale
 from ieeg.calc.stats import avg_no_outlier, find_outliers
 import os
 from mne.time_frequency import tfr_morlet
+from ieeg.timefreq.utils import wavelet_scaleogram
 import numpy as np
 
 # %% check if currently running a slurm job
@@ -15,7 +16,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 8
+    subject = 17
 
 # Load the data
 TASK = "SentenceRep"
@@ -48,40 +49,34 @@ del new
 # good.plot()
 
 # %% epoching and trial outlier removal
-avg_func = lambda x: avg_no_outlier(x, outliers=10)
 
-resp = trial_ieeg(good, "Word/Response", (-1.5, 1.5), preload=True)
-resp_gtrials = find_outliers(resp.get_data(), 10)
+resp = trial_ieeg(good, "Response", (-1.5, 1.5), preload=True)
+resp_gtrials = find_outliers(resp.get_data(), 11)
 resp_func = lambda x: avg_no_outlier(x, keep=resp_gtrials)
-resp_avg = resp.average(None, resp_func)
+# resp_avg = resp.average(None, resp_func)
 
 base = trial_ieeg(good, "Start", (-1, 0.5), preload=True)
-base_gtrials = find_outliers(base.get_data(), 10)
+base_gtrials = find_outliers(base.get_data(), 8)
 base_func = lambda x: avg_no_outlier(x, keep=base_gtrials)
-base_avg = base.average(None, base_func)
+# base_avg = base.average(None, base_func)
+# scaled = rescale(resp, base, mode='zscore', copy=True, outliers=10)
 
 # %% create spectrograms
-freqs = np.geomspace(2, 1000, 100)
-cyc = np.log(freqs)+1
-# cyc = np.linspace(0.5, 50, len(freqs))
-#
 
-base_s = tfr_morlet(base, freqs, n_jobs=7, verbose=10, average=False,
-                    n_cycles=cyc, return_itc=False, decim=20, use_fft=True)
-base_s.crop(tmin=-0.5, tmax=0)
-resp_s = tfr_morlet(resp, freqs, n_jobs=7, verbose=10, average=False,
-                    n_cycles=cyc, return_itc=False, decim=20, use_fft=True)
+resp_s = wavelet_scaleogram(resp, n_jobs=7)
 resp_s.crop(tmin=-1, tmax=1)
+base_s = wavelet_scaleogram(base, n_jobs=7)
+base_s.crop(tmin=-0.5, tmax=0)
 
-resp_sa = resp_s.average(resp_func, copy=True)
-base_sa = base_s.average(base_func, copy=True)
-spec = resp_sa.copy()
-spec._data = rescale(resp_sa._data, base_sa._data, mode='ratio', axis=2,
-                     copy=True)
+spec = rescale(resp_s, base_s, copy=True, mode='ratio',
+               base_trials=base_gtrials)
+spec.decimate(int(spec.info['sfreq']/100))
+spec_a = spec.average(resp_func, copy=True)
+spec_a._data = np.log10(spec_a._data) * 20
 
 # %% plotting
 
-figs = chan_grid(spec, size=(16, 12), vmin=0.7, vmax=1.4, show=False,
+figs = chan_grid(spec_a, size=(16, 12), vmin=-2, vmax=2,
                  cmap=parula_map)
 for i, f in enumerate(figs):
     f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
@@ -89,4 +84,5 @@ for i, f in enumerate(figs):
 assert False
 
 # %% save bad channels
+good.info['bads'] += spec.info['bads']
 update(good, "muscle")
