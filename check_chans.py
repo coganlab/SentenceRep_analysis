@@ -16,7 +16,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 17
+    subject = 31
 
 # Load the data
 TASK = "SentenceRep"
@@ -63,14 +63,13 @@ base_func = lambda x: avg_no_outlier(x, keep=base_gtrials)
 
 # %% create spectrograms
 
-resp_s = wavelet_scaleogram(resp, n_jobs=7)
+resp_s = wavelet_scaleogram(resp, n_jobs=7, decim=int(good.info['sfreq']/100))
 resp_s.crop(tmin=-1, tmax=1)
-base_s = wavelet_scaleogram(base, n_jobs=7)
+base_s = wavelet_scaleogram(base, n_jobs=7, decim=int(good.info['sfreq']/100))
 base_s.crop(tmin=-0.5, tmax=0)
 
 spec = rescale(resp_s, base_s, copy=True, mode='ratio',
                base_trials=base_gtrials)
-spec.decimate(int(spec.info['sfreq']/100))
 spec_a = spec.average(resp_func, copy=True)
 spec_a._data = np.log10(spec_a._data) * 20
 
