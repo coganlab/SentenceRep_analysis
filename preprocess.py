@@ -86,7 +86,7 @@ for epoch, name, gt in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
     power = scaling.rescale(epoch, base, copy=True, base_trials=btrials)
     power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
                fmt='double')
-    z_score = scaling.rescale(epoch, base, 'zscore', coy=True, base_trials=btrials)
+    z_score = scaling.rescale(epoch, base, 'zscore', copy=True, base_trials=btrials)
     z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                  fmt='double')
     epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
