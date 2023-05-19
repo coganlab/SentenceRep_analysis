@@ -3,6 +3,7 @@ from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, channel_outlier_marker, trial_ieeg
 from ieeg.timefreq import gamma, utils
 from ieeg.calc import stats, scaling
+from ieeg.process import parallelize
 import numpy as np
 import os.path as op
 import os
@@ -29,7 +30,6 @@ new = crop_empty_data(filt, )
 
 # Mark channel outliers as bad
 # new.info['bads'] = channel_outlier_marker(new, 4)
-
 # Exclude bad channels
 good = new.copy().drop_channels(filt.info['bads'])
 good.load_data()
@@ -45,23 +45,23 @@ del new
 from events import fix_annotations  # noqa E402
 fix_annotations(good)
 
-# %% High Gamma Filter and epoching
+# %% Highju Gamma Filter and epoching
 out = []
 gtrials = []
-for epoch, t in zip(("Start", "Word/Response/LS", "Word/Audio/LS",
+for epoch, t in zip(("Start",  "Word/Response/LS", "Word/Audio/LS",
                      "Word/Audio/LM", "Word/Audio/JL", "Word/Speak/LS",
                      "Word/Mime/LM", "Word/Audio/JL"),
-                    ((-0.5, 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
+                    ((-0.5 , 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
                      (-0.5, 1.5), (-0.5, 1.5), (1, 3))):
     times = [None, None]
     times[0] = t[0] - 0.5
     times[1] = t[1] + 0.5
-    trials = trial_ieeg(good, epoch, times, preload=True)
+    trials = trial_ieeg(good , epoch, times, preload=True)
     gtrials.append(stats.find_outliers(trials.get_data(), outliers=10))
-    gamma.extract(trials, copy=False, n_jobs=1)
+    gamma.extract(trials,  copy=False, n_jobs=1)
     utils.crop_pad(trials, "0.5s")
     trials.resample(100)
-    trials.filenames = good.filenames
+    trials.filenames =  good.filenames
     out.append(trials)
     # if len(out) == 2:
     #     break
@@ -76,19 +76,17 @@ if not op.isdir(save_dir):
     os.mkdir(save_dir)
 mask = dict()
 for epoch, name, gt in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
-                             "go_lm", "go_jl"), gtrials):
-    mask[name] = np.zeros(epoch._data.shape[1:])
-    for ic, ch in enumerate(epoch.ch_names):
-        sig1 = np.squeeze(epoch.get_data(picks=ch, item=gt[:, ic]))
-        sig2 = np.squeeze(base.get_data(picks=ch, item=btrials[:, ic]))
-        sig2 = np.pad(sig2, ((0, 0), (0, sig1.shape[-1] - sig2.shape[-1])),
-                      mode='reflect')
-        mask[name][ic] = stats.time_perm_cluster(sig1, sig2, 0.05, n_perm=1000)
+                                 "go_lm", "go_jl"), gtrials):
+    ins = ((np.squeeze(epoch.get_data(picks=ch, item=gt[:, ic])),
+            np.squeeze(base.get_data(picks=ch, item=btrials[:, ic]))
+            ) for ic, ch in enumerate(epoch.ch_names))
+    mask[name] = np.array(parallelize(
+        stats.time_perm_cluster, ins, p_thresh=0.05, n_perm=1000, n_jobs=1))
     epoch_mask = mne.EvokedArray(mask[name], epoch.average().info)
     power = scaling.rescale(epoch, base, copy=True, base_trials=btrials)
     power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
                fmt='double')
-    z_score = scaling.rescale(epoch, base, 'zscore', copy=True, base_trials=btrials)
+    z_score = scaling.rescale(epoch, base, 'zscore', coy=True, base_trials=btrials)
     z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                  fmt='double')
     epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
