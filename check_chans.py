@@ -1,9 +1,12 @@
+# Description: Check channels for outliers and remove them
 from ieeg.viz.utils import chan_grid
 from ieeg.viz.parula import parula_map
 from ieeg.io import get_data, raw_from_layout, update
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data
 from ieeg.calc.scaling import rescale
 from ieeg.calc.stats import avg_no_outlier, find_outliers
+import mpld3
+import pickle
 import os
 from mne.time_frequency import tfr_morlet
 from ieeg.timefreq.utils import wavelet_scaleogram
@@ -35,7 +38,7 @@ fix_annotations(good)
 # %% Crop raw data to minimize processing time
 
 # good.drop_channels(good.info['bads'])
-# good.info['bads'] += channel_outlier_marker(good, 3, 2, save=True)
+good.info['bads'] += channel_outlier_marker(good, 3, 2, save=True)
 good.drop_channels(good.info['bads'])
 # good.info['bads'] += channel_outlier_marker(good, 4, 2)
 # good.drop_channels(good.info['bads'])
@@ -74,13 +77,24 @@ spec_a = spec.average(resp_func, copy=True)
 spec_a._data = np.log10(spec_a._data) * 20
 
 # %% plotting
-
+import matplotlib as mpl
 figs = chan_grid(spec_a, size=(16, 12), vmin=-2, vmax=2,
-                 cmap=parula_map)
+                 cmap=parula_map, show=False)
+fig_path = os.path.join(layout.root, 'derivatives', 'figs', 'wavelet')
 for i, f in enumerate(figs):
-    f.savefig(os.path.join(layout.root, 'derivatives', 'figs', 'wavelet',
-                           f'{subj}_response_{i + 1}'))
-assert False
+    f.savefig(os.path.join(fig_path, f'{subj}_response_{i + 1}'))
+    # pickle the figure for later
+    # with open(os.path.join(fig_path, f'{subj}_response_{i + 1}.pkl'), 'wb'
+    #           ) as file:
+    #     pickle.dump(f, file)
+    # mpl.use('tkAgg')
+    # with open(os.path.join(fig_path, f'{subj}_response_{i + 1}.pkl'), 'rb'
+    #           ) as file:
+    #     f2 = pickle.load(file)
+    # f2.show()
+# html_fig = mpld3.fig_to_html(f)
+# mpld3.show(html_fig)
+# assert False
 
 # %% save bad channels
 good.info['bads'] += spec.info['bads']
