@@ -6,6 +6,7 @@ from ieeg.calc.stats import dist
 from ieeg.calc.utils import get_elbow
 from ieeg.viz.utils import plot_dist, plot_weight_dist
 import matplotlib.pyplot as plt
+from collections.abc import Iterable
 
 
 def plot_decomp(data: np.ndarray, clusters: int = 8, repetitions: int = 10,
@@ -49,6 +50,8 @@ def compare_subjects(data: np.ndarray, names: list[str], subj_per_plot: int = 8)
 
     fig, axs = plt.subplots(1, int(np.ceil(len(sub_all) / subj_per_plot)),
                             sharex=True, sharey=True)
+    if not isinstance(axs, Iterable):
+        axs = [axs]
 
     subj_data = np.zeros((0, data.shape[1]))
     prev_sub = names[0].split("-")[0]
