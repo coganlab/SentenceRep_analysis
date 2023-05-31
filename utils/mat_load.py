@@ -40,8 +40,9 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
                 mne.utils.logger.warn(e)
                 continue
 
+            avg_func = lambda x: np.nanmean(x, axis=0)
             if suffix.endswith("epo"):
-                sig = epochs[subject][cond].average()
+                sig = epochs[subject][cond].average(method=avg_func)
             else:
                 sig = epochs[subject][cond][0]
                 epochs[subject][cond] = epochs[subject][cond][0]

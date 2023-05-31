@@ -1,6 +1,7 @@
+## Preprocess
 import ieeg.viz.utils
 from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import crop_empty_data, channel_outlier_marker, trial_ieeg
+from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq import gamma, utils
 from ieeg.calc import stats, scaling
 from ieeg.process import parallelize
@@ -9,14 +10,14 @@ import os.path as op
 import os
 import mne
 
-# %% check if currently running a slurm job
+## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     LAB_root = os.path.join(HOME, "workspace", "CoganLab")
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 3
+    subject = 30
 
 # Load the data
 TASK = "SentenceRep"
@@ -25,7 +26,7 @@ layout = get_data("SentenceRep", root=LAB_root)
 filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                        extension='.edf', desc='clean', preload=False)
 
-# %% Crop raw data to minimize processing time
+## Crop raw data to minimize processing time
 new = crop_empty_data(filt, )
 
 # Mark channel outliers as bad
@@ -41,13 +42,13 @@ good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 # Remove intermediates from mem
 del new
 
-# %% fix SentenceRep events
+## fix SentenceRep events
 from events import fix_annotations  # noqa E402
 fix_annotations(good)
 
-# %% Highju Gamma Filter and epoching
+## High Gamma Filter and epoching
 out = []
-gtrials = []
+
 for epoch, t in zip(("Start",  "Word/Response/LS", "Word/Audio/LS",
                      "Word/Audio/LM", "Word/Audio/JL", "Word/Speak/LS",
                      "Word/Mime/LM", "Word/Audio/JL"),
@@ -56,41 +57,41 @@ for epoch, t in zip(("Start",  "Word/Response/LS", "Word/Audio/LS",
     times = [None, None]
     times[0] = t[0] - 0.5
     times[1] = t[1] + 0.5
-    trials = trial_ieeg(good , epoch, times, preload=True)
-    gtrials.append(stats.find_outliers(trials.get_data(), outliers=10))
+    trials = trial_ieeg(good, epoch, times, preload=True)
+    outliers_to_nan(trials, outliers=10)
     gamma.extract(trials,  copy=False, n_jobs=1)
     utils.crop_pad(trials, "0.5s")
     trials.resample(100)
-    trials.filenames =  good.filenames
+    trials.filenames = good.filenames
     out.append(trials)
     # if len(out) == 2:
     #     break
 
 base = out.pop(0)
-btrials = gtrials.pop(0)
 
-# %% run time cluster stats
+
+## run time cluster stats
 
 save_dir = op.join(layout.root, "derivatives", "stats")
 if not op.isdir(save_dir):
     os.mkdir(save_dir)
 mask = dict()
-for epoch, name, gt in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
-                                 "go_lm", "go_jl"), gtrials):
-    ins = ((np.squeeze(epoch.get_data(picks=ch, item=gt[:, ic])),
-            np.squeeze(base.get_data(picks=ch, item=btrials[:, ic]))
-            ) for ic, ch in enumerate(epoch.ch_names))
+for epoch, name in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
+                                 "go_lm", "go_jl")):
+    ins = ((np.squeeze(epoch.get_data(picks=ch)),
+            np.squeeze(base.get_data(picks=ch))
+            ) for ch in epoch.ch_names)
     mask[name] = np.array(parallelize(
         stats.time_perm_cluster, ins, p_thresh=0.05, n_perm=1000, n_jobs=1))
     epoch_mask = mne.EvokedArray(mask[name], epoch.average().info)
-    power = scaling.rescale(epoch, base, copy=True, base_trials=btrials)
+    power = scaling.rescale(epoch, base, copy=True)
     power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
                fmt='double')
-    z_score = scaling.rescale(epoch, base, 'zscore', copy=True, base_trials=btrials)
+    z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
     z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                  fmt='double')
     epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
 
-# %% Plot
+## Plot
 import matplotlib.pyplot as plt  # noqa E402
 plt.imshow(mask['go_ls'])

@@ -17,7 +17,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 15
+    subject = 31
 
 # Load the data
 TASK = "SentenceRep"
@@ -51,16 +51,12 @@ del new
 
 ## epoching and trial outlier removal
 
+
 resp = trial_ieeg(good, "Word/Response", (-1.5, 1.5), preload=True)
-resp_gtrials = find_outliers(resp.get_data(), 11)
-resp_func = lambda x: avg_no_outlier(x, keep=resp_gtrials)
-# resp_avg = resp.average(None, resp_func)
+outliers_to_nan(resp, 10)
 
 base = trial_ieeg(good, "Start", (-1, 0.5), preload=True)
-base_gtrials = find_outliers(base.get_data(),8)
-base_func = lambda x: avg_no_outlier(x, keep=base_gtrials)
-# base_avg = base.average(None, base_func)
-# scaled = rescale(resp, base, mode='zscore', copy=True, outliers=10)
+outliers_to_nan(base, 10)
 
 ## create spectrograms
 
@@ -69,9 +65,8 @@ resp_s.crop(tmin=-1, tmax=1)
 base_s = wavelet_scaleogram(base, n_jobs=-2, decim=int(good.info['sfreq']/100))
 base_s.crop(tmin=-0.5, tmax=0)
 
-spec = rescale(resp_s, base_s, copy=True, mode='ratio',
-               base_trials=base_gtrials)
-spec_a = spec.average(resp_func, copy=True)
+spec = rescale(resp_s, base_s, copy=True, mode='ratio')
+spec_a = spec.average(lambda x: np.nanmean(x, axis=0), copy=True)
 spec_a._data = np.log10(spec_a._data) * 20
 
 ## plotting
