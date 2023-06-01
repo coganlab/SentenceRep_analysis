@@ -1,3 +1,5 @@
 .idea/*
 .spyproject/*
+*__pycache__*
 *.asv
+*.log
