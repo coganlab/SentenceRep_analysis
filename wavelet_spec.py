@@ -80,5 +80,5 @@ for sub in subjects:
         spec_a.filenames = good.filenames
         spec_a.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-avg.h5')
-        mne.time_frequency.write_tfrs(save_dir, spec_a, overwrite=True)
+        mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
         # spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)
