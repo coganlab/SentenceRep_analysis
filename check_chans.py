@@ -71,8 +71,9 @@ spec_a._data = np.log10(spec_a._data) * 20
 
 ## plotting
 import matplotlib as mpl
+mpl.pyplot.figure()
 figs = chan_grid(spec_a, size=(20, 10), vmin=-2, vmax=2,
-                 cmap=parula_map, show=False)
+                 cmap=parula_map, show=True)
 fig_path = os.path.join(layout.root, 'derivatives', 'figs', 'wavelet')
 for i, f in enumerate(figs):
     f.savefig(os.path.join(fig_path, f'{subj}_response_{i + 1}.jpg'), bbox_inches='tight')
