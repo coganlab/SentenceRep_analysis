@@ -1,4 +1,6 @@
 ## Description: Produce spectrograms for each subject
+import mne.time_frequency
+
 from ieeg.io import get_data, raw_from_layout, update, save_derivative
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data,\
     outliers_to_nan
@@ -19,9 +21,9 @@ else:  # if not then set box directory
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
 
-for subj in subjects:
+for sub in subjects:
     # Load the data
-    filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
+    filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
 
     ## fix SentenceRep events
@@ -34,7 +36,7 @@ for subj in subjects:
     ## Crop raw data to minimize processing time
 
     # good.drop_channels(good.info['bads'])
-    good.info['bads'] += channel_outlier_marker(good, 3, 2)
+    good.info['bads'] = channel_outlier_marker(good, 3, 2)
     good.drop_channels(good.info['bads'])
     # good.info['bads'] += channel_outlier_marker(good, 4, 2)
     # good.drop_channels(good.info['bads'])
@@ -49,29 +51,35 @@ for subj in subjects:
 
     ## epoching and trial outlier removal
 
-    out = []
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', subj)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    for epoch, t, name in zip(("Start",  "Word/Response/LS", "Word/Audio/LS","Word/Audio/LM", "Word/Audio/JL",
-                         "Word/Speak/LS", "Word/Mime/LM", "Word/Audio/JL"),
-                        ((-0.5, 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5), (1, 3)),
-                        ("base", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl")):
+    for epoch, t, name in zip(
+            ("Start",  "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
+             "Word/Audio/JL", "Word/Speak/LS", "Word/Mime/LM",
+             "Word/Audio/JL"),
+            ((-0.5, 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
+             (-0.5, 1.5), (-0.5, 1.5), (1, 3)),
+            ("base", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
+             "go_jl")):
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
-        spec = wavelet_scaleogram(trials, n_jobs=-2, decim=int(good.info['sfreq'] / 100))
+        spec = wavelet_scaleogram(trials, n_jobs=-2, decim=int(
+            good.info['sfreq'] / 100))
         crop_pad(spec, "0.5s")
-        spec.filenames = good.filenames
-        spec.info['bads'] = good.info['bads']
-        out.append(trials)
         if epoch == "Start":
             base = spec.copy()
-        else:
-            spec_a = rescale(spec, base, copy=True, mode='ratio').average(lambda x: np.nanmean(x, axis=0), copy=True)
-            spec_a._data = np.log10(spec_a._data) * 20
-            spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)
-    break
+            continue
+        spec_a = rescale(spec, base, copy=True, mode='ratio').average(
+            lambda x: np.nanmean(x, axis=0), copy=True)
+        spec_a._data = np.log10(spec_a._data) * 20
+        fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
+        spec_a.info['subject_info']['files'] = tuple(fnames)
+        spec_a.info['bads'] = good.info['bads']
+        filename = os.path.join(save_dir, f'{name}-tfr.h5')
+        mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
+        # spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)
