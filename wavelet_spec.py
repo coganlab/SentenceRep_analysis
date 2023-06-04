@@ -77,7 +77,8 @@ for sub in subjects:
         spec_a = rescale(spec, base, copy=True, mode='ratio').average(
             lambda x: np.nanmean(x, axis=0), copy=True)
         spec_a._data = np.log10(spec_a._data) * 20
-        spec_a.info['subject_info']['files'] = good.filenames
+        fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
+        spec_a.info['subject_info']['files'] = tuple(fnames)
         spec_a.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
         mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
