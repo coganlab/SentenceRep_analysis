@@ -1,4 +1,6 @@
 ## Description: Produce spectrograms for each subject
+import mne.time_frequency
+
 from ieeg.io import get_data, raw_from_layout, update, save_derivative
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data,\
     outliers_to_nan
@@ -77,4 +79,6 @@ for sub in subjects:
         spec_a._data = np.log10(spec_a._data) * 20
         spec_a.filenames = good.filenames
         spec_a.info['bads'] = good.info['bads']
-        spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)
+        filename = os.path.join(save_dir, f'{name}-avg.h5')
+        mne.time_frequency.write_tfrs(save_dir, spec_a, overwrite=True)
+        # spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)
