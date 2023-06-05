@@ -1,7 +1,7 @@
 ## Description: Produce spectrograms for each subject
 import mne.time_frequency
 
-from ieeg.io import get_data, raw_from_layout, update, save_derivative
+from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data,\
     outliers_to_nan
 from ieeg.calc.scaling import rescale

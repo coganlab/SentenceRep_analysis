@@ -34,11 +34,11 @@ signif, all_sig, _ = load_intermediates(layout, conds, "significance")
 AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
 
 ## Check subjects
-idx = SM
-cond = 'aud_ls'
+idx = PROD
+cond = 'resp'
 data = np.vstack([d for i, d in enumerate(all_power[cond]) if i in idx])
 names_d = [d for i, d in enumerate(names) if i in idx]
-compare_subjects(data, names_d)
+compare_subjects(data, names_d, 5)
 
 ## remove bad subjects
 bads = []

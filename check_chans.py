@@ -12,7 +12,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 3
+    subject = 18
 
 # Load the data
 TASK = "SentenceRep"
@@ -22,6 +22,7 @@ cond = 'resp'
 filename = os.path.join(layout.root, 'derivatives',
                         'spec', 'wavelet', subj, f'{cond}-tfr.h5')
 spec = mne.time_frequency.read_tfrs(filename)[0]
+mne
 
 ## plotting
 import matplotlib as mpl
@@ -29,7 +30,7 @@ figs = chan_grid(spec, size=(20, 10), vmin=-2, vmax=2,
                  cmap=parula_map, show=False)
 fig_path = os.path.join(layout.root, 'derivatives', 'figs', 'wavelet')
 for i, f in enumerate(figs):
-    f.savefig(os.path.join(fig_path, f'{subj}_response_{i + 1}.jpg'), bbox_inches='tight')
+    f.savefig(os.path.join(fig_path, f'{subj}_{cond}_{i + 1}.jpg'), bbox_inches='tight')
 
 ## save bad channels
 update(spec, layout, "muscle")

@@ -150,7 +150,7 @@ if __name__ == "__main__":
     import os
     import numpy as np
     from ieeg.io import get_data
-    from ieeg.viz.utils import plot_dist, plot_clustering
+    from ieeg.viz.utils import plot_dist
     from ieeg.viz.mri import get_sub_dir, plot_on_average, gen_labels
     import matplotlib.pyplot as plt
     from utils.mat_load import load_intermediates, group_elecs
@@ -176,5 +176,5 @@ if __name__ == "__main__":
     AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
 
     # %%
-    data = {"D" + str(int(k[1:])): v['resp'] for k, v in signif.items() if v}
-    plot_on_average(data, picks=SM)
+    data = [v['resp'] for v in signif.values() if v]
+    plot_on_average(data, picks=PROD)
