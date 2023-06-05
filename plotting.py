@@ -179,4 +179,6 @@ if __name__ == "__main__":
     no_plot = [f'sub-{id}' for id in ['D0003', 'D0072']]
     data = [v['resp'] for v in signif.values() if v]
     plot_data = [v for v in data if v.info['subject_info']['his_id'] not in no_plot]
-    brain = plot_on_average(plot_data, picks=PROD)
+    brain = plot_on_average(data, picks=SM, color='red')
+    plot_on_average(data, picks=AUD, color='green', fig=brain)
+    plot_on_average(data, picks=PROD, color='blue', fig=brain)
