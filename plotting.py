@@ -176,5 +176,7 @@ if __name__ == "__main__":
     AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
 
     # %%
+    no_plot = [f'sub-{id}' for id in ['D0003', 'D0072']]
     data = [v['resp'] for v in signif.values() if v]
-    plot_on_average(data, picks=PROD)
+    plot_data = [v for v in data if v.info['subject_info']['his_id'] not in no_plot]
+    brain = plot_on_average(plot_data, picks=PROD)

@@ -66,6 +66,8 @@ labels = np.concatenate([np.ones([len(AUD)]), np.ones([len(SM)]) * 2,
                         np.ones([len(PROD)]) * 3])
 plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
                 colors=[[0,1,0],[1,0,0],[0,0,1]])
+plt.legend()
+plt.title('Listen-Speak Electrode Groups')
 
 ##
 cond = 'resp'
@@ -78,5 +80,5 @@ plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
 plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
 plt.legend()
 plt.xlabel("Time(s)")
-plt.ylabel("High Gamma Power (V)")
+plt.ylabel("Z-Score (V)")
 plt.title(cond)
