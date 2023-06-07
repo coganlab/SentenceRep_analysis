@@ -22,6 +22,8 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
+    if sub != "D0022":
+        continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
