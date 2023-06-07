@@ -3,7 +3,7 @@ import mne
 import numpy as np
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
-from ieeg.viz.mri import get_sub_dir
+from ieeg.viz.mri import get_sub_dir, plot_on_average
 from ieeg.calc.utils import stitch_mats
 import matplotlib.pyplot as plt
 from utils.mat_load import load_intermediates, group_elecs
@@ -145,9 +145,18 @@ class Analysis:
         return Analysis(self.root, self.task, self.units, conds, zscore, sig,
                         power, epochs, self.names)
 
+    def plot_groups_on_average(self):
+        assert hasattr(self, 'SM')
+        subjects = [v for v in self.epochs.values() if v]
+        if isinstance(subjects[0], dict):
+            cond = list(subjects[0].keys())[0]
+            subjects = [s[cond] for s in subjects]
+        brain = plot_on_average(subjects, picks=self.SM, color='red')
+        plot_on_average(subjects, picks=self.AUD, color='green', fig=brain)
+        plot_on_average(subjects, picks=self.PROD, color='blue', fig=brain)
+        return brain
+
 
 if __name__ == "__main__":
-    SentenceRep = Analysis()
-    D3 = SentenceRep['D0003']
-    D3_resp = D3['resp']
-    resp = SentenceRep['resp']
+    data = Analysis()
+    data.plot_groups_on_average()
