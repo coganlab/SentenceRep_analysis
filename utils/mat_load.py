@@ -3,6 +3,7 @@ import os
 from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
+from tqdm import tqdm
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -30,12 +31,12 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     for cond in conds.keys():
         all_sig[cond] = np.empty((0, 200))
     folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
-    for subject in layout.get_subjects():
+    for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
         epochs[subject] = dict()
         for cond in conds.keys():
             try:
-                epochs[subject][cond] = reader(os.path.join(
-                    folder, f"{subject}_{cond}_{suffix}.fif"))
+                fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
+                epochs[subject][cond] = reader(fname, verbose=False)
             except FileNotFoundError as e:
                 mne.utils.logger.warn(e)
                 continue

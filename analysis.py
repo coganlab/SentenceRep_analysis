@@ -1,188 +1,102 @@
-from utils.mat_load import get_sigs, load_all, group_elecs
-from plotting import plot_factors, plot_weight_dist, alt_plot
-from utils.calc import ArrayLike, BaseEstimator, stitch_mats
-from decomposition import estimate, varimax, to_sklearn_dataset, TimeSeriesScalerMinMax, NMF
-
-import matplotlib as mpl
-
-mpl.use('TKAgg')
-import matplotlib.pyplot as plt
-from joblib import Parallel, delayed
+import os
+import mne
 import numpy as np
-from pandas import DataFrame as df
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay,mean_squared_error
-from scipy.io import loadmat
-from scipy import signal
-import tensorly.decomposition as td
-from tensorly.decomposition._nn_cp import initialize_cp
-import tensorly as tl
-from tensorly import metrics
+from ieeg import PathLike
+from ieeg.io import get_data
+from ieeg.viz.mri import get_sub_dir
+from ieeg.calc.utils import stitch_mats
+import matplotlib.pyplot as plt
+from utils.mat_load import load_intermediates, group_elecs
+from sklearn.decomposition import NMF
 
-Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata_part.mat')
-sigMatChansName = sigMatChansName["LSwords"]['AuditorywDelay']
-data = loadmat("data/pydata_3d.mat", simplify_cells=True)
-names_3d = data['channelNames']
-trialInfo_3d = data["trialInfo"]
-listen_speak_3d = data["listenSpeak"]
-Subject_3d = data["subj"]
-trial_mask = data["trialMask"]
-del data
-concat_3d = np.concatenate(list(listen_speak_3d.values()), 2)
-# good and non white matter channels
-all_sig_chans = np.array([], dtype=int)
-for cond in sig_chans.values():
-    for chans in cond.values():
-        all_sig_chans = np.concatenate([all_sig_chans, chans])
-all_sig_chans = list(set(all_sig_chans.ravel()))
-cond = 'LSwords'
-resp = all_sigA[cond]["Response"]
-respz = all_sigZ[cond]["Response"]
-aud = all_sigA[cond]["AuditorywDelay"]
-audz = all_sigZ[cond]["AuditorywDelay"]
-part = all_sigA[cond]["StartPart"]
-partz = all_sigZ[cond]["StartPart"]
-go = all_sigA[cond]["DelaywGo"]
-goz = all_sigZ[cond]["DelaywGo"]
-# part = dict(aud=aud, audz=audz, go=go, goz=goz, resp=resp, respz=respz)
-# SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
 
-# Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/whole.mat')
-# resp = all_sigA[cond]["ResponseWhole"]
-# respz = all_sigZ[cond]["ResponseWhole"]
-# aud = all_sigA[cond]["AuditoryWhole"]
-# audz = all_sigZ[cond]["AuditoryWhole"]
-# go = all_sigA[cond]["GoWhole"]
-# goz = all_sigZ[cond]["GoWhole"]
+class Analysis:
+    def __init__(self, d_data: PathLike = None, task: str = "SentenceRep",
+                 units: str = "uV", _zscore=None, _significance=None,
+                    _power=None, _epochs=None, _names=None):
+        mne.set_log_level("ERROR")
+        self.root = self.set_root(d_data)
+        self.layout = get_data(task, root=self.root)
+        self.task = task
+        self.units = units
+        self.conds = {"resp": (-1, 1),
+                      "aud_ls": (-0.5, 1.5),
+                      "aud_lm": (-0.5, 1.5),
+                      "aud_jl": (-0.5, 1.5),
+                      "go_ls": (-0.5, 1.5),
+                      "go_lm": (-0.5, 1.5),
+                      "go_jl": (-0.5, 1.5)}
+        if _power is None or _names is None or _epochs is None:
+            epochs, self.power, self.names = load_intermediates(
+                self.layout, self.conds, "power")
+            self.epochs = {k: v for k, v in epochs.items() if v}
+        else:
+            self.power = _power
+            self.names = _names
+            self.epochs = _epochs
 
-sigConcat = np.concatenate([part,aud, go, resp], axis=1)
-newSet = [part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName]
-active = np.where(np.any(sigConcat == 1, axis=1))[0]
-sig_chans2 = np.intersect1d(active,all_sig_chans)
-# sig_chans3 = np.concatenate([SM, AUD, PROD])
-for i, allign in enumerate(newSet): #active channels during condition
-    newSet[i] = newSet[i][sig_chans2]
-[part, aud, go, resp, partz, audz, goz, respz, sigConcat, sigMatChansName] = newSet[:]
-sigConcatz = np.concatenate([partz,audz[:,:175], goz, respz], axis=1)
-data_3d = concat_3d[np.isin(names_3d,sigMatChansName),:,:]
-concat_perm = sigConcat[np.isin(sigMatChansName,names_3d),:]
-sigConcat = np.concatenate([part,aud[:,:175], go, resp], axis=1)
-trial_mask_2 = trial_mask[np.isin(names_3d,sigMatChansName),:]
-mask = np.einsum('ij,ik->ikj',concat_perm,trial_mask_2)
-mask2 = mask.copy()
-mask2.dtype=bool
-mask2=np.invert(mask2)
-data_m = np.ma.array(data_3d,mask=mask2)
-data_2d = data_m.mean(1)
-train = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(data_2d))
-# partwt = np.multiply(part, partz)
-# audwt = np.multiply(aud, audz)
-# gowt = np.multiply(go, goz)
-# respwt = np.multiply(resp, respz)
-# %% Generate the summed signals
-# sigSum = np.sum(np.array(newSet[0:3]), axis=0)
-# sigSumWt = np.sum(np.array([audwt, gowt, respwt]), axis=0)
-# sigSumZ = np.sum(np.array(newSet[3:6]), axis=0)
-# %% 3d nmf
-# Fit an ensemble of models, 4 random replicates / optimization runs per model rank
-# ensemble = tt.Ensemble(fit_method="ncp_hals")
-# ensemble.fit(data_3d, ranks=range(1, 6), replicates=4)
-# varience = 1-np.mean(np.array([np.square(np.array(ensemble.objectives(i))) for i in range(1,6)]),1)
-# fig, axes = plt.subplots(1, 2)
-# tt.plot_objective(ensemble, ax=axes[0])   # plot reconstruction error as a function of num components.
-# tt.plot_similarity(ensemble, ax=axes[1])  # plot model similarity as a function of num components.
-# fig.tight_layout()
+        if _significance is None:
+            _, self.sig, _ = load_intermediates(
+                self.layout, self.conds, "significance")
+        else:
+            self.sig = _significance
 
-# Plot the low-d factors for an example model, e.g. rank-2, first optimization run / replicate.
-# num_components = 2
-# replicate = 0
-# tt.plot_factors(ensemble.factors(num_components)[replicate])
-# plt.show()# plot the low-d factors
+        if _zscore is None:
+            _, self.zscore, _ = load_intermediates(
+                self.layout, self.conds, "zscore")
+        else:
+            self.zscore = _zscore
 
-# Tensorly decomposition
-# core, factors = td.tucker(data_3d, rank=list(range(1, 6)))
-# factors = td.parafac(data_3d, rank=3)
-# %%
+        self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
+            self.sig, self.names, self.conds)
+        self.subjects = list(self.epochs.keys())
+        self.subjects_dir = self.set_subjects_dir()
 
-from MEPONMF.onmf_DA import DA
-from MEPONMF.onmf_DA import ONMF_DA
-k = 20
-param = dict(tol=1e-6, alpha=1.01,
-           purturb=0.5, verbos=1, normalize=False)
-model2 = DA(**param,K=k, max_iter=1000)
-model2.fit(data_2d,Px='auto')
-Y,P = model2.cluster()
-# W, H, model = ONMF_DA.func(sigConcatz, k=k, **param, auto_weighting=False)
-model2.plot_criticals(log=True)
-plt.show()
-# k = model.return_true_number()
-# W, H, model2 = ONMF_DA.func(stitched, k=k, **param, auto_weighting=True)
-# model2 = DA(**param,K=k, max_iter=1000)
-# model2.fit(stitched,Px='auto')
-# Y,P = model2.cluster()
-# model2.plot_criticals(log=True)
-# plt.show()
-# plot_weight_dist(stitchedz, Y)
-# model2.pie_chart()
-# plot_weight_dist(data_2d.T,fit.fit.W)
-# k = 5
-# reps = 2
-# data_t = tl.tensor(data_3d)
-# decomp = td.CP_NN_HALS(rank=4,verbose=2, mask=mask,exact=True)
-# data_cp = decomp.fit_transform(data_t)
-# reconstruction_as = tl.cp_to_tensor(data_cp,mask)
-# error = metrics.regression.MSE(data_t,reconstruction_as)
-# plot_factors(data_cp.factors)
-# y =data_cp.factors[0]
-# plot_weight_dist(data_2d[:, 50:425], y,concat_perm[:, 50:425])
-# decomp = []
-# for i in range(1, k + 1):
-#     td.CP_NN(rank=i,verbose=2, mask=mask)
-#     decomp.append(Parallel(-1, verbose=1)(delayed(hals.fit_transform)(
-#         data_t) for j in range(reps)))
-# decomp = Parallel(-1, verbose=1)(delayed(td.non_negative_parafac)(
-#     data_t, i, n_iter_max=20, init='random', mask=mask, verbose=True
-#     ) for i in range(1, k + 1) for j in range(reps))
-# decomp_data = np.ndarray((k, reps), dtype='O')
-# recon_err = np.ndarray((k, reps))
-# recon = np.ndarray((k, reps) + data_t.shape)
-# for j in range(reps):
-#     for i in range(k):
-#         reconstruction_as = tl.cp_to_tensor(decomp[i][j])
-#         recon_err[i,j] = 1-metrics.regression.MSE(
-#             np.multiply(data_t, mask), reconstruction_as)
-#         # decomp_data[j,i] = decomp[i][k]
-#         recon[i,j,:,:,:] = reconstruction_as[:,:,:]
-# plt.boxplot(recon_err.T)
-# plot_factors(recon[3,0].factors)
-#
-# %% Grid search decomposition
-# x = to_sklearn_dataset(TimeSeriesScalerMinMax((0, 1)).fit_transform(np.multiply(sigConcatz,sigConcat)))
-# # gridsearch = estimate(x, NMF(max_iter=100000,init='nndsvda',alpha_W=0,
-# #                              alpha_H=0.75, verbose=2), 5)
-# # res = df(gridsearch.cv_results_)
-# # estimator = gridsearch.best_estimator_
-# estimator = NMF(max_iter=100000,init='nndsvda',alpha_W=0,
-#                              alpha_H=0.5, verbose=2)
-# estimator.n_components = 4
-# y = estimator.fit_transform(x)
-# # # %% decomposition plotting
-# plot_weight_dist(sigConcatz[:, 50:425], y, sigConcat[:, 50:425])
-#, ["PROD", "SM", "AUD"],["blue","red","lime"])
-# # prod = sig_chans3[np.argmax(y,1)==0]
-# # aud = sig_chans3[np.argmax(y,1)==1]
-# # sm = sig_chans3[np.argmax(y,1)==2]
-# # y_true = np.concatenate([[0]*len(PROD), [1]*len(AUD), [2]*len(SM)])
-# y_true = [0 if chan in PROD else 2 if chan in AUD else 1 for chan in sig_chans3]
-# ConfusionMatrixDisplay.from_predictions(y_true,np.argmax(y,1),normalize='true',display_labels=["PROD", "AUD", "SM"])
-# # alt_plot(x,np.argmax(y,1))
-# # decomp_sigs = np.dot(x.T, y)
-# # plt.plot(decomp_sigs)
-# # %% save data
-# gridsearch.scorer_ = gridsearch.scoring = {}
-# np.save('data/gridsearch_stack2.npy', [gridsearch, x, y], allow_pickle=True)
-# # plt.plot(decomp_sigs)
-# plt.savefig('data/decomp_stack2.png')
-# # %% load data
-# # new, x, y = np.load('data/gridsearch_stitchedwt.npy', allow_pickle=True)[:]
-# # res = df(new.cv_results_)
-# # estimator = new.best_estimator_
+    @staticmethod
+    def set_root(root: PathLike):
+        if root is None:
+            HOME = os.path.expanduser("~")
+            if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+                root = os.path.join(HOME, "workspace", "CoganLab")
+            else:  # if not then set box directory
+                root = os.path.join(HOME, "Box", "CoganLab")
+        return root
+
+    @staticmethod
+    def set_subjects_dir(subjects_dir: PathLike = None):
+        return get_sub_dir(subjects_dir)
+
+    def __repr__(self):
+        return f"Analysis(root={self.root}, task={self.task}, " \
+               f"units={self.units})"
+
+    def __getitem__(self, item: str):
+        out = self.copy()
+        if item in self.subjects:
+            out.epochs = self.epochs[item]
+            idx = [i for i, n in enumerate(self.names) if item in n]
+            out.names = [self.names[i] for i in idx]
+            for i, data in enumerate([out.power, out.sig, out.zscore]):
+                for k in data.keys():
+                    data[k] = data[k][idx, :]
+                [out.power, out.sig, out.zscore][i] = data
+            for i, data in enumerate([out.AUD, out.SM, out.PROD, out.sig_chans]):
+                new = []
+                for d in data:
+                    if d in idx:
+                        new.append(d)
+                [out.AUD, out.SM, out.PROD, out.sig_chans][i] = new
+        return out
+
+    def copy(self):
+        return Analysis(self.root, self.task, self.units,
+                        _zscore=self.zscore.copy(),
+                        _significance=self.sig.copy(),
+                        _power=self.power.copy(),
+                        _epochs=self.epochs.copy(),
+                        _names=self.names.copy())
+
+
+if __name__ == "__main__":
+    SentenceRep = Analysis()
+    x = SentenceRep['D0003']
