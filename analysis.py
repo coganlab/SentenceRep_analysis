@@ -17,18 +17,19 @@ class GroupData:
                  _zscore=None, _significance=None, _power=None, _epochs=None,
                  _names=None):
         mne.set_log_level("ERROR")
-        self._layout = get_data(task, root=self._set_root(d_data))
+        self._root = self._set_root(d_data)
+        self._layout = get_data(task, root=self._root)
         self.task = task
         self.units = units
         self.conds = self._set_conditions(conditions)
 
         if _significance is None or _names is None or _epochs is None:
-            epochs, self.sig, self.names = load_intermediates(
+            epochs, self.sig, self._names = load_intermediates(
                 self._layout, self.conds, "significance")
             self.epochs = {k: v for k, v in epochs.items() if v}
         else:
             self.sig = _significance
-            self.names = _names
+            self._names = _names
             self.epochs = _epochs
 
         self.power = self._load_intermediates(_power, "power")
@@ -37,15 +38,15 @@ class GroupData:
         if all(cond in self.conds.keys()
                for cond in ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
             self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                self.sig, self.names, self.conds)
+                self.sig, self._names, self.conds)
         else:
             self.sig_chans = self._find_sig_chans(self.sig)
 
-        self.subjects = list(set(n[:5] for n in self.names))
+        self.subjects = list(set(n[:5] for n in self._names))
         self.subjects.sort()
         self.subjects_dir = self._set_subjects_dir()
-        self.shape = self._get_shape()
-        self.size = np.prod(self.shape)
+        self._shape = self._get_shape()
+        self._size = np.prod(self._shape)
 
     @staticmethod
     def _set_root(root: PathLike):
@@ -77,8 +78,7 @@ class GroupData:
 
     def _load_intermediates(self, input_data: dict, attr: str):
         if input_data is None:
-            _, val, _ = load_intermediates(
-                self.layout, self.conds, attr)
+            _, val, _ = load_intermediates(self._layout, self.conds, attr)
         else:
             val = input_data
         return val
@@ -92,8 +92,8 @@ class GroupData:
             raise ValueError(f"Invalid type for sig {type(self.sig)}")
 
     def __repr__(self):
-        return f"Analysis(root={self.root}, task={self.task}, " \
-               f"units={self.units})"
+        return f"GroupData({self.task}, {len(self.subjects)} subjects," \
+                  f" conditions: {list(self.conds.keys())})"
 
     def __getitem__(self, item: str):
 
@@ -104,16 +104,16 @@ class GroupData:
         return out
 
     def copy(self):
-        del self.layout
+        del self._layout
         copy = deepcopy(self)
-        self.layout = copy.layout = get_data(self.task, root=self.root)
+        self._layout = copy._layout = get_data(self.task, root=self._root)
         return copy
 
     def get_subject(self, sub_id: str):
         assert sub_id in self.subjects
         epochs = self.epochs[sub_id]
-        idx = [i for i, n in enumerate(self.names) if sub_id in n]
-        names = [self.names[i] for i in idx]
+        idx = [i for i, n in enumerate(self._names) if sub_id in n]
+        names = [self._names[i] for i in idx]
 
         new_data = {}
         for at in ["power", "sig", "zscore"]:
@@ -125,7 +125,7 @@ class GroupData:
         sig = new_data["sig"]
         zscore = new_data["zscore"]
 
-        return type(self)(self.root, self.task, self.units, self.conds, zscore,
+        return type(self)(self._root, self.task, self.units, self.conds, zscore,
                         sig, power, epochs, names)
 
     def get_condition(self, condition: str):
@@ -144,8 +144,8 @@ class GroupData:
         zscore = self.zscore[condition]
         conds = {condition: self.conds[condition]}
 
-        return type(self)(self.root, self.task, self.units, conds, zscore, sig,
-                        power, epochs, self.names)
+        return type(self)(self._root, self.task, self.units, conds, zscore, sig,
+                          power, epochs, self._names)
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
                                colors: list[str] = ('red', 'green', 'blue')):
