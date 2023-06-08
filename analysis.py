@@ -17,63 +17,38 @@ class GroupData:
                  _zscore=None, _significance=None, _power=None, _epochs=None,
                  _names=None):
         mne.set_log_level("ERROR")
-        self.root = self.set_root(d_data)
-        self.layout = get_data(task, root=self.root)
+        self._layout = get_data(task, root=self._set_root(d_data))
         self.task = task
         self.units = units
+        self.conds = self._set_conditions(conditions)
 
-        if conditions is None:
-            self.conds = {"resp": (-1, 1),
-                          "aud_ls": (-0.5, 1.5),
-                          "aud_lm": (-0.5, 1.5),
-                          "aud_jl": (-0.5, 1.5),
-                          "go_ls": (-0.5, 1.5),
-                          "go_lm": (-0.5, 1.5),
-                          "go_jl": (-0.5, 1.5)}
-        else:
-            self.conds = conditions
-
-        if _power is None or _names is None or _epochs is None:
-            epochs, self.power, self.names = load_intermediates(
-                self.layout, self.conds, "power")
+        if _significance is None or _names is None or _epochs is None:
+            epochs, self.sig, self.names = load_intermediates(
+                self._layout, self.conds, "significance")
             self.epochs = {k: v for k, v in epochs.items() if v}
         else:
-            self.power = _power
+            self.sig = _significance
             self.names = _names
             self.epochs = _epochs
 
-        if _significance is None:
-            _, self.sig, _ = load_intermediates(
-                self.layout, self.conds, "significance")
-        else:
-            self.sig = _significance
-
-        if _zscore is None:
-            _, self.zscore, _ = load_intermediates(
-                self.layout, self.conds, "zscore")
-        else:
-            self.zscore = _zscore
+        self.power = self._load_intermediates(_power, "power")
+        self.zscore = self._load_intermediates(_zscore, "zscore")
 
         if all(cond in self.conds.keys()
                for cond in ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
             self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                 self.sig, self.names, self.conds)
         else:
-            self.sig_chans = self.find_sig_chans(self.sig)
+            self.sig_chans = self._find_sig_chans(self.sig)
 
         self.subjects = list(set(n[:5] for n in self.names))
         self.subjects.sort()
-        self.subjects_dir = self.set_subjects_dir()
-        if isinstance(self.sig, dict):
-            self.shape = list(self.sig.values())[0].shape
-        elif isinstance(self.sig, np.ndarray):
-            self.shape = self.sig.shape
-        else:
-            raise ValueError(f"Invalid type for sig {type(self.sig)}")
+        self.subjects_dir = self._set_subjects_dir()
+        self.shape = self._get_shape()
         self.size = np.prod(self.shape)
 
     @staticmethod
-    def set_root(root: PathLike):
+    def _set_root(root: PathLike):
         if root is None:
             HOME = os.path.expanduser("~")
             if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -83,12 +58,38 @@ class GroupData:
         return root
 
     @staticmethod
-    def set_subjects_dir(subjects_dir: PathLike = None):
+    def _set_conditions(conditions: dict[str, Doubles]):
+        if conditions is None:
+           return {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
+                   "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
+                   "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
+                   "go_jl": (-0.5, 1.5)}
+        else:
+            return conditions
+
+    @staticmethod
+    def _set_subjects_dir(subjects_dir: PathLike = None):
         return get_sub_dir(subjects_dir)
 
     @staticmethod
-    def find_sig_chans(sig: np.ndarray) -> list[int]:
+    def _find_sig_chans(sig: np.ndarray) -> list[int]:
         return np.where(np.any(sig == 1, axis=1))[0].tolist()
+
+    def _load_intermediates(self, input_data: dict, attr: str):
+        if input_data is None:
+            _, val, _ = load_intermediates(
+                self.layout, self.conds, attr)
+        else:
+            val = input_data
+        return val
+
+    def _get_shape(self):
+        if isinstance(self.sig, dict):
+            return list(self.sig.values())[0].shape
+        elif isinstance(self.sig, np.ndarray):
+            return self.sig.shape
+        else:
+            raise ValueError(f"Invalid type for sig {type(self.sig)}")
 
     def __repr__(self):
         return f"Analysis(root={self.root}, task={self.task}, " \
@@ -124,7 +125,7 @@ class GroupData:
         sig = new_data["sig"]
         zscore = new_data["zscore"]
 
-        return GroupData(self.root, self.task, self.units, self.conds, zscore,
+        return type(self)(self.root, self.task, self.units, self.conds, zscore,
                         sig, power, epochs, names)
 
     def get_condition(self, condition: str):
@@ -143,7 +144,7 @@ class GroupData:
         zscore = self.zscore[condition]
         conds = {condition: self.conds[condition]}
 
-        return GroupData(self.root, self.task, self.units, conds, zscore, sig,
+        return type(self)(self.root, self.task, self.units, conds, zscore, sig,
                         power, epochs, self.names)
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
@@ -203,7 +204,7 @@ class GroupData:
 
 
 if __name__ == "__main__":
-    subject_data = GroupData()
-    W, H = subject_data.nmf(idx=subject_data.SM, plot_dtype='zscore')
+    data = GroupData()
+    # W, H = subject_data.nmf(idx=subject_data.SM, conds=('aud_ls', 'resp'), plot_dtype='zscore')
     # W, H = subject_data.nmf(n_components=3, plot_dtype='zscore')
     # new_groups = subject_data.copy()
