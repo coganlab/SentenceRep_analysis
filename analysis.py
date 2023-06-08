@@ -9,44 +9,48 @@ from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs
 from copy import deepcopy
 from sklearn.decomposition import NMF
+from collections import OrderedDict
 
 
 class GroupData:
+    """Class for loading and analyzing group data"""
     def __init__(self, d_data: PathLike = None, task: str = "SentenceRep",
                  units: str = "uV", conditions: dict[str, Doubles] = None,
-                 _zscore=None, _significance=None, _power=None, _epochs=None,
+                 _zscore=None, _significance=None, _power=None, _subjects=None,
                  _names=None):
         mne.set_log_level("ERROR")
-        self._root = self._set_root(d_data)
-        self._layout = get_data(task, root=self._root)
-        self.task = task
-        self.units = units
-        self.conds = self._set_conditions(conditions)
-
-        if _significance is None or _names is None or _epochs is None:
-            epochs, self.sig, self._names = load_intermediates(
-                self._layout, self.conds, "significance")
-            self.epochs = {k: v for k, v in epochs.items() if v}
+        self._root: PathLike = self._set_root(d_data)
+        self.task: str = task
+        self.units: str = units
+        self.conds: dict = self._set_conditions(conditions)
+        layout = get_data(self.task, root=self._root)
+        if _significance is None or _names is None or _subjects is None:
+            epochs, sig, self._names = load_intermediates(
+                layout, self.conds, "significance")
+            subjects = list(set(n[:5] for n in self._names))
+            subjects.sort()
+            self.subjects: dict = {s: list(epochs[s].values())[0].info
+                                   for s in subjects}
+            del epochs
         else:
-            self.sig = _significance
-            self._names = _names
-            self.epochs = _epochs
+            sig = _significance
+            self._names: list = _names
+            self.subjects: dict = _subjects
 
-        self.power = self._load_intermediates(_power, "power")
-        self.zscore = self._load_intermediates(_zscore, "zscore")
+        power = self._load_intermediates(_power, layout, "power")
+        zscore = self._load_intermediates(_zscore, layout, "zscore")
 
-        if all(cond in self.conds.keys()
-               for cond in ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
-            self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                self.sig, self._names, self.conds)
-        else:
-            self.sig_chans = self._find_sig_chans(self.sig)
+        if sig is not False:
+            if all(cond in self.conds.keys() for cond in
+                   ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
+                self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
+                    sig, self._names, self.conds)
+            else:
+                self.sig_chans = self._find_sig_chans(sig)
 
-        self.subjects = list(set(n[:5] for n in self._names))
-        self.subjects.sort()
         self.subjects_dir = self._set_subjects_dir()
-        self._shape = self._get_shape()
-        self._size = np.prod(self._shape)
+        self._data = OrderedDict(significance=sig, power=power, zscore=zscore)
+        self.shape: tuple = self.asarray().shape
 
     @staticmethod
     def _set_root(root: PathLike):
@@ -61,10 +65,10 @@ class GroupData:
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
         if conditions is None:
-           return {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
-                   "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
-                   "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
-                   "go_jl": (-0.5, 1.5)}
+            return {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
+                    "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
+                    "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
+                    "go_jl": (-0.5, 1.5)}
         else:
             return conditions
 
@@ -76,84 +80,137 @@ class GroupData:
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
         return np.where(np.any(sig == 1, axis=1))[0].tolist()
 
-    def _load_intermediates(self, input_data: dict, attr: str):
+    @property
+    def array(self):
+        return self.__array__()
+
+    def _load_intermediates(self, input_data: dict, layout, attr: str):
         if input_data is None:
-            _, val, _ = load_intermediates(self._layout, self.conds, attr)
+            _, val, _ = load_intermediates(layout, self.conds, attr)
         else:
             val = input_data
         return val
 
-    def _get_shape(self):
-        if isinstance(self.sig, dict):
-            return list(self.sig.values())[0].shape
-        elif isinstance(self.sig, np.ndarray):
-            return self.sig.shape
-        else:
-            raise ValueError(f"Invalid type for sig {type(self.sig)}")
-
     def __repr__(self):
-        return f"GroupData({self.task}, {len(self.subjects)} subjects," \
-                  f" conditions: {list(self.conds.keys())})"
+        size = self.__sizeof__()
+        for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
+            if size < 1024.0 or unit == 'PiB':
+                break
+            size /= 1024.0
+        return f"GroupData({self.task}, {len(self.subjects)} subjects, " \
+               f"conditions: {list(self.conds.keys())} ~{size:.{1}f} {unit})"
 
-    def __getitem__(self, item: str):
+    def __sizeof__(self):
+        def inner(obj):
+            if isinstance(obj, (int, float, bool, str, np.ndarray)):
+                return obj.__sizeof__()
+            elif isinstance(obj, (tuple, list, set, frozenset)):
+                return sum(inner(i) for i in obj)
+            elif isinstance(obj, dict):
+                return sum(inner(k) + inner(v) for k, v in obj.items())
+            elif hasattr(obj, '__dict__'):
+                return inner(vars(obj))
+            else:
+                return obj.__sizeof__()
 
-        if item in self.subjects:
-            out = self.get_subject(item)
-        elif item in list(self.conds.keys()):
-            out = self.get_condition(item)
-        return out
+        return inner(self)
+
+    def __getitem__(self, item: str | int | slice | list | tuple):
+
+        if isinstance(item, (list, tuple)):
+            return self.array[item]
+        elif item in self.subjects:
+            return self.get_subject(item)
+        elif item in self.conds.keys():
+            return self.get_condition(item)
+        elif item in self._data.keys():
+            return self.get_data(item)
+        elif isinstance(item, int) or item in self._names:
+            return self.get_elec(item)
+        else:
+            return self.__array__()[item]
+
+    def __len__(self):
+        return self.shape[-2]
+
+    def __iter__(self):
+        return np.ndarray.__iter__(self.__array__())
+
+    def __array__(self):
+        # recurses through the data dictionaries to get the data
+        def inner(data):
+            if isinstance(data, dict):
+                return np.array([inner(d) for d in data.values() if d
+                                 is not False])
+            else:
+                return data
+        return np.squeeze(inner(self._data))
+
+    def asarray(self):
+        return self.__array__()
 
     def copy(self):
-        del self._layout
-        copy = deepcopy(self)
-        self._layout = copy._layout = get_data(self.task, root=self._root)
-        return copy
+        return deepcopy(self)
+
+    def get_elec(self, elec: str | int):
+        if isinstance(elec, str):
+            elec = self._names.index(elec)
+        return self.__array__()[elec]
+
+    def get_data(self, data: str):
+        out_data = dict()
+        for k in self._data.keys():
+            if k != data:
+                out_data["_" + k] = False
+            else:
+                out_data["_" + k] = self._data[k]
+        return type(self)(self._root, self.task, self.units, self.conds,
+                          _subjects=self.subjects, _names=self._names,
+                          **out_data)
 
     def get_subject(self, sub_id: str):
-        assert sub_id in self.subjects
-        epochs = self.epochs[sub_id]
+        assert sub_id in self.subjects.keys()
         idx = [i for i, n in enumerate(self._names) if sub_id in n]
         names = [self._names[i] for i in idx]
 
-        new_data = {}
-        for at in ["power", "sig", "zscore"]:
-            data = getattr(self, at)
-            new_data[at] = dict()
-            for k in data.keys():
-                new_data[at][k] = data[k][idx, :]
-        power = new_data["power"]
-        sig = new_data["sig"]
-        zscore = new_data["zscore"]
+        def process_data(d, i):
+            if isinstance(d, dict):
+                nd = dict()
+                for k, v in d.items():
+                    nd[k] = process_data(v, i)
+                return nd
+            else:
+                return d[i, :]
 
-        return type(self)(self._root, self.task, self.units, self.conds, zscore,
-                        sig, power, epochs, names)
+        nd = process_data(self._data, idx)
+
+        for k in nd.keys():
+            nd["_" + k] = nd.pop(k, False)
+
+        return type(self)(self._root, self.task, self.units, self.conds,
+                          _subjects={sub_id: self.subjects[sub_id]},
+                          _names=names, **nd)
 
     def get_condition(self, condition: str):
         assert condition in self.conds.keys()
-        if condition in self.epochs.keys():
-            epochs = self.epochs[condition]
-        elif any(sub in self.epochs.keys() for sub in self.subjects):
-            epochs = dict()
-            for key in self.epochs.keys():
-                epochs[key] = self.epochs[key][condition]
-        else:
-            raise(IndexError("Shouldn't be possible"))
-
-        power = self.power[condition]
-        sig = self.sig[condition]
-        zscore = self.zscore[condition]
+        out = dict()
+        for k, v in self._data.items():
+            if isinstance(v, dict):
+                out["_" + k] = v[condition]
+            else:
+                out["_" + k] = v
         conds = {condition: self.conds[condition]}
 
-        return type(self)(self._root, self.task, self.units, conds, zscore, sig,
-                          power, epochs, self._names)
+        return type(self)(self._root, self.task, self.units, conds, **out,
+                          _subjects=self.subjects, _names=self._names)
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
                                colors: list[str] = ('red', 'green', 'blue')):
-        assert hasattr(self, 'SM')
-        cond = list(list(self.epochs.values())[0].keys())[0]
+        cond = list(self.conds.keys())[0]
         plot_data = self.get_condition(cond)
-        subjects = [v for v in plot_data.epochs.values() if v]
+        subjects = [v for v in plot_data.subjects.keys() if v]
         if groups is None:
+            assert hasattr(self, 'SM')
             groups = [self.SM, self.AUD, self.PROD]
         itergroup = (g for g in groups)
         if isinstance(colors, tuple):
@@ -164,23 +221,18 @@ class GroupData:
             plot_on_average(subjects, picks=g, color=c, fig=brain)
         return brain
 
-    def get_training_data(self, dtype, conds, idx=None):
-        assert dtype in ['power', 'zscore', 'sig']
-        data = getattr(self, dtype)
-        if isinstance(data, dict):
-            data = list(data.get(cond) for cond in conds)
-            data = np.concatenate(data, axis=1)
-        elif isinstance(data, np.ndarray):
-            pass
-        else:
-            raise ValueError(f"Invalid type for data {type(data)}")
-
+    def get_training_data(self, dtype: str,
+                          conds: list[str] | str = ('aud_ls', 'go_ls'),
+                          idx=None) -> np.ndarray:
+        assert dtype in ['power', 'zscore', 'significance']
+        data = self[dtype]
+        if isinstance(conds, str):
+            conds = [conds]
         if idx is None:
             idx = self.sig_chans
-        data = data[idx]
-        return data
+        return np.concatenate([data[c][idx] for c in conds], axis=-2)
 
-    def nmf(self, dtype: str = 'sig', n_components: int = 4,
+    def nmf(self, dtype: str = 'significance', n_components: int = 4,
             idx: list[int] = None,
             conds: list[str] = ('aud_ls', 'go_ls', 'resp'),
             plot: bool = True, plot_dtype: str = None):
@@ -205,6 +257,13 @@ class GroupData:
 
 if __name__ == "__main__":
     data = GroupData()
-    # W, H = subject_data.nmf(idx=subject_data.SM, conds=('aud_ls', 'resp'), plot_dtype='zscore')
+    # for i in range(1):
+    #     resp = data['resp']
+    #     resp_d3 = resp['D0003']
+    #     resp_d3_sig = resp_d3['significance']
+    #     D3 = data['D0003']
+    #     power = data['power']
+
+    W, H = data.nmf(idx=data.SM, conds=('aud_ls', 'aud_go'), plot_dtype='zscore')
     # W, H = subject_data.nmf(n_components=3, plot_dtype='zscore')
     # new_groups = subject_data.copy()
