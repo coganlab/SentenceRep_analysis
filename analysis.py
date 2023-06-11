@@ -303,8 +303,7 @@ if __name__ == "__main__":
     groups = [[data._names[all_group[i]] for i in np.where(pred == j)[0]]
               for j in range(W2.shape[1])]
     fig1 = data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
-    plot_clustering(, labels, sig_titles=['AUD', 'SM', 'PROD'],
-                    colors=[[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+    plot_weight_dist(plot_data2, all_labels)
     fig2 = data.plot_groups_on_average()
     # fig3 = data.plot_groups_on_average([data.SM], ['red'], rm_wm=False)
     # fig4 = data.plot_groups_on_average([data.AUD], ['green'], rm_wm=False)
