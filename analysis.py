@@ -1,6 +1,7 @@
 import os
 import mne
 import numpy as np
+from functools import cache
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
@@ -9,6 +10,7 @@ from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs
 from copy import deepcopy
 from sklearn.decomposition import NMF
+from sklearn.metrics import confusion_matrix
 from collections import OrderedDict
 
 
@@ -23,16 +25,24 @@ class GroupData:
         self.task: str = task
         self.units: str = units
         self.conds: dict = self._set_conditions(conditions)
-        layout = get_data(self.task, root=self._root)
-        if _significance is None or _names is None or _subjects is None:
-            epochs, sig, self._names = load_intermediates(
-                layout, self.conds, "significance")
-            subjects = list(set(n[:5] for n in self._names))
-            subjects.sort()
-            self.subjects: dict = {s: list(epochs[s].values())[0].info
-                                   for s in subjects}
-            del epochs
+
+        if any(at is None for at in
+               [_significance, _power, _zscore, _names, _subjects]):
+            layout = get_data(self.task, root=self._root)
+            if _significance is None or _names is None or _subjects is None:
+                epochs, sig, self._names = load_intermediates(
+                    layout, self.conds, "significance")
+                subjects = list(set(n[:5] for n in self._names))
+                subjects.sort()
+                self.subjects: dict = {s: list(epochs[s].values())[0].info
+                                       for s in subjects}
+                del epochs
+            else:
+                sig = _significance
+                self._names: list = _names
+                self.subjects: dict = _subjects
         else:
+            layout = None
             sig = _significance
             self._names: list = _names
             self.subjects: dict = _subjects
@@ -115,20 +125,20 @@ class GroupData:
 
         return inner(self)
 
-    def __getitem__(self, item: str | int | slice | list | tuple):
+    def __getitem__(self, item: str | int | slice | list | tuple, axis=-2):
 
-        if isinstance(item, (list, tuple)):
-            return self.array[item]
+        if isinstance(item, (list, tuple, np.ndarray, int)):
+            return np.take(self.array, item, axis=axis)
         elif item in self.subjects:
             return self.get_subject(item)
         elif item in self.conds.keys():
             return self.get_condition(item)
         elif item in self._data.keys():
             return self.get_data(item)
-        elif isinstance(item, int) or item in self._names:
+        elif item in self._names:
             return self.get_elec(item)
         else:
-            return self.__array__()[item]
+            raise IndexError(f"{item} not in {self}")
 
     def __len__(self):
         return self.shape[-2]
@@ -136,6 +146,7 @@ class GroupData:
     def __iter__(self):
         return np.ndarray.__iter__(self.__array__())
 
+    @cache
     def __array__(self):
         # recurses through the data dictionaries to get the data
         def inner(data):
@@ -205,21 +216,32 @@ class GroupData:
                           _subjects=self.subjects, _names=self._names)
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
-                               colors: list[str] = ('red', 'green', 'blue')):
-        cond = list(self.conds.keys())[0]
-        plot_data = self.get_condition(cond)
-        subjects = [v for v in plot_data.subjects.keys() if v]
+                               colors: list[str] = ('red', 'green', 'blue'),
+                               rm_wm: bool = True):
+        subjects = [v for v in self.subjects.values() if v]
         if groups is None:
             assert hasattr(self, 'SM')
             groups = [self.SM, self.AUD, self.PROD]
+
+        if isinstance(groups[0][0], int):
+            groups = [[self._names[idx] for idx in g] for g in groups]
+
         itergroup = (g for g in groups)
         if isinstance(colors, tuple):
             colors = list(colors)
         brain = plot_on_average(subjects, picks=next(itergroup),
-                                color=colors.pop(0))
+                                color=colors.pop(0), rm_wm=rm_wm)
         for g, c in zip(itergroup, colors):
-            plot_on_average(subjects, picks=g, color=c, fig=brain)
+            plot_on_average(subjects, picks=g, color=c, fig=brain, rm_wm=rm_wm)
         return brain
+
+    def groups_from_weights(self, w: np.ndarray[float], idx: list[int] = None):
+        if idx is None:
+            idx = self.sig_chans
+        labels = np.argmax(w, axis=1)
+        groups = [[idx[i] for i in np.where(labels == j)[0]]
+                  for j in range(w.shape[1])]
+        return groups
 
     def get_training_data(self, dtype: str,
                           conds: list[str] | str = ('aud_ls', 'go_ls'),
@@ -230,29 +252,25 @@ class GroupData:
             conds = [conds]
         if idx is None:
             idx = self.sig_chans
-        return np.concatenate([data[c][idx] for c in conds], axis=-2)
+        assert all(cond in data.conds for cond in conds)
+        return np.concatenate([data[c][idx] for c in conds], axis=-1)
 
     def nmf(self, dtype: str = 'significance', n_components: int = 4,
             idx: list[int] = None,
-            conds: list[str] = ('aud_ls', 'go_ls', 'resp'),
-            plot: bool = True, plot_dtype: str = None):
+            conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
         data = self.get_training_data(dtype, conds, idx)
         data = data - np.min(data)
         nmf = NMF(n_components=n_components, init='nndsvda', random_state=0,
                   solver='mu', max_iter=1000, tol=1e-6)
         W = nmf.fit_transform(data)
         H = nmf.components_
-        if plot:
-            if plot_dtype is None:
-                plot_dtype = dtype
-            plot_data = self.get_training_data(plot_dtype, conds, idx)
-            plot_weight_dist(plot_data, W)
-            labels = np.argmax(W, axis=1)
-            groups = [[idx[i] for i in np.where(labels == j)[0]]
-                      for j in range(n_components)]
-            self.plot_groups_on_average(groups, colors=[
-                'blue', 'orange', 'green', 'red'])
         return W, H
+
+
+def convert_matrix(matrix):
+    max_val = max(matrix) + 1
+    result = [[int(i == j) for j in range(max_val)] for i in matrix]
+    return result
 
 
 if __name__ == "__main__":
@@ -263,7 +281,30 @@ if __name__ == "__main__":
     #     resp_d3_sig = resp_d3['significance']
     #     D3 = data['D0003']
     #     power = data['power']
-
-    W, H = data.nmf(idx=data.SM, conds=('aud_ls', 'aud_go'), plot_dtype='zscore')
-    # W, H = subject_data.nmf(n_components=3, plot_dtype='zscore')
-    # new_groups = subject_data.copy()
+    ##
+    W, H = data.nmf(idx=data.SM, conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), data.SM)
+    plot_weight_dist(plot_data, W)
+    ##
+    # labels = np.argmax(W, axis=1)
+    # groups = [[data.SM[i] for i in np.where(labels == j)[0]]
+    #           for j in range(W.shape[1])]
+    # data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
+    ##
+    all_group = data.SM + data.AUD + data.PROD
+    all_labels = np.concatenate([np.full(len(n), v) for n, v in zip(
+        [data.SM, data.AUD, data.PROD], [0, 1, 2])])
+    W2, H2 = data.nmf(idx=all_group, n_components=3,
+                      conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    plot_data2 = data.get_training_data("zscore", ("aud_ls", "go_ls"),
+                                        idx=all_group)
+    plot_weight_dist(plot_data2, W2)
+    pred = np.argmax(W2, axis=1)
+    groups = [[data._names[all_group[i]] for i in np.where(pred == j)[0]]
+              for j in range(W2.shape[1])]
+    fig1 = data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
+    plot_clustering(, labels, sig_titles=['AUD', 'SM', 'PROD'],
+                    colors=[[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+    fig2 = data.plot_groups_on_average()
+    # fig3 = data.plot_groups_on_average([data.SM], ['red'], rm_wm=False)
+    # fig4 = data.plot_groups_on_average([data.AUD], ['green'], rm_wm=False)
