@@ -12,6 +12,7 @@ from copy import deepcopy
 from sklearn.decomposition import NMF
 from sklearn.metrics import confusion_matrix
 from collections import OrderedDict
+import nimfa
 
 
 class GroupData:
@@ -260,11 +261,14 @@ class GroupData:
             conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
         data = self.get_training_data(dtype, conds, idx)
         data = data - np.min(data)
-        nmf = NMF(n_components=n_components, init='nndsvda', random_state=0,
-                  solver='mu', max_iter=1000, tol=1e-6)
-        W = nmf.fit_transform(data)
-        H = nmf.components_
-        return W, H
+        model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
+                        lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
+        model()
+        # nmf = NMF(n_components=n_components, init='nndsvda', random_state=0,
+        #           solver='mu', max_iter=1000, tol=1e-6)
+        # W = nmf.fit_transform(data)
+        # H = nmf.components_
+        return np.array(model.W), np.array(model.H), model
 
 
 def convert_matrix(matrix):
@@ -282,28 +286,33 @@ if __name__ == "__main__":
     #     D3 = data['D0003']
     #     power = data['power']
     ##
-    W, H = data.nmf(idx=data.SM, conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    W, H, model = data.nmf(idx=data.SM, conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), data.SM)
     plot_weight_dist(plot_data, W)
+    pred = np.argmax(W, axis=1)
+    groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    fig1 = data.plot_groups_on_average(groups,
+                                       ['blue', 'orange', 'green', 'red'])
     ##
     # labels = np.argmax(W, axis=1)
     # groups = [[data.SM[i] for i in np.where(labels == j)[0]]
     #           for j in range(W.shape[1])]
     # data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
     ##
-    all_group = data.SM + data.AUD + data.PROD
-    all_labels = np.concatenate([np.full(len(n), v) for n, v in zip(
-        [data.SM, data.AUD, data.PROD], [0, 1, 2])])
-    W2, H2 = data.nmf(idx=all_group, n_components=3,
-                      conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    plot_data2 = data.get_training_data("zscore", ("aud_ls", "go_ls"),
-                                        idx=all_group)
-    plot_weight_dist(plot_data2, W2)
-    pred = np.argmax(W2, axis=1)
-    groups = [[data._names[all_group[i]] for i in np.where(pred == j)[0]]
-              for j in range(W2.shape[1])]
-    fig1 = data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
-    plot_weight_dist(plot_data2, all_labels)
-    fig2 = data.plot_groups_on_average()
+    # all_group = data.SM + data.AUD + data.PROD
+    # all_labels = np.concatenate([np.full(len(n), v) for n, v in zip(
+    #     [data.SM, data.AUD, data.PROD], [0, 1, 2])])
+    # W2, H2, model2 = data.nmf(idx=all_group, n_components=3,
+    #                   conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    # plot_data2 = data.get_training_data("zscore", ("aud_ls", "go_ls"),
+    #                                     idx=all_group)
+    # plot_weight_dist(plot_data2, W2)
+    # pred = np.argmax(W2, axis=1)
+    # groups = [[data._names[all_group[i]] for i in np.where(pred == j)[0]]
+    #           for j in range(W2.shape[1])]
+    # fig1 = data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
+    # plot_weight_dist(plot_data2, all_labels)
+    # fig2 = data.plot_groups_on_average()
     # fig3 = data.plot_groups_on_average([data.SM], ['red'], rm_wm=False)
     # fig4 = data.plot_groups_on_average([data.AUD], ['green'], rm_wm=False)
