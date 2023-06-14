@@ -60,8 +60,9 @@ class GroupData:
                 self.sig_chans = self._find_sig_chans(sig)
 
         self.subjects_dir = self._set_subjects_dir()
-        self._data = OrderedDict(significance=sig, power=power, zscore=zscore)
-        self.shape: tuple = self.asarray().shape
+        self._data = OrderedDict(power=power, zscore=zscore)
+        self.significance = sig
+        # self.shape: tuple = self.asarray().shape
 
     @staticmethod
     def _set_root(root: PathLike):
@@ -97,7 +98,7 @@ class GroupData:
 
     def _load_intermediates(self, input_data: dict, layout, attr: str):
         if input_data is None:
-            _, val, _ = load_intermediates(layout, self.conds, attr)
+            _, val, _ = load_intermediates(layout, self.conds, attr, False)
         else:
             val = input_data
         return val
@@ -138,6 +139,8 @@ class GroupData:
             return self.get_data(item)
         elif item in self._names:
             return self.get_elec(item)
+        elif hasattr(self, item):
+            return getattr(self, item)
         else:
             raise IndexError(f"{item} not in {self}")
 
@@ -279,12 +282,6 @@ def convert_matrix(matrix):
 
 if __name__ == "__main__":
     data = GroupData()
-    # for i in range(1):
-    #     resp = data['resp']
-    #     resp_d3 = resp['D0003']
-    #     resp_d3_sig = resp_d3['significance']
-    #     D3 = data['D0003']
-    #     power = data['power']
     ##
     W, H, model = data.nmf(idx=data.SM, conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), data.SM)
@@ -294,25 +291,3 @@ if __name__ == "__main__":
               for j in range(W.shape[1])]
     fig1 = data.plot_groups_on_average(groups,
                                        ['blue', 'orange', 'green', 'red'])
-    ##
-    # labels = np.argmax(W, axis=1)
-    # groups = [[data.SM[i] for i in np.where(labels == j)[0]]
-    #           for j in range(W.shape[1])]
-    # data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
-    ##
-    # all_group = data.SM + data.AUD + data.PROD
-    # all_labels = np.concatenate([np.full(len(n), v) for n, v in zip(
-    #     [data.SM, data.AUD, data.PROD], [0, 1, 2])])
-    # W2, H2, model2 = data.nmf(idx=all_group, n_components=3,
-    #                   conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    # plot_data2 = data.get_training_data("zscore", ("aud_ls", "go_ls"),
-    #                                     idx=all_group)
-    # plot_weight_dist(plot_data2, W2)
-    # pred = np.argmax(W2, axis=1)
-    # groups = [[data._names[all_group[i]] for i in np.where(pred == j)[0]]
-    #           for j in range(W2.shape[1])]
-    # fig1 = data.plot_groups_on_average(groups, ['blue', 'orange', 'green', 'red'])
-    # plot_weight_dist(plot_data2, all_labels)
-    # fig2 = data.plot_groups_on_average()
-    # fig3 = data.plot_groups_on_average([data.SM], ['red'], rm_wm=False)
-    # fig4 = data.plot_groups_on_average([data.AUD], ['green'], rm_wm=False)

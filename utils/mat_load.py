@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
-                       value_type: str = "zscore",
+                       value_type: str = "zscore", avg: bool = True,
                        derivatives_folder: PathLike = 'stats') -> (
         dict[dict[str, mne.Epochs]], dict[np.ndarray], list[str]):
 
@@ -29,7 +29,10 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     epochs = dict()
     all_sig = dict()
     for cond in conds.keys():
-        all_sig[cond] = np.empty((0, 200))
+        if avg:
+            all_sig[cond] = np.empty((0, 200))
+        else:
+            all_sig[cond] = np.empty((0, 0, 200))
     folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
     for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
         epochs[subject] = dict()
@@ -43,7 +46,10 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
 
             avg_func = lambda x: np.nanmean(x, axis=0)
             if suffix.endswith("epo"):
-                sig = epochs[subject][cond].average(method=avg_func)
+                sig = epochs[subject][cond]
+                if avg:
+                    sig = sig.average(method=avg_func)
+
             else:
                 sig = epochs[subject][cond][0]
                 epochs[subject][cond] = epochs[subject][cond][0]
@@ -55,7 +61,7 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
                                      ch not in chn_names]
 
             # add new channels to power and significance matrix
-            all_sig[cond] = np.vstack((all_sig[cond], sig.get_data()))
+            all_sig[cond] = concatenate_arrays((all_sig[cond], sig.get_data()), -2)
 
     return epochs, all_sig, chn_names
 
@@ -86,6 +92,70 @@ def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
         elif mime_is and speak_is:
             PROD.append(i)
     return AUD, SM, PROD, sig_chans
+
+
+def concatenate_arrays(arrays, axis):
+    # Determine the maximum shape along the specified axis
+
+    max_shape = np.max([arr.shape for arr in arrays], axis=0)
+
+    # Create a list to store the modified arrays
+    modified_arrays = []
+
+    # Iterate over the arrays
+    for arr in arrays:
+        if arr.shape[axis] == 0:
+            continue
+        # Determine the shape of the array
+        arr_shape = list(max_shape)
+        arr_shape[axis] = arr.shape[axis]
+
+        # Create an array filled with nan values
+        nan_array = np.full(arr_shape, np.nan)
+
+        # Fill in the array with the original values
+        indexing = [slice(None)] * arr.ndim
+        for ax in range(arr.ndim):
+            if ax == axis:
+                continue
+            indexing[ax] = slice(0, arr.shape[ax])
+        nan_array[tuple(indexing)] = arr
+
+        # Append the modified array to the list
+        modified_arrays.append(nan_array)
+
+    # Concatenate the modified arrays along the specified axis
+    result = np.concatenate(modified_arrays, axis=axis)
+
+    return result
+
+
+def nan_concat(arrs: tuple | list, axis: int = 0) -> np.ndarray:
+    """Concatenate arrays, filling in missing values with NaNs"""
+    unequal_ax = [ax for ax in range(arrs[0].ndim) if arrs[0].shape[ax] != arrs[1].shape[ax]]
+    stretch_ax = [ax for ax in unequal_ax if ax != axis]
+    if len(stretch_ax) > 1:
+        return np.concatenate(arrs, axis=axis)
+    else:
+        stretch_ax = stretch_ax[0]
+    max_len = max([arr.shape[stretch_ax] for arr in arrs])
+    new_arrs = []
+    for arr in arrs:
+        new_shape = list(arr.shape)
+        new_shape[stretch_ax] = max_len
+        if 0 in arr.shape:
+            continue
+        elif arr.shape[stretch_ax] < max_len:
+            new_arr = np.full(new_shape, np.nan)
+
+            # fill in the array with the original values
+            idx = [slice(None)] * arr.ndim
+            idx[stretch_ax] = slice(0, arr.shape[stretch_ax])
+            new_arr[*idx] = arr
+            new_arrs.append(new_arr)
+        else:
+            new_arrs.append(arr)
+    return np.concatenate(new_arrs, axis=axis)
 
 
 if __name__ == "__main__":
