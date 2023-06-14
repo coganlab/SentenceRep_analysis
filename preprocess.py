@@ -17,7 +17,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 30
+    subject = 3
 
 # Load the data
 TASK = "SentenceRep"
@@ -78,11 +78,10 @@ if not op.isdir(save_dir):
 mask = dict()
 for epoch, name in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
                                  "go_lm", "go_jl")):
-    ins = ((np.squeeze(epoch.get_data(picks=ch)),
-            np.squeeze(base.get_data(picks=ch))
-            ) for ch in epoch.ch_names)
-    mask[name] = np.array(parallelize(
-        stats.time_perm_cluster, ins, p_thresh=0.05, n_perm=1000, n_jobs=1))
+    sig1 = epoch.get_data()
+    sig2 = base.get_data()
+    mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
+                                         n_perm=1000, n_jobs=4, ignore_adjacency=1)
     epoch_mask = mne.EvokedArray(mask[name], epoch.average().info)
     power = scaling.rescale(epoch, base, copy=True)
     power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
