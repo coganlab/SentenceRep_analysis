@@ -4,6 +4,7 @@ from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
+from ieeg.calc.mat import concatenate_arrays
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -92,42 +93,6 @@ def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
         elif mime_is and speak_is:
             PROD.append(i)
     return AUD, SM, PROD, sig_chans
-
-
-def concatenate_arrays(arrays, axis):
-    # Determine the maximum shape along the specified axis
-
-    max_shape = np.max([arr.shape for arr in arrays], axis=0)
-
-    # Create a list to store the modified arrays
-    modified_arrays = []
-
-    # Iterate over the arrays
-    for arr in arrays:
-        if arr.shape[axis] == 0:
-            continue
-        # Determine the shape of the array
-        arr_shape = list(max_shape)
-        arr_shape[axis] = arr.shape[axis]
-
-        # Create an array filled with nan values
-        nan_array = np.full(arr_shape, np.nan)
-
-        # Fill in the array with the original values
-        indexing = [slice(None)] * arr.ndim
-        for ax in range(arr.ndim):
-            if ax == axis:
-                continue
-            indexing[ax] = slice(0, arr.shape[ax])
-        nan_array[tuple(indexing)] = arr
-
-        # Append the modified array to the list
-        modified_arrays.append(nan_array)
-
-    # Concatenate the modified arrays along the specified axis
-    result = np.concatenate(modified_arrays, axis=axis)
-
-    return result
 
 
 def nan_concat(arrs: tuple | list, axis: int = 0) -> np.ndarray:
