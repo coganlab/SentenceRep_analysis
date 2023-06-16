@@ -30,10 +30,7 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     epochs = dict()
     all_sig = dict()
     for cond in conds.keys():
-        if avg:
-            all_sig[cond] = np.empty((0, 200))
-        else:
-            all_sig[cond] = np.empty((0, 0, 200))
+        all_sig[cond] = []
     folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
     for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
         epochs[subject] = dict()
@@ -61,8 +58,11 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
             chn_names = chn_names + [ch for ch in names if
                                      ch not in chn_names]
 
-            # add new channels to power and significance matrix
-            all_sig[cond] = concatenate_arrays((all_sig[cond], sig.get_data()), -2)
+            all_sig[cond].append(sig.get_data())
+
+    for cond in conds.keys():
+        # add new channels to power and significance matrix
+        all_sig[cond] = concatenate_arrays(all_sig[cond], -2)
 
     return epochs, all_sig, chn_names
 

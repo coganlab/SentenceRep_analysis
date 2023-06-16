@@ -3,7 +3,7 @@ from utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
 import numpy as np
 from ieeg.calc.stats import dist
-from ieeg.calc.utils import get_elbow
+from ieeg.calc.mat import get_elbow
 from ieeg.viz.utils import plot_dist, plot_weight_dist
 import matplotlib.pyplot as plt
 from collections.abc import Iterable
