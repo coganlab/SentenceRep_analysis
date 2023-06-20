@@ -6,13 +6,76 @@ from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
+from ieeg.calc.mat import concatenate_arrays
+from collections.abc import Sequence
 from plotting import compare_subjects, plot_clustering
-from utils.mat_load import load_intermediates, group_elecs
+from utils.mat_load import load_intermediates, group_elecs, load_dict
 from copy import deepcopy
 from sklearn.decomposition import NMF
 from sklearn.metrics import confusion_matrix
 from collections import OrderedDict
 import nimfa
+
+
+class SubjectData:
+
+    @classmethod
+    def from_intermediates(cls, task: str, root: PathLike,
+                           conds: dict[str, Doubles] = None):
+        layout = get_data(task, root=root)
+        conds = cls._set_conditions(conds)
+        sig = load_dict(layout, conds, "significance")
+        data = dict(power=load_dict(layout, conds, "power", False),
+                    zscore=load_dict(layout, conds, "zscore", False))
+        out = cls(data, sig, conds)
+        out.task = task
+        out._root = root
+        return out
+
+    def __init__(self, data: dict, mask: np.ndarray = None,
+                 conds: dict[str, Doubles] = None):
+        self._data = data
+        self.significance = mask
+        self.conds = self._set_conditions(conds)
+        self.shape: tuple = self.array.shape
+
+    @staticmethod
+    def _set_conditions(conditions: dict[str, Doubles]):
+        if conditions is None:
+            return {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
+                    "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
+                    "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
+                    "go_jl": (-0.5, 1.5)}
+        else:
+            return conditions
+
+    def __repr__(self):
+        size = self.__sizeof__()
+        for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
+            if size < 1024.0 or unit == 'PiB':
+                break
+            size /= 1024.0
+        return f"GroupData({self.task}, {len(self.subjects)} subjects, " \
+               f"conditions: {list(self.conds.keys())} ~{size:.{1}f} {unit})"
+
+    @cache
+    def __array__(self):
+        # recurses through the data dictionaries to get the data
+        def inner(data):
+            if isinstance(data, dict):
+                return concatenate_arrays([inner(d) for d in data.values() if d
+                                           is not False])
+            else:
+                return data
+        return np.squeeze(inner(self._data))
+
+    @property
+    def array(self):
+        return self.__array__()
+
+    @staticmethod
+    def combine_keys(data: dict, levels: Sequence[int, int]):
+
 
 
 class GroupData:
@@ -33,6 +96,7 @@ class GroupData:
             if _significance is None or _names is None or _subjects is None:
                 epochs, sig, self._names = load_intermediates(
                     layout, self.conds, "significance")
+                sig = {k: v.astype(bool) for k, v in sig.items()}
                 subjects = list(set(n[:5] for n in self._names))
                 subjects.sort()
                 self.subjects: dict = {s: list(epochs[s].values())[0].info
@@ -62,7 +126,7 @@ class GroupData:
         self.subjects_dir = self._set_subjects_dir()
         self._data = OrderedDict(power=power, zscore=zscore)
         self.significance = sig
-        # self.shape: tuple = self.asarray().shape
+        self.shape: tuple = self.asarray().shape
 
     @staticmethod
     def _set_root(root: PathLike):
@@ -155,8 +219,8 @@ class GroupData:
         # recurses through the data dictionaries to get the data
         def inner(data):
             if isinstance(data, dict):
-                return np.array([inner(d) for d in data.values() if d
-                                 is not False])
+                return concatenate_arrays([inner(d) for d in data.values() if d
+                                           is not False])
             else:
                 return data
         return np.squeeze(inner(self._data))
@@ -173,7 +237,7 @@ class GroupData:
         return self.__array__()[elec]
 
     def get_data(self, data: str):
-        out_data = dict()
+        out_data = dict(_significance=self.significance)
         for k in self._data.keys():
             if k != data:
                 out_data["_" + k] = False
@@ -198,7 +262,7 @@ class GroupData:
                 return d[i, :]
 
         nd = process_data(self._data, idx)
-
+        nd["significance"] = process_data(self.significance, idx)
         for k in nd.keys():
             nd["_" + k] = nd.pop(k, False)
 
@@ -208,8 +272,10 @@ class GroupData:
 
     def get_condition(self, condition: str):
         assert condition in self.conds.keys()
+        all = self._data
+        all["significance"] = self.significance
         out = dict()
-        for k, v in self._data.items():
+        for k, v in all.items():
             if isinstance(v, dict):
                 out["_" + k] = v[condition]
             else:
@@ -281,13 +347,16 @@ def convert_matrix(matrix):
 
 
 if __name__ == "__main__":
-    data = GroupData()
+    # data = GroupData()
+    sub = SubjectData.from_intermediates("SentenceRep",
+                                         r"C:\Users\ae166\Box\CoganLab")
     ##
-    W, H, model = data.nmf(idx=data.SM, conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    W, H, model = data.nmf(idx=data.SM, n_components=3,
+                           conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), data.SM)
     plot_weight_dist(plot_data, W)
     pred = np.argmax(W, axis=1)
     groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
-    fig1 = data.plot_groups_on_average(groups,
-                                       ['blue', 'orange', 'green', 'red'])
+    # fig1 = data.plot_groups_on_average(groups,
+    #                                    ['blue', 'orange', 'green', 'red'])

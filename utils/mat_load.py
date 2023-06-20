@@ -67,6 +67,57 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     return epochs, all_sig, chn_names
 
 
+def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
+              value_type: str = "zscore", avg: bool = True,
+              derivatives_folder: PathLike = 'stats'
+              ) -> dict[str: dict[str: dict[str: np.ndarray]]]:
+
+    allowed = ["zscore", "power", "significance"]
+    match value_type:
+        case "zscore":
+            reader = mne.read_epochs
+            suffix = "zscore-epo"
+        case "power":
+            reader = mne.read_epochs
+            suffix = "power-epo"
+        case "significance":
+            reader = mne.read_evokeds
+            suffix = "mask-ave"
+        case _:
+            raise ValueError(f"value_type must be one of {allowed}, instead"
+                             f" got {value_type}")
+    chn_names = []
+    out = dict()
+    folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
+    for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
+        out[subject] = dict()
+        for cond in conds.keys():
+            out[subject][cond] = dict()
+            try:
+                fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
+                epoch = reader(fname, verbose=False)
+            except FileNotFoundError as e:
+                mne.utils.logger.warn(e)
+                continue
+
+            avg_func = lambda x: np.nanmean(x, axis=0)
+            if suffix.endswith("epo"):
+                sig = epoch
+                if avg:
+                    sig = sig.average(method=avg_func)
+
+            else:
+                sig = epoch[0]
+
+            for ch in sig.ch_names:
+                out[subject][cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
+
+        if not any(v for v in out[subject].values()):
+            out.pop(subject)
+
+    return out
+
+
 def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
                 conds: dict[str, Doubles]
                 ) -> (list[int], list[int], list[int], list[int]):
