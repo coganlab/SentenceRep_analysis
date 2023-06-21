@@ -197,7 +197,6 @@ class SubjectData:
         return self.__array__()
 
 
-
 class GroupData:
     """Class for loading and analyzing group data"""
     def __init__(self, d_data: PathLike = None, task: str = "SentenceRep",
