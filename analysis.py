@@ -32,19 +32,32 @@ class SubjectData:
         subjects = tuple(data['power'].keys())
         data = cls._combine_subject_channels(data)
         sig = cls._combine_subject_channels(dict(a=sig))['a']
-        cat = ('dtype', 'condition', 'channel', 'trial', 'time')
-        out = cls(data, sig, cat)
+        out = cls(data, sig)
         out.subjects = subjects
         out.task = task
         out._root = root
         return out
 
-    def __init__(self, data: dict, mask: np.ndarray = None,
-                 categories: Sequence[str] = None):
+    def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
+                 categories: Sequence[str] = (
+                         'dtype', 'condition', 'channel', 'trial', 'time')):
         self._data = data
-        self.org = OrderedDict(self.get_keys(categories))
-        self.significance = mask
+        self._categories = categories
         self.shape: tuple = self.array.shape
+        if mask is not None:
+            self.significance = type(self)(mask, None,
+                                           ('condition', 'channel', 'time'))
+            if all(cond in self.keys['condition'] for cond in
+                   ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
+
+                self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
+                    mask, self.keys['channel'], self.keys['condition'])
+            else:
+                self.sig_chans = self._find_sig_chans(mask)
+
+    @property
+    def keys(self):
+        return OrderedDict(self.get_keys(self._categories))
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -72,9 +85,14 @@ class SubjectData:
                     out[dtype][cond][ch] = np.squeeze(concatenate_arrays(d3))
         return out
 
+    @staticmethod
+    def _find_sig_chans(sig: np.ndarray) -> list[int]:
+        return np.where(np.any(sig == 1, axis=1))[0].tolist()
+
     @cache
     def get_keys(self, categories: Sequence = None) -> dict[tuple[str | int]]:
         keys = list()
+
         def inner(data, lvl=0):
             l = lvl + 1
             if isinstance(data, dict):
@@ -82,13 +100,12 @@ class SubjectData:
                     keys.append(list(data.keys()))
                 else:  # add unique keys to the level
                     keys[lvl] += [k for k in data.keys() if k not in keys[lvl]]
-
                 for d in data.values():
                     inner(d, l)
             elif isinstance(data, np.ndarray):
-                rows = list(range(data.shape[0]))
+                rows = range(data.shape[0])
                 if len(keys) < l:
-                    keys.append(rows)
+                    keys.append(list(rows))
                 else:
                     keys[lvl] += [k for k in rows if k not in keys[lvl]]
                 if len(data.shape) > 1:
@@ -100,9 +117,40 @@ class SubjectData:
             categories = list(range(len(keys)))
         return {categories[i]: tuple(k) for i, k in enumerate(keys)}
 
-    @property
-    def keys(self):
-        return self.get_keys()
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return self.filter(item)
+        else:
+            return self.array[item]
+
+    def filter(self, item: str):
+        """Filter data by key
+
+        Takes the underlying self._data nested dictionary, finds the first
+        level with a key that matches the item, and returns a new SubjectData
+        object with the all other keys removed at that level. """
+
+        new_categories = list(self._categories)
+
+        def inner(data, lvl=0):
+            if isinstance(data, dict):
+                if item in data.keys():
+                    new_categories.pop(lvl)
+                    return data[item]
+                else:
+                    return {k: inner(v, lvl + 1) for k, v in data.items()}
+            elif isinstance(data, np.ndarray):
+                raise IndexError(f"'{item}' is not a valid key")
+            else:
+                raise TypeError(f"Unexpected data type: {type(data)}")
+
+        if item in self._data.keys():
+            sig = None
+        else:
+            sig = self.significance._data
+
+        return type(self)(inner(self._data), sig, tuple(new_categories))
+
 
     def __sizeof__(self):
         def inner(obj):
@@ -125,7 +173,7 @@ class SubjectData:
             if size < 1024.0 or unit == 'PiB':
                 break
             size /= 1024.0
-        return f"GroupData({', '.join(f'{len(v)} {k}s' for k, v in self.org.items())}) ~{size:.{1}f} {unit}"
+        return f"GroupData({', '.join(f'{len(v)} {k}s' for k, v in self.keys.items())}) ~{size:.{1}f} {unit}"
 
     def __len__(self):
         return self.shape[-2]

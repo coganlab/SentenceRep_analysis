@@ -119,23 +119,29 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
 
 
 def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
-                conds: dict[str, Doubles]
+                conds: dict[str, Doubles] | tuple[str]
                 ) -> (list[int], list[int], list[int], list[int]):
     sig_chans = []
     AUD = []
     SM = []
     PROD = []
+    if isinstance(conds, tuple):
+        conds = {c: None for c in conds}
     for i, name in enumerate(names):
         for cond in conds.keys():
-            if np.any(all_sig[cond][i] == 1):
+            if isinstance(all_sig[cond], dict):
+                idx = name
+            else:
+                idx = i
+            if np.any(all_sig[cond][idx] == 1):
                 sig_chans.append(i)
                 break
 
-        audls_is = np.any(all_sig['aud_ls'][i][50:175] == 1)
-        audlm_is = np.any(all_sig['aud_lm'][i][50:175] == 1)
-        audjl_is = np.any(all_sig['aud_jl'][i][50:175] == 1)
-        mime_is = np.any(all_sig['go_lm'][i] == 1)
-        speak_is = np.any(all_sig['go_ls'][i] == 1)
+        audls_is = np.any(all_sig['aud_ls'][idx][50:175] == 1)
+        audlm_is = np.any(all_sig['aud_lm'][idx][50:175] == 1)
+        audjl_is = np.any(all_sig['aud_jl'][idx][50:175] == 1)
+        mime_is = np.any(all_sig['go_lm'][idx] == 1)
+        speak_is = np.any(all_sig['go_ls'][idx] == 1)
 
         if audls_is and audlm_is and mime_is and speak_is:
             SM.append(i)
