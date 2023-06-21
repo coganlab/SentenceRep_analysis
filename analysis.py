@@ -8,13 +8,16 @@ from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
 from ieeg.calc.mat import concatenate_arrays
 from collections.abc import Sequence
+from collections import OrderedDict
 from plotting import compare_subjects, plot_clustering
-from utils.mat_load import load_intermediates, group_elecs, load_dict
+from utils.mat_load import load_intermediates, group_elecs, load_dict, \
+    refactor_keys
 from copy import deepcopy
 from sklearn.decomposition import NMF
 from sklearn.metrics import confusion_matrix
 from collections import OrderedDict
 import nimfa
+from scipy import sparse
 
 
 class SubjectData:
@@ -27,7 +30,10 @@ class SubjectData:
         sig = load_dict(layout, conds, "significance")
         data = dict(power=load_dict(layout, conds, "power", False),
                     zscore=load_dict(layout, conds, "zscore", False))
+        data = cls._combine_subject_channels(data)
+        sig = cls._combine_subject_channels(dict(a=sig))['a']
         out = cls(data, sig, conds)
+        out.subjects = tuple(data['power'].keys())
         out.task = task
         out._root = root
         return out
@@ -35,6 +41,12 @@ class SubjectData:
     def __init__(self, data: dict, mask: np.ndarray = None,
                  conds: dict[str, Doubles] = None):
         self._data = data
+        self.org = OrderedDict(dtype=tuple(data.keys()))
+        self.org.update(condition=tuple(data[self.org['dtype'][0]].keys()))
+        self.org.update(channel=tuple(ch for ch in data[self.org['dtype'][0]][
+            self.org['condition'][0]].keys()))
+        self.org.update(trial=tuple(range(self.array.shape[-2])),
+                        timepoint=tuple(range(self.array.shape[-1])))
         self.significance = mask
         self.conds = self._set_conditions(conds)
         self.shape: tuple = self.array.shape
@@ -49,14 +61,50 @@ class SubjectData:
         else:
             return conditions
 
+    @staticmethod
+    def _combine_subject_channels(data: dict) -> dict:
+        out = dict()
+        for dtype, d in data.items():
+            out[dtype] = dict()
+            for sub, d2 in d.items():
+                for cond, d3 in d2.items():
+                    out[dtype].setdefault(cond, dict())
+                    for ch, d4 in d3.items():
+                        out[dtype][cond].setdefault(f"{sub}-{ch}", list())
+                        out[dtype][cond][f"{sub}-{ch}"].append(d4)
+            for cond, d2 in out[dtype].items():
+                for ch, d3 in d2.items():
+                    out[dtype][cond][ch] = np.squeeze(concatenate_arrays(d3))
+        return out
+
+    def __sizeof__(self):
+        def inner(obj):
+            if isinstance(obj, (int, float, bool, str, np.ndarray)):
+                return obj.__sizeof__()
+            elif isinstance(obj, (tuple, list, set, frozenset)):
+                return sum(inner(i) for i in obj)
+            elif isinstance(obj, dict):
+                return sum(inner(k) + inner(v) for k, v in obj.items())
+            elif hasattr(obj, '__dict__'):
+                return inner(vars(obj))
+            else:
+                return obj.__sizeof__()
+
+        return inner(self)
+
     def __repr__(self):
         size = self.__sizeof__()
         for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
             if size < 1024.0 or unit == 'PiB':
                 break
             size /= 1024.0
-        return f"GroupData({self.task}, {len(self.subjects)} subjects, " \
-               f"conditions: {list(self.conds.keys())} ~{size:.{1}f} {unit})"
+        return f"GroupData({', '.join(f'{len(v)} {k}s' for k, v in self.org.items())}) ~{size:.{1}f} {unit}"
+
+    def __len__(self):
+        return self.shape[-2]
+
+    def __iter__(self):
+        return np.ndarray.__iter__(self.__array__())
 
     @cache
     def __array__(self):
@@ -73,8 +121,8 @@ class SubjectData:
     def array(self):
         return self.__array__()
 
-    @staticmethod
-    def combine_keys(data: dict, levels: Sequence[int, int]):
+    def combine_keys(self, levels: Sequence[int, int]):
+        pass
 
 
 
@@ -96,7 +144,6 @@ class GroupData:
             if _significance is None or _names is None or _subjects is None:
                 epochs, sig, self._names = load_intermediates(
                     layout, self.conds, "significance")
-                sig = {k: v.astype(bool) for k, v in sig.items()}
                 subjects = list(set(n[:5] for n in self._names))
                 subjects.sort()
                 self.subjects: dict = {s: list(epochs[s].values())[0].info
@@ -316,28 +363,45 @@ class GroupData:
     def get_training_data(self, dtype: str,
                           conds: list[str] | str = ('aud_ls', 'go_ls'),
                           idx=None) -> np.ndarray:
-        assert dtype in ['power', 'zscore', 'significance']
-        data = self[dtype]
         if isinstance(conds, str):
             conds = [conds]
         if idx is None:
             idx = self.sig_chans
-        assert all(cond in data.conds for cond in conds)
-        return np.concatenate([data[c][idx] for c in conds], axis=-1)
+        if dtype in ['power', 'zscore']:
+            data = self[dtype]
+            newconds = data.conds
+            gen = (np.nanmean(data[c][idx], axis=0,
+                              where=self.significance[c][idx].astype(bool)
+                              ) for c in conds)
+        elif dtype == 'significance':
+            data = self.significance
+            newconds = self.conds
+            gen = (data[c][idx] for c in conds)
+        else:
+            raise ValueError(f"{dtype} not in ['power', 'zscore', "
+                             "'significance']")
+        assert all(cond in newconds for cond in conds)
+        return np.concatenate(list(gen), axis=-1)
 
     def nmf(self, dtype: str = 'significance', n_components: int = 4,
             idx: list[int] = None,
             conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
         data = self.get_training_data(dtype, conds, idx)
         data = data - np.min(data)
-        model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
-                        lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
+        if dtype == 'significance':
+            model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
+                            lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
+        else:
+            data = sparse_matrix(data)
+            model = nimfa.Nmf(data, seed="nndsvd",
+                              rank=n_components,
+                              max_iter=100000, update='euclidean',
+                              objective='div', options=dict(flag=2)
+                              )
         model()
-        # nmf = NMF(n_components=n_components, init='nndsvda', random_state=0,
-        #           solver='mu', max_iter=1000, tol=1e-6)
-        # W = nmf.fit_transform(data)
-        # H = nmf.components_
-        return np.array(model.W), np.array(model.H), model
+        W = np.array(model.W)
+        H = np.array(model.H)
+        return W, H, model
 
 
 def convert_matrix(matrix):
@@ -346,17 +410,25 @@ def convert_matrix(matrix):
     return result
 
 
+def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
+    non_nan_values = ndarray_with_nan[~np.isnan(ndarray_with_nan)]
+    rows, cols = np.where(~np.isnan(ndarray_with_nan))
+    return sparse.csr_matrix((non_nan_values, (rows, cols)),
+                             shape=ndarray_with_nan.shape).tolil()
+
+
 if __name__ == "__main__":
-    # data = GroupData()
-    sub = SubjectData.from_intermediates("SentenceRep",
-                                         r"C:\Users\ae166\Box\CoganLab")
+    data = GroupData()
+    # fpath = os.path.expanduser("~/Box/CoganLab")
+    # sub = SubjectData.from_intermediates("SentenceRep", fpath)
     ##
-    W, H, model = data.nmf(idx=data.SM, n_components=3,
+    group = list(set(data.AUD + data.PROD + data.SM))
+    W, H, model = data.nmf("power", idx=group, n_components=3,
                            conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), data.SM)
+    plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
     plot_weight_dist(plot_data, W)
     pred = np.argmax(W, axis=1)
-    groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
+    groups = [[data._names[group[i]] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
-    # fig1 = data.plot_groups_on_average(groups,
-    #                                    ['blue', 'orange', 'green', 'red'])
+    fig1 = data.plot_groups_on_average(groups,
+                                       ['blue', 'orange', 'green', 'red'])
