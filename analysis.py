@@ -10,8 +10,7 @@ from ieeg.calc.mat import concatenate_arrays
 from collections.abc import Sequence
 from collections import OrderedDict
 from plotting import compare_subjects, plot_clustering
-from utils.mat_load import load_intermediates, group_elecs, load_dict, \
-    refactor_keys
+from utils.mat_load import load_intermediates, group_elecs, load_dict
 from copy import deepcopy
 from sklearn.decomposition import NMF
 from sklearn.metrics import confusion_matrix
