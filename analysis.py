@@ -29,25 +29,21 @@ class SubjectData:
         sig = load_dict(layout, conds, "significance")
         data = dict(power=load_dict(layout, conds, "power", False),
                     zscore=load_dict(layout, conds, "zscore", False))
+        subjects = tuple(data['power'].keys())
         data = cls._combine_subject_channels(data)
         sig = cls._combine_subject_channels(dict(a=sig))['a']
-        out = cls(data, sig, conds)
-        out.subjects = tuple(data['power'].keys())
+        cat = ('dtype', 'condition', 'channel', 'trial', 'time')
+        out = cls(data, sig, cat)
+        out.subjects = subjects
         out.task = task
         out._root = root
         return out
 
     def __init__(self, data: dict, mask: np.ndarray = None,
-                 conds: dict[str, Doubles] = None):
+                 categories: Sequence[str] = None):
         self._data = data
-        self.org = OrderedDict(dtype=tuple(data.keys()))
-        self.org.update(condition=tuple(data[self.org['dtype'][0]].keys()))
-        self.org.update(channel=tuple(ch for ch in data[self.org['dtype'][0]][
-            self.org['condition'][0]].keys()))
-        self.org.update(trial=tuple(range(self.array.shape[-2])),
-                        timepoint=tuple(range(self.array.shape[-1])))
+        self.org = OrderedDict(self.get_keys(categories))
         self.significance = mask
-        self.conds = self._set_conditions(conds)
         self.shape: tuple = self.array.shape
 
     @staticmethod
@@ -75,6 +71,38 @@ class SubjectData:
                 for ch, d3 in d2.items():
                     out[dtype][cond][ch] = np.squeeze(concatenate_arrays(d3))
         return out
+
+    @cache
+    def get_keys(self, categories: Sequence = None) -> dict[tuple[str | int]]:
+        keys = list()
+        def inner(data, lvl=0):
+            l = lvl + 1
+            if isinstance(data, dict):
+                if len(keys) < l:
+                    keys.append(list(data.keys()))
+                else:  # add unique keys to the level
+                    keys[lvl] += [k for k in data.keys() if k not in keys[lvl]]
+
+                for d in data.values():
+                    inner(d, l)
+            elif isinstance(data, np.ndarray):
+                rows = list(range(data.shape[0]))
+                if len(keys) < l:
+                    keys.append(rows)
+                else:
+                    keys[lvl] += [k for k in rows if k not in keys[lvl]]
+                if len(data.shape) > 1:
+                    inner(data[0], l)
+            else:
+                raise TypeError(f"Unexpected data type: {type(data)}")
+        inner(self._data)
+        if categories is None:
+            categories = list(range(len(keys)))
+        return {categories[i]: tuple(k) for i, k in enumerate(keys)}
+
+    @property
+    def keys(self):
+        return self.get_keys()
 
     def __sizeof__(self):
         def inner(obj):
@@ -119,9 +147,6 @@ class SubjectData:
     @property
     def array(self):
         return self.__array__()
-
-    def combine_keys(self, levels: Sequence[int, int]):
-        pass
 
 
 

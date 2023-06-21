@@ -5,6 +5,7 @@ from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
 from ieeg.calc.mat import concatenate_arrays
+from collections import OrderedDict
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -86,13 +87,12 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
         case _:
             raise ValueError(f"value_type must be one of {allowed}, instead"
                              f" got {value_type}")
-    chn_names = []
-    out = dict()
+    out = OrderedDict()
     folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
     for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
-        out[subject] = dict()
+        out[subject] = OrderedDict()
         for cond in conds.keys():
-            out[subject][cond] = dict()
+            out[subject][cond] = OrderedDict()
             try:
                 fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
                 epoch = reader(fname, verbose=False)
