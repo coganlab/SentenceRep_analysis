@@ -6,9 +6,8 @@ from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
-from ieeg.calc.mat import concatenate_arrays
+from ieeg.calc.mat import concatenate_arrays, ArrayDict
 from collections.abc import Sequence
-from collections import OrderedDict
 from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs, load_dict
 from copy import deepcopy
@@ -20,67 +19,6 @@ from scipy import sparse
 
 
 mne.set_log_level("ERROR")
-
-
-class ArrayDict(OrderedDict, np.lib.mixins.NDArrayOperatorsMixin):
-    """A dictionary that can be converted to a numpy array."""
-    __array: np.ndarray = None
-    __all_keys: dict[tuple[str | int]] = None
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        for k, v in self.items():
-            if isinstance(v, dict):
-                self[k] = type(self)(**v)
-
-    def __array__(self):
-        def inner(data):
-            if isinstance(data, dict):
-                return concatenate_arrays([inner(d)[np.newaxis, ...] for d in data.values() if d is not False], axis=0)
-            else:
-                return data
-        return inner(self)
-
-    def __all_keys__(self) -> dict[tuple[str | int]]:
-        keys = list()
-
-        def inner(data, lvl=0):
-            l = lvl + 1
-            if isinstance(data, dict):
-                if len(keys) < l:
-                    keys.append(list(data.keys()))
-                else:  # add unique keys to the level
-                    keys[lvl] += [k for k in data.keys() if k not in keys[lvl]]
-                for d in data.values():
-                    inner(d, l)
-            elif isinstance(data, np.ndarray):
-                rows = range(data.shape[0])
-                if len(keys) < l:
-                    keys.append(list(rows))
-                else:
-                    keys[lvl] += [k for k in rows if k not in keys[lvl]]
-                if len(data.shape) > 1:
-                    inner(data[0], l)
-            else:
-                raise TypeError(f"Unexpected data type: {type(data)}")
-        inner(self)
-        return {i: tuple(k) for i, k in enumerate(keys)}
-
-    @property
-    def array(self):
-        if self.__array is None:
-            self.__array = self.__array__()
-        return self.__array
-
-    @property
-    def all_keys(self) -> dict[tuple[str | int]]:
-        if self.__all_keys is None:
-            self.__all_keys = self.__all_keys__()
-        return self.__all_keys
-
-    @property
-    def shape(self):
-        return self.array.shape
 
 
 class SubjectData:
@@ -124,7 +62,12 @@ class SubjectData:
 
     @property
     def keys(self):
-        return self._data.keys
+        keys = self._data.all_keys
+        return {self._categories[i]: tuple(k) for i, k in enumerate(keys)}
+
+    @property
+    def array(self):
+        return self._data.array
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -155,34 +98,6 @@ class SubjectData:
     @staticmethod
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
         return np.where(np.any(sig == 1, axis=1))[0].tolist()
-
-    @cache
-    def __get_keys(self, categories: Sequence = None) -> dict[tuple[str | int]]:
-        keys = list()
-
-        def inner(data, lvl=0):
-            l = lvl + 1
-            if isinstance(data, dict):
-                if len(keys) < l:
-                    keys.append(list(data.keys()))
-                else:  # add unique keys to the level
-                    keys[lvl] += [k for k in data.keys() if k not in keys[lvl]]
-                for d in data.values():
-                    inner(d, l)
-            elif isinstance(data, np.ndarray):
-                rows = range(data.shape[0])
-                if len(keys) < l:
-                    keys.append(list(rows))
-                else:
-                    keys[lvl] += [k for k in rows if k not in keys[lvl]]
-                if len(data.shape) > 1:
-                    inner(data[0], l)
-            else:
-                raise TypeError(f"Unexpected data type: {type(data)}")
-        inner(self._data)
-        if categories is None:
-            categories = list(range(len(keys)))
-        return {categories[i]: tuple(k) for i, k in enumerate(keys)}
 
     def __getitem__(self, item: str | Sequence[str]):
         if isinstance(item, str):
@@ -297,10 +212,6 @@ class SubjectData:
 
     def __iter__(self):
         return self._data.__iter__()
-
-    @property
-    def array(self):
-        return self._data.array
 
 
 class GroupData:

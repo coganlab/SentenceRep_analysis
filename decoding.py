@@ -12,8 +12,8 @@ resp = sub['resp']
 
 # %% Create training set
 
-conds=('aud_lm', 'aud_ls', 'go_ls', 'resp')
+conds = ('aud_lm', 'aud_ls', 'go_ls', 'resp')
 idx = sub.sig_chans
 train = concatenate_arrays([pow[c].array[idx] for c in conds], axis=-1)
 new = ArrayDict(**sub._data)
-x = sub[conds]
+# x = sub[conds]
