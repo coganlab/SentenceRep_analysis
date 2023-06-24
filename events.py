@@ -1,7 +1,10 @@
 import mne
+from ieeg import Signal
+import pandas as pd
+import numpy as np
 
 
-def fix_annotations(inst):
+def fix_annotations(inst: Signal):
     """fix SentenceRep events"""
     is_sent = False
     is_bad = False
@@ -73,3 +76,34 @@ def fix_annotations(inst):
             annot.append(**event)
     inst.set_annotations(annot)
     return no_response
+
+
+def add_stim_conds(inst: Signal):
+    """Read the events files and add stim label to Audio events"""
+    e_fnames = [f.replace('ieeg.edf', 'events.tsv') for f in inst.filenames]
+
+    # read all the events files into a dataframe and concatenate
+    df = pd.concat([pd.read_csv(f, sep='\t') for f in e_fnames],
+                   ignore_index=True)
+
+    # make sure the number of stim labels matches the number of audio events
+    stim_files = df['stim_file'].str.contains('.wav', na=False).tolist()
+    aud_events = ['Audio' in d for d in inst.annotations.description]
+    if not sum(stim_files) == sum(aud_events):
+        raise ValueError(f"Number of stim files ({stim_files}) does not match "
+                         f"number of audio events ({aud_events})")
+
+    # add stim labels to audio events
+    stim_labels = df.loc[stim_files, 'stim_file'].tolist()
+    stim_labels = ['/' + s.replace('.wav', '') for s in stim_labels]
+    annot = None
+    for event in inst.annotations:
+        if 'Audio' in event['description']:
+            event['description'] = event['description'] + stim_labels.pop(0)
+        if annot is None:
+            annot = mne.Annotations(**event)
+        else:
+            event.pop('orig_time')
+            annot.append(**event)
+    inst.set_annotations(annot)
+    return inst

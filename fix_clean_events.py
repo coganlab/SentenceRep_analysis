@@ -2,6 +2,7 @@
 import os
 from ieeg.io import get_data, raw_from_layout, save_derivative
 from ieeg.mt_filter import line_filter
+from ieeg.viz import mri
 from events import fix_annotations, add_stim_conds
 
 # %% check if currently running a slurm job
@@ -11,26 +12,25 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 0
+    subject = 19
 
 ## Load Data
 layout = get_data("SentenceRep", LAB_root)
 subjlist = layout.get_subjects()
 subjlist.sort()
-subj = subjlist[subject]
-raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
-                      preload=True)
+subjlist.reverse()
+# subj = subjlist[subject]
+for subj in subjlist:
+    if subj == "D0029":
+        break
+    raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
+                          preload=True)
+    filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
+                              extension='.edf', desc='clean', preload=False)
 
-## filter data
-line_filter(raw, mt_bandwidth=10., n_jobs=5, copy=False, verbose=10,
-            filter_length='700ms', freqs=[60], notch_widths=20)
-line_filter(raw, mt_bandwidth=10., n_jobs=5, copy=False, verbose=10,
-            filter_length='20s', freqs=[60, 120, 180, 240],
-            notch_widths=20)
+    fix_annotations(raw)
+    add_stim_conds(raw)
+    filt.set_annotations(raw.annotations)
 
-## fix events
-fix_annotations(raw)
-add_stim_conds(raw)
-
-# %% Save the data
-save_derivative(raw, layout, "clean")
+    # %% Save the data
+    save_derivative(filt, layout, "events")

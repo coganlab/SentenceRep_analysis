@@ -21,7 +21,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if int(subj[1:]) != 60:
+    if 17 < int(subj[1:]) or int(subj[1:]) < 9:
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -45,10 +45,6 @@ for subj in subjects:
 
     # Remove intermediates from mem
     del new
-
-    ## fix SentenceRep events
-    from events import fix_annotations  # noqa E402
-    fix_annotations(good)
 
     ## High Gamma Filter and epoching
     out = []
