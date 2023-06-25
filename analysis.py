@@ -32,8 +32,8 @@ class SubjectData:
         data = dict(power=load_dict(layout, conds, "power", False),
                     zscore=load_dict(layout, conds, "zscore", False))
         subjects = tuple(data['power'].keys())
-        data = cls._combine_subject_channels(data)
-        sig = cls._combine_subject_channels(dict(a=sig))['a']
+        # data = cls._combine_subject_channels(data)
+        # sig = cls._combine_subject_channels(dict(a=sig))['a']
         out = cls(data, sig)
         out.subjects = subjects
         out.task = task
@@ -41,20 +41,20 @@ class SubjectData:
         return out
 
     def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
-                 categories: Sequence[str] = (
-                         'dtype', 'condition', 'channel', 'trial', 'time')):
-        self._data = ArrayDict(**data)
+                 categories: Sequence[str] = ('dtype', 'condition', 'channel',
+                                              'stim', 'trial', 'time')):
+        self._data = ArrayDict(**data).combine_dims((2, 3))
         self._categories = categories
         if mask is not None:
-            self.significance = ArrayDict(**mask)
+            self.significance = ArrayDict(**mask).combine_dims((1, 2))
             keys = self.significance.all_keys
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    mask, keys[1], keys[0])
+                    self.significance, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(mask)
+                self.sig_chans = self._find_sig_chans(self.significance)
 
     @property
     def shape(self):

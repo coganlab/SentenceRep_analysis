@@ -110,7 +110,13 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
                 sig = epoch[0]
 
             for ch in sig.ch_names:
-                out[subject][cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
+                if suffix.endswith("epo"):
+                    out[subject][cond][ch] = dict()
+                    for ev in sig.event_id.keys():
+                        out[subject][cond][ch][ev] = sig.get_data(picks=[ch],
+                                                                  item=ev)
+                else:
+                    out[subject][cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
 
         if not any(v for v in out[subject].values()):
             out.pop(subject)
