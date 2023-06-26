@@ -47,9 +47,9 @@ class NeuralSignalDecoder:
         return predictions
 
 # %% Imports
-from analysis import SubjectData, ArrayDict
+from analysis import SubjectData
 import os
-from ieeg.calc.mat import concatenate_arrays
+from ieeg.calc.mat import concatenate_arrays, ArrayDict
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = SubjectData.from_intermediates("SentenceRep", fpath)

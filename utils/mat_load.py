@@ -6,6 +6,7 @@ import mne
 from tqdm import tqdm
 from ieeg.calc.mat import concatenate_arrays
 from collections import OrderedDict
+import asyncio
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -68,6 +69,37 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     return epochs, all_sig, chn_names
 
 
+async def load_dict_async(subject: str, suffix: str, reader: callable,
+                          conds: dict, folder: PathLike, avg: bool = True):
+    out = OrderedDict()
+    for cond in conds.keys():
+        out[cond] = OrderedDict()
+        try:
+            fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
+            epoch = await reader(fname, verbose=False)
+        except FileNotFoundError as e:
+            mne.utils.logger.warn(e)
+            continue
+
+        avg_func = lambda x: np.nanmean(x, axis=0)
+        if suffix.endswith("epo"):
+            sig = epoch
+            if avg:
+                sig = sig.average(method=avg_func)
+
+        else:
+            sig = epoch[0]
+
+        for ch in sig.ch_names:
+            if suffix.endswith("epo"):
+                out[cond][ch] = dict()
+                for ev in sig.event_id.keys():
+                    out[cond][ch][ev] = sig.get_data(picks=[ch], item=ev)
+            else:
+                out[cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
+    return out
+
+
 def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
               value_type: str = "zscore", avg: bool = True,
               derivatives_folder: PathLike = 'stats'
@@ -87,42 +119,24 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
         case _:
             raise ValueError(f"value_type must be one of {allowed}, instead"
                              f" got {value_type}")
-    out = OrderedDict()
     folder = os.path.join(layout.root, 'derivatives', derivatives_folder)
-    for subject in tqdm(layout.get_subjects(), desc=f"Loading {value_type}"):
-        out[subject] = OrderedDict()
-        for cond in conds.keys():
-            out[subject][cond] = OrderedDict()
-            try:
-                fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
-                epoch = reader(fname, verbose=False)
-            except FileNotFoundError as e:
-                mne.utils.logger.warn(e)
-                continue
 
-            avg_func = lambda x: np.nanmean(x, axis=0)
-            if suffix.endswith("epo"):
-                sig = epoch
-                if avg:
-                    sig = sig.average(method=avg_func)
+    subjects = layout.get_subjects()
+    subjects.sort()
+    subjects = tqdm(subjects, desc=f"Loading {value_type}")
+    out = OrderedDict()
 
-            else:
-                sig = epoch[0]
-
-            for ch in sig.ch_names:
-                if suffix.endswith("epo"):
-                    out[subject][cond][ch] = dict()
-                    for ev in sig.event_id.keys():
-                        out[subject][cond][ch][ev] = sig.get_data(picks=[ch],
-                                                                  item=ev)
-                else:
-                    out[subject][cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
+    async def load_subject_data(subject):
+        out[subject] = await load_dict_async(subject, suffix, reader, conds, folder, avg)
 
         if not any(v for v in out[subject].values()):
             out.pop(subject)
 
-    return out
+    async def load_data():
+        await asyncio.gather(*[load_subject_data(subject) for subject in subjects])
 
+    asyncio.run(load_data())
+    return out
 
 def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
                 conds: dict[str, Doubles] | tuple[str]
