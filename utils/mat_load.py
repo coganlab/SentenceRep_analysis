@@ -7,6 +7,7 @@ from tqdm import tqdm
 from ieeg.calc.mat import concatenate_arrays
 from collections import OrderedDict
 import asyncio
+import concurrent.futures
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -76,7 +77,8 @@ async def load_dict_async(subject: str, suffix: str, reader: callable,
         out[cond] = OrderedDict()
         try:
             fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
-            epoch = await reader(fname, verbose=False)
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                epoch = executor.submit(reader, fname, verbose=False).result()
         except FileNotFoundError as e:
             mne.utils.logger.warn(e)
             continue

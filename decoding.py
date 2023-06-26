@@ -6,6 +6,10 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 
+from analysis import SubjectData
+import os
+from ieeg.calc.mat import concatenate_arrays, ArrayDict
+
 from mne.decoding import (
     SlidingEstimator,
     GeneralizingEstimator,
@@ -47,9 +51,6 @@ class NeuralSignalDecoder:
         return predictions
 
 # %% Imports
-from analysis import SubjectData
-import os
-from ieeg.calc.mat import concatenate_arrays, ArrayDict
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = SubjectData.from_intermediates("SentenceRep", fpath)

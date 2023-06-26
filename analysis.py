@@ -43,10 +43,10 @@ class SubjectData:
     def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
                  categories: Sequence[str] = ('dtype', 'condition', 'channel',
                                               'stim', 'trial', 'time')):
-        self._data = ArrayDict(**data).combine_dims((2, 3))
+        self._data = ArrayDict(**data).combine_dims((1, 3))
         self._categories = categories
         if mask is not None:
-            self.significance = ArrayDict(**mask).combine_dims((1, 2))
+            self.significance = ArrayDict(**mask).combine_dims((0, 2))
             keys = self.significance.all_keys
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
