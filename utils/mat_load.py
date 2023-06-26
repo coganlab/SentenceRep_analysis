@@ -4,10 +4,11 @@ from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio as asyncio
 from ieeg.calc.mat import concatenate_arrays
 from collections import OrderedDict
-import asyncio
 import concurrent.futures
+from asyncio import run, to_thread
 
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -70,7 +71,7 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     return epochs, all_sig, chn_names
 
 
-async def load_dict_async(subject: str, suffix: str, reader: callable,
+def load_dict_async(subject: str, suffix: str, reader: callable,
                           conds: dict, folder: PathLike, avg: bool = True):
     out = OrderedDict()
     for cond in conds.keys():
@@ -94,9 +95,10 @@ async def load_dict_async(subject: str, suffix: str, reader: callable,
 
         for ch in sig.ch_names:
             if suffix.endswith("epo"):
-                out[cond][ch] = dict()
                 for ev in sig.event_id.keys():
-                    out[cond][ch][ev] = sig.get_data(picks=[ch], item=ev)
+                    out[cond].setdefault(ev, {}).setdefault(ch, {})
+                    mat = sig.get_data(picks=[ch], item=ev)
+                    out[cond][ev][ch] = mat.swapaxes(0, 1)[0]
             else:
                 out[cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
     return out
@@ -127,18 +129,21 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     subjects.sort()
     subjects = tqdm(subjects, desc=f"Loading {value_type}")
     out = OrderedDict()
+    for subject in subjects:
+        out[subject] = load_dict_async(subject, suffix, reader, conds, folder, avg)
 
-    async def load_subject_data(subject):
-        out[subject] = await load_dict_async(subject, suffix, reader, conds, folder, avg)
-
-        if not any(v for v in out[subject].values()):
-            out.pop(subject)
-
-    async def load_data():
-        await asyncio.gather(*[load_subject_data(subject) for subject in subjects])
-
-    asyncio.run(load_data())
+    # async def load_subject_data(subject):
+    #     out[subject] = await load_dict_async(subject, suffix, reader, conds, folder, avg)
+    #
+    #     if not any(v for v in out[subject].values()):
+    #         out.pop(subject)
+    #
+    # async def load_data():
+    #     await asyncio.gather(*(load_subject_data(sub) for sub in subjects))
+    #
+    # run(load_data())
     return out
+
 
 def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
                 conds: dict[str, Doubles] | tuple[str]

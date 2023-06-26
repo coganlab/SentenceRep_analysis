@@ -5,7 +5,7 @@ import numpy as np
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_dist
 from ieeg.viz.mri import get_sub_dir
-from ieeg.calc.utils import stitch_mats
+from ieeg.calc.mat import stitch_mats
 import matplotlib.pyplot as plt
 from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs

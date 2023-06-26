@@ -28,12 +28,12 @@ class SubjectData:
                            conds: dict[str, Doubles] = None):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
-        sig = load_dict(layout, conds, "significance")
-        data = dict(power=load_dict(layout, conds, "power", False),
-                    zscore=load_dict(layout, conds, "zscore", False))
+        sig = ArrayDict(**load_dict(layout, conds, "significance"))
+        sig = sig.combine_dims((0, 2))
+        data = ArrayDict(power=load_dict(layout, conds, "power", False),
+                         zscore=load_dict(layout, conds, "zscore", False))
         subjects = tuple(data['power'].keys())
-        # data = cls._combine_subject_channels(data)
-        # sig = cls._combine_subject_channels(dict(a=sig))['a']
+        data = data.combine_dims((1, 4))
         out = cls(data, sig)
         out.subjects = subjects
         out.task = task
@@ -41,12 +41,12 @@ class SubjectData:
         return out
 
     def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
-                 categories: Sequence[str] = ('dtype', 'condition', 'channel',
-                                              'stim', 'trial', 'time')):
-        self._data = ArrayDict(**data).combine_dims((1, 3))
+                 categories: Sequence[str] = ('dtype', 'condition', 'stim',
+                                              'channel', 'trial', 'time')):
+        self._data = ArrayDict(**data)
         self._categories = categories
         if mask is not None:
-            self.significance = ArrayDict(**mask).combine_dims((0, 2))
+            self.significance = ArrayDict(**mask)
             keys = self.significance.all_keys
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -78,22 +78,6 @@ class SubjectData:
                     "go_jl": (-0.5, 1.5)}
         else:
             return conditions
-
-    @staticmethod
-    def _combine_subject_channels(data: dict) -> dict:
-        out = dict()
-        for dtype, d in data.items():
-            out[dtype] = dict()
-            for sub, d2 in d.items():
-                for cond, d3 in d2.items():
-                    out[dtype].setdefault(cond, dict())
-                    for ch, d4 in d3.items():
-                        out[dtype][cond].setdefault(f"{sub}-{ch}", list())
-                        out[dtype][cond][f"{sub}-{ch}"].append(d4)
-            for cond, d2 in out[dtype].items():
-                for ch, d3 in d2.items():
-                    out[dtype][cond][ch] = np.squeeze(concatenate_arrays(d3))
-        return out
 
     @staticmethod
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
@@ -479,7 +463,7 @@ class GroupData:
             model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
                             lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
         else:
-            data = sparse_matrix(data)
+            # data = sparse_matrix(data)
             model = nimfa.Nmf(data, seed="nndsvd",
                               rank=n_components,
                               max_iter=100000, update='euclidean',
@@ -508,9 +492,10 @@ if __name__ == "__main__":
     data = GroupData()
     # fpath = os.path.expanduser("~/Box/CoganLab")
     # sub = SubjectData.from_intermediates("SentenceRep", fpath)
+
     ##
     group = list(set(data.AUD + data.PROD + data.SM))
-    W, H, model = data.nmf("power", idx=group, n_components=3,
+    W, H, model = data.nmf("significance", idx=group, n_components=3,
                            conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
     plot_weight_dist(plot_data, W)
@@ -519,3 +504,4 @@ if __name__ == "__main__":
               for j in range(W.shape[1])]
     fig1 = data.plot_groups_on_average(groups,
                                        ['blue', 'orange', 'green', 'red'])
+    fig2 = data.plot_groups_on_average()

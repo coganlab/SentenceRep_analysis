@@ -55,21 +55,26 @@ class NeuralSignalDecoder:
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = SubjectData.from_intermediates("SentenceRep", fpath)
 pow = sub['power']
-resp = sub['resp']
+# resp = sub['resp']
 
 # %% Create training set
 
-conds = ('aud_lm', 'aud_ls', 'go_ls', 'resp')
+conds = ('aud_lm', 'aud_ls', 'aud_jl')
 idx = sub.sig_chans
-train = concatenate_arrays([pow[c].array[idx] for c in conds], axis=-1)
-new = ArrayDict(**sub._data)
+comb = sub.copy()['power']
+comb._data = pow._data.combine_dims((1, 3))
+train = concatenate_arrays([comb[c].array[idx] for c in conds], axis=-1)
+train = train.swapaxes(0, 1)
+new = ArrayDict(**comb._data)
+labels = [k.split('-')[0] for k in new.all_keys[2]]
 # x = sub[conds]
 
 clf = make_pipeline(StandardScaler(), LogisticRegression(solver="liblinear"))
 
-time_decod = SlidingEstimator(clf, n_jobs=None, scoring="roc_auc", verbose=True)
+time_decod = SlidingEstimator(clf, n_jobs=-1, scoring="roc_auc", verbose=True)
 # here we use cv=3 just for speed
-scores = cross_val_multiscore(time_decod, X, y, cv=5, n_jobs=-1)
+# give y the
+scores = cross_val_multiscore(time_decod, train, labels, cv=5, n_jobs=-1)
 
 # Mean scores across cross-validation splits
 scores = np.mean(scores, axis=0)
