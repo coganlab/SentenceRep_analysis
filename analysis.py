@@ -495,6 +495,7 @@ if __name__ == "__main__":
 
     ##
     group = list(set(data.AUD + data.PROD + data.SM))
+
     W, H, model = data.nmf("significance", idx=group, n_components=3,
                            conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
@@ -502,6 +503,10 @@ if __name__ == "__main__":
     pred = np.argmax(W, axis=1)
     groups = [[data._names[group[i]] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
-    fig1 = data.plot_groups_on_average(groups,
-                                       ['blue', 'orange', 'green', 'red'])
-    fig2 = data.plot_groups_on_average()
+    # fig1 = data.plot_groups_on_average(groups,
+    #                                    ['blue', 'orange', 'green', 'red'])
+    # fig2 = data.plot_groups_on_average()
+
+    ## plot conds
+    all_group = [data.AUD, data.PROD, data.SM]
+    plot_weight_dist(data.get_training_data("zscore", ("aud_ls",), all_group))

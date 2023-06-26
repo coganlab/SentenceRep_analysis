@@ -70,15 +70,15 @@ plt.legend()
 plt.title('Listen-Speak Electrode Groups')
 
 ##
-cond = 'resp'
+cond = 'go_jl'
 # for sub in layout.get_subjects():
 #     SUB = [s for s in sig_chans if sub in names[s]]
 #     plot_dist(all_power[cond][SUB], times=conds[cond], label=sub)
 plt.figure()
-plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color='g')
-plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color='r')
-plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color='b')
+plot_dist(all_power[cond][AUD], times=conds[cond], label='AUD', color=[0,1,0])
+plot_dist(all_power[cond][SM], times=conds[cond], label='SM', color=[1,0,0])
+plot_dist(all_power[cond][PROD], times=conds[cond], label='PROD', color=[0,0,1])
 plt.legend()
 plt.xlabel("Time(s)")
 plt.ylabel("Z-Score (V)")
-plt.title(cond)
+plt.title('Stimulus')

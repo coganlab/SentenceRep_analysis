@@ -54,22 +54,21 @@ class NeuralSignalDecoder:
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = SubjectData.from_intermediates("SentenceRep", fpath)
-pow = sub['power']
+# pow = sub['power']
 # resp = sub['resp']
 
 # %% Create training set
 
 conds = ('aud_lm', 'aud_ls', 'aud_jl')
-exclude = tuple(k for k in pow.keys['condition'] if k not in conds)
 idx = sub.sig_chans
 comb = sub.copy()['power']
-comb._data = pow._data.combine_dims((1, 3))
-train = concatenate_arrays([comb[c].array[idx] for c in conds], axis=-1)
+comb._data = comb._data.combine_dims((1, 3))
+exclude = tuple(k for k in comb.keys['condition'] if k not in conds)
+dat = [(comb[c].array[idx], comb[c]._data.all_keys[1]) for c in conds]
+train = concatenate_arrays([d[0] for d in dat], axis=-1)
 train = train.swapaxes(0, 1)
-new = ArrayDict(**comb._data)
-for k in exclude:
-    new.pop(k, None)
-labels = [k.split('-')[0] for k in new.all_keys[1]]
+labels = [d[1] for d in dat][1]
+labels = [k.split('-')[0] for k in labels][:62]
 # x = sub[conds]
 
 clf = make_pipeline(StandardScaler(), LogisticRegression(solver="liblinear"))
