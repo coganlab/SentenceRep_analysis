@@ -79,7 +79,7 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
         try:
             fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                epoch = executor.submit(reader, fname, verbose=False).result()
+                epoch = executor.submit(reader, fname).result()
         except FileNotFoundError as e:
             mne.utils.logger.warn(e)
             continue
@@ -112,10 +112,10 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     allowed = ["zscore", "power", "significance"]
     match value_type:
         case "zscore":
-            reader = mne.read_epochs
+            reader = lambda f: mne.read_epochs(f, preload=True)
             suffix = "zscore-epo"
         case "power":
-            reader = mne.read_epochs
+            reader = lambda f: mne.read_epochs(f, preload=True)
             suffix = "power-epo"
         case "significance":
             reader = mne.read_evokeds
