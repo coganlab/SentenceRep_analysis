@@ -6,7 +6,7 @@ from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
-from ieeg.calc.mat import concatenate_arrays, ArrayDict
+from ieeg.calc.arraydict import concatenate_arrays, ArrayDict
 from collections.abc import Sequence
 from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs, load_dict
@@ -442,7 +442,7 @@ class GroupData:
             data = self[dtype]
             newconds = data.conds
             gen = (np.nanmean(data[c][idx], axis=0,
-                              where=self.significance[c][idx].astype(bool)
+                              # where=self.significance[c][idx].astype(bool)
                               ) for c in conds)
         elif dtype == 'significance':
             data = self.significance
@@ -499,12 +499,13 @@ if __name__ == "__main__":
     W, H, model = data.nmf("significance", idx=group, n_components=3,
                            conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
+    plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
     plot_weight_dist(plot_data, W)
     pred = np.argmax(W, axis=1)
-    groups = [[data._names[group[i]] for i in np.where(pred == j)[0]]
+    groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
-    # fig1 = data.plot_groups_on_average(groups,
-    #                                    ['blue', 'orange', 'green', 'red'])
+    fig1 = data.plot_groups_on_average(groups,
+                                       ['blue', 'orange', 'green', 'red'])
     # fig2 = data.plot_groups_on_average()
 
     ## plot conds
