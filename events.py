@@ -97,9 +97,16 @@ def add_stim_conds(inst: Signal):
     stim_labels = df.loc[stim_files, 'stim_file'].tolist()
     stim_labels = ['/' + s.replace('.wav', '') for s in stim_labels]
     annot = None
+    stim = None
     for event in inst.annotations:
         if 'Audio' in event['description']:
-            event['description'] = event['description'] + stim_labels.pop(0)
+            stim = stim_labels.pop(0)
+            event['description'] += stim
+            annot[-1]['description'] += stim
+        elif any(w in event['description'] for w in ['Word', 'Sentence']
+                 ) and stim is not None:
+            event['description'] += stim
+
         if annot is None:
             annot = mne.Annotations(**event)
         else:

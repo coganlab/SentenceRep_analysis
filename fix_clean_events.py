@@ -18,11 +18,8 @@ else:  # if not then set box directory
 layout = get_data("SentenceRep", LAB_root)
 subjlist = layout.get_subjects()
 subjlist.sort()
-subjlist.reverse()
 # subj = subjlist[subject]
 for subj in subjlist:
-    if subj == "D0029":
-        break
     raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
                           preload=True)
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
@@ -30,6 +27,7 @@ for subj in subjlist:
 
     fix_annotations(raw)
     add_stim_conds(raw)
+    raw.annotations._orig_time = filt.annotations.orig_time
     filt.set_annotations(raw.annotations)
 
     # %% Save the data
