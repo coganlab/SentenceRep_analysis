@@ -28,9 +28,9 @@ def fix_annotations(inst: Signal):
             prev = inst.annotations[i-1]
             if prev['onset'] + prev['duration'] > event['onset'] and \
                     prev['onset'] == annot[-1]['onset']:
-                annot[-1]['description'] = 'bad' + annot[-1]['description']
-                event['description'] = 'bad' + event['description']
+                annot.description[-1] = 'bad ' + annot[-1]['description']
                 mne.utils.logger.warn(f"Condition {i-1} and {i} co-occur")
+                is_bad = True
 
         # check for trial type or bad
         if event['description'].strip() not in ['Listen', ':=:']:

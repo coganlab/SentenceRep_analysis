@@ -22,9 +22,9 @@ raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
                       preload=True)
 
 ## filter data
-line_filter(raw, mt_bandwidth=10., n_jobs=5, copy=False, verbose=10,
+line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
             filter_length='700ms', freqs=[60], notch_widths=20)
-line_filter(raw, mt_bandwidth=10., n_jobs=5, copy=False, verbose=10,
+line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
             filter_length='20s', freqs=[60, 120, 180, 240],
             notch_widths=20)
 
