@@ -21,7 +21,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if 17 < int(subj[1:]) or int(subj[1:]) < 9:
+    if int(subj[1:]) in (3, 65, 71, 73) :
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -71,27 +71,34 @@ for subj in subjects:
 
     base = out.pop(0)
 
-
+    # power = scaling.rescale(out[1], out[0], copy=True, mode='mean')
+    # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
+    # assert False
     ## run time cluster stats
 
     save_dir = op.join(layout.root, "derivatives", "stats")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
+    data = []
     for epoch, name in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
                                      "go_lm", "go_jl")):
         sig1 = epoch.get_data()
         sig2 = base.get_data()
         mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=1000, n_jobs=4, ignore_adjacency=1)
+                                             n_perm=2000, n_jobs=-2, ignore_adjacency=1)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info)
-        power = scaling.rescale(epoch, base, copy=True)
+        power = scaling.rescale(epoch, base, copy=True, mode='mean')
+        z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
+        data.append((name, epoch_mask.copy(), power.copy(), z_score.copy()))
+
+    for name, epoch_mask, power, z_score in data:
         power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
                    fmt='double')
-        z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
         z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                      fmt='double')
         epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
+    del data
 
     ## Plot
     import matplotlib.pyplot as plt  # noqa E402
