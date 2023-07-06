@@ -131,17 +131,18 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     out = OrderedDict()
     for subject in subjects:
         out[subject] = load_dict_async(subject, suffix, reader, conds, folder, avg)
+    return _combine_subject_channels(out)
 
-    # async def load_subject_data(subject):
-    #     out[subject] = await load_dict_async(subject, suffix, reader, conds, folder, avg)
-    #
-    #     if not any(v for v in out[subject].values()):
-    #         out.pop(subject)
-    #
-    # async def load_data():
-    #     await asyncio.gather(*(load_subject_data(sub) for sub in subjects))
-    #
-    # run(load_data())
+
+def _combine_subject_channels(data: dict) -> dict:
+    out = dict()
+    for sub, d2 in data.items():
+        for cond1, d3 in d2.items():
+            out.setdefault(cond1, dict())
+            for cond2, d4 in d3.items():
+                out[cond1].setdefault(cond2, dict())
+                for ch, d5 in d4.items():
+                    out[cond1][cond2][f"{sub}-{ch}"] = d5
     return out
 
 

@@ -6,7 +6,7 @@ from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
-from ieeg.calc.arraydict import concatenate_arrays, ArrayDict
+from ieeg.calc.mat import LabeledArray, concatenate_arrays
 from collections.abc import Sequence
 from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs, load_dict
@@ -28,25 +28,23 @@ class SubjectData:
                            conds: dict[str, Doubles] = None):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
-        sig = ArrayDict(**load_dict(layout, conds, "significance"))
-        sig = sig.combine_dims((0, 2))
-        data = ArrayDict(power=load_dict(layout, conds, "power", False),
-                         zscore=load_dict(layout, conds, "zscore", False))
-        subjects = tuple(data['power'].keys())
-        data = data.combine_dims((1, 4))
+        sig = load_dict(layout, conds, "significance")
+        data = dict(power=load_dict(layout, conds, "power", False),
+                    zscore=load_dict(layout, conds, "zscore", False))
+        # subjects = tuple(data['power'].keys())
         out = cls(data, sig)
-        out.subjects = subjects
+        # out.subjects = subjects
         out.task = task
         out._root = root
         return out
 
     def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
-                 categories: Sequence[str] = ('dtype', 'condition', 'stim',
+                 categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time')):
-        self._data = ArrayDict(**data)
+        self._data = LabeledArray.from_dict(**data)
         self._categories = categories
         if mask is not None:
-            self.significance = ArrayDict(**mask)
+            self.significance = LabeledArray.from_dict(**mask)
             keys = self.significance.all_keys
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -54,20 +52,20 @@ class SubjectData:
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                     self.significance, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(self.significance)
+                self.sig_chans = self._find_sig_chans(self.significance.array)
 
     @property
     def shape(self):
-        return self._data.array.shape
+        return self._data.shape
 
     @property
     def keys(self):
-        keys = self._data.all_keys
+        keys = self._data.labels
         return {self._categories[i]: tuple(k) for i, k in enumerate(keys)}
 
     @property
     def array(self):
-        return self._data.array
+        return self._data.__array__
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -489,25 +487,25 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 
 if __name__ == "__main__":
-    data = GroupData()
-    # fpath = os.path.expanduser("~/Box/CoganLab")
-    # sub = SubjectData.from_intermediates("SentenceRep", fpath)
+    # data = GroupData()
+    fpath = os.path.expanduser("~/Box/CoganLab")
+    sub = SubjectData.from_intermediates("SentenceRep", fpath)
 
     ##
-    group = list(set(data.AUD + data.PROD + data.SM))
-
-    W, H, model = data.nmf("significance", idx=group, n_components=3,
-                           conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
-    plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
-    plot_weight_dist(plot_data, W)
-    pred = np.argmax(W, axis=1)
-    groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
-              for j in range(W.shape[1])]
-    fig1 = data.plot_groups_on_average(groups,
-                                       ['blue', 'orange', 'green', 'red'])
-    # fig2 = data.plot_groups_on_average()
-
-    ## plot conds
-    all_group = [data.AUD, data.PROD, data.SM]
-    plot_weight_dist(data.get_training_data("zscore", ("aud_ls",), all_group))
+    # group = list(set(data.AUD + data.PROD + data.SM))
+    #
+    # W, H, model = data.nmf("significance", idx=group, n_components=3,
+    #                        conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    # plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
+    # plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
+    # plot_weight_dist(plot_data, W)
+    # pred = np.argmax(W, axis=1)
+    # groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
+    #           for j in range(W.shape[1])]
+    # fig1 = data.plot_groups_on_average(groups,
+    #                                    ['blue', 'orange', 'green', 'red'])
+    # # fig2 = data.plot_groups_on_average()
+    #
+    # ## plot conds
+    # all_group = [data.AUD, data.PROD, data.SM]
+    # plot_weight_dist(data.get_training_data("zscore", ("aud_ls",), all_group))
