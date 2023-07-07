@@ -6,7 +6,7 @@ from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.utils import plot_weight_dist
 from ieeg.viz.mri import get_sub_dir, plot_on_average
-from ieeg.calc.mat import LabeledArray, concatenate_arrays
+from ieeg.calc.mat import LabeledArray, concatenate_arrays, combine
 from collections.abc import Sequence
 from plotting import compare_subjects, plot_clustering
 from utils.mat_load import load_intermediates, group_elecs, load_dict
@@ -29,8 +29,10 @@ class SubjectData:
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
         sig = load_dict(layout, conds, "significance")
+        sig = combine(sig, (0, 2))
         data = dict(power=load_dict(layout, conds, "power", False),
                     zscore=load_dict(layout, conds, "zscore", False))
+        data = combine(data, (1, 4))
         # subjects = tuple(data['power'].keys())
         out = cls(data, sig)
         # out.subjects = subjects
@@ -41,18 +43,18 @@ class SubjectData:
     def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time')):
-        self._data = LabeledArray.from_dict(**data)
+        self._data = LabeledArray.from_dict(data)
         self._categories = categories
         if mask is not None:
-            self.significance = LabeledArray.from_dict(**mask)
-            keys = self.significance.all_keys
+            self.significance = LabeledArray.from_dict(mask)
+            keys = self.significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                     self.significance, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(self.significance.array)
+                self.sig_chans = self._find_sig_chans(self.significance)
 
     @property
     def shape(self):
