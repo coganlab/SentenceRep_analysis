@@ -85,13 +85,11 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
             continue
 
         avg_func = lambda x: np.nanmean(x, axis=0)
+        sig = epoch
         if suffix.endswith("epo"):
-            sig = epoch
+
             if avg:
                 sig = sig.average(method=avg_func)
-
-        else:
-            sig = epoch[0]
 
         for ch in sig.ch_names:
             if suffix.endswith("epo"):
@@ -135,6 +133,7 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
 
 
 def _combine_subject_channels(data: dict) -> dict:
+    "Combine the 1st and 4th level of the nested dict keys into one level at the 4th"
     out = dict()
     for sub, d2 in data.items():
         for cond1, d3 in d2.items():
