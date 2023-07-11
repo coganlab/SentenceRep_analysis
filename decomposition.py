@@ -1,95 +1,11 @@
+import os
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering, ward_tree
-from tslearn.clustering import TimeSeriesKMeans, KShape, silhouette_score
-from tslearn.utils import to_sklearn_dataset
-from tslearn.neighbors import KNeighborsTimeSeries as NearestNeighbors
-from tslearn.metrics import gamma_soft_dtw, gak
-from tslearn.preprocessing import TimeSeriesScalerMinMax
-from sklearn.metrics import fowlkes_mallows_score, calinski_harabasz_score, \
-    homogeneity_score, completeness_score, v_measure_score
-import sklearn.model_selection as ms
-from utils.mat_load import get_sigs, load_all, group_elecs
-from sklearn.decomposition import NMF, FactorAnalysis
-from plotting import plot_opt_k, plot_clustering, alt_plot, plot_weight_dist
-from pandas import DataFrame as df
-from utils.calc import ArrayLike, BaseEstimator, stitch_mats
-from sklearn.utils import safe_mask
-import tensorly.decomposition as td
-import tensorly as tl
-from scipy.linalg import eig
-
-
-class ts_spectral_clustering(AgglomerativeClustering):
-    def __init__(self, **kwargs):
-        if 'n_neighbors' in kwargs.keys():
-            self.n_neighbors = kwargs.pop('n_neighbors')
-        else:
-            self.n_neighbors = 5
-        if 'metric' in kwargs.keys():
-            self.metric = kwargs.pop('metric')
-        else:
-            self.metric = 'euclidean'
-        super().__init__(**kwargs)
-
-    def fit(self, X, y=None):
-        knn = NearestNeighbors(n_neighbors=self.n_neighbors, metric=self.metric)
-        knn.fit(X)
-        self.connectivity = knn.kneighbors_graph
-        params = self.get_params()
-        return AgglomerativeClustering(**params).fit(self, X)
-
-
-def sk_clustering(x: ArrayLike, k: int, metric: str = 'euclidean'):
-    kwargs = dict()
-    if metric == 'softdtw':
-        kwargs['gamma'] = gamma_soft_dtw(x)
-    nbrs = NearestNeighbors(n_neighbors=int(np.shape(x)[0] / k / 2), n_jobs=-1,
-                            metric=metric, metric_params=kwargs)
-    nbrs.fit(x)
-    connectivity = nbrs.kneighbors_graph(x)
-    ward = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity)
-    ward.fit(x)
-    return ward, nbrs
-
-
-def create_scorer(scorer):
-    def cv_scorer(estimator: BaseEstimator, X: df, **kwargs):
-        if '.decomposition.' in str(estimator.__class__):
-            w = estimator.fit_transform(X)
-            cluster_labels = np.argmax(w, 1)
-        else:
-            estimator.fit(X)
-            cluster_labels = estimator.labels_
-        num_labels = len(set(cluster_labels))
-        num_samples = len(X.index)
-        if num_labels == 1 or num_labels == num_samples:
-            return -1
-        else:
-            return scorer(X, cluster_labels, **kwargs)
-
-    return cv_scorer
-
-
-def main2(sig: dict[str, ArrayLike], metric: str = 'euclidean'):
-    scores = {}
-    models = {}
-    for group, x in sig.items():
-        scores[group] = plot_opt_k(x, 8, 15, TimeSeriesKMeans(verbose=1, n_init=3), [metric])
-        kwargs = {}
-        kwargs['metric'] = metric
-        kwargs['n_jobs'] = -1
-        models[group] = TimeSeriesKMeans(n_clusters=scores[group][metric]['k'],
-                                         n_init=10, verbose=2, **kwargs)
-        models[group].fit(x)
-        weights = models[group].cluster_centers_.squeeze()
-        labels = models[group].predict(x)
-        # labels = np.where((weights == np.max(weights, 0)).T)[1]
-        plot_clustering(x, labels, True, group)
-        # plot_clustering(x, weights, True, group,True)
-        dat = sigZ[group]
-        dat[dat >= 1] = sigZ[group][dat >= 1]
-        alt_plot(dat, labels)
-    return scores, models
+from ieeg.io import get_data
+from ieeg.viz.utils import plot_dist
+from ieeg.calc.utils import stitch_mats
+import matplotlib.pyplot as plt
+from utils.mat_load import load_intermediates, group_elecs
+from sklearn.decomposition import NMF
 
 
 def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
@@ -108,65 +24,43 @@ def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
     return dot(Phi, R)
 
 
-def estimate(x: ArrayLike, estimator: BaseEstimator, param_grid: dict, splits: int = 5):
-    cv = [(slice(None), slice(None))]
-    cv_ts = ms.TimeSeriesSplit(n_splits=splits)
-    # estimator = LatentDirichletAllocation(max_iter=10000, learning_method="batch", evaluate_every=2)
-    # estimator = AgglomerativeClustering()
-    # estimator = KernelKMeans(n_init=10, verbose=2, max_iter=100)
-    scoring = {  # 'sil': create_scorer(silhouette_score),
-        'calinski': create_scorer(calinski_harabasz_score),
-        # 'hom': create_scorer(homogeneity_score), 'comp': create_scorer(completeness_score),
-        # 'v': create_scorer(v_measure_score),
-        # 'fowlkes': create_scorer(fowlkes_mallows_score)
-    }
-    # param_dict_sil = {'n_components': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
-    comp = 'n_components'
-    # param_dict_sil = {comp: [2, 3, 4, 5],'kernel':['gak','chi2','additive_chi2','rbf','linear','poly','polynomial','laplacian','sigmoid','cosine']}
-    gs = ms.GridSearchCV(estimator=estimator, param_grid=param_grid, scoring=scoring,
-                         cv=cv_ts, n_jobs=-1, verbose=2, return_train_score=True, refit='calinski')
-    gs.fit(df(x))
-    keys = list(gs.best_estimator_.__dict__.keys())
-    thing = keys[comp == keys]
-    winner = gs.best_estimator_
-    keys = list(gs.best_estimator_.__dict__.keys())
-    thing = keys[comp == keys]
-
-    gs.estimator = winner
-    # gs.scoring = {'sil': create_scorer(silhouette_score), 'calinski': create_scorer(calinski_harabasz_score)}
-    # gs.refit = 'calinski'
-    gs.param_grid = {comp: [2, 3, 4, 5, 6]}
-    gs.fit(df(x))
-    return gs
-
-
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-    SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
+    ## check if currently running a slurm job
+    HOME = os.path.expanduser("~")
+    if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+        LAB_root = os.path.join(HOME, "workspace", "CoganLab")
+    else:  # if not then set box directory
+        LAB_root = os.path.join(HOME, "Box", "CoganLab")
+    layout = get_data("SentenceRep", root=LAB_root)
+    conds = {"resp": (-1, 1),
+             "aud_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
+
+    ## Load the data
+    epochs, all_power, names = load_intermediates(layout, conds, "power")
+    signif, all_sig, _ = load_intermediates(layout, conds, "significance")
+
+    ## plot significant channels
+    AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
     # %%
-    cond = 'LSwords'
-    # resp = all_sigA[cond]["Response"]
-    # respz = all_sigZ[cond]["Response"]
-    aud = all_sigA[cond]["AuditorywDelay"]
-    audz = all_sigZ[cond]["AuditorywDelay"]
-    # part = all_sigA[cond]["StartPart"]
-    # partz = all_sigZ[cond]["StartPart"]
-    go = all_sigA[cond]["DelaywGo"]
-    goz = all_sigZ[cond]["DelaywGo"]
-    # idx = AUD+SM+PROD
-    x = np.unique(np.concatenate(list(sig_chans[cond].values())))
-    x.sort()
-    idx = SM#x.tolist()
-    stitched = stitch_mats([aud[idx, :175], go[idx, :]], [0], axis=1)
-    stitchedz = stitch_mats([audz[idx, :175], goz[idx, :]], [0], axis=1)
-    stitchedz = stitchedz[np.where(np.any(np.abs(stitched) == 1, axis=1))[0]]
-    stitched = stitched[np.where(np.any(np.abs(stitched) == 1, axis=1))[0]]
-    stitchedw = np.multiply(stitchedz,stitched)
-    cov = np.dot(stitchedz.T, stitchedz)
-    eigen = eig(cov)
-    vmax = varimax(eigen[1])
+    aud_c = "aud_ls"
+    go_c = "go_ls"
+    resp_c = "resp"
+    stitch_aud = stitch_mats([all_power[aud_c][AUD, :150],
+                              all_power[go_c][AUD, :]], [0], axis=1)
+    stitch_sm = stitch_mats([all_power[aud_c][SM, :150],
+                             all_power[go_c][SM, :]], [0], axis=1)
+    stitch_prod = stitch_mats([all_power[aud_c][PROD, :150],
+                               all_power[go_c][PROD, :]], [0], axis=1)
+    stitch_all = np.vstack([stitch_aud, stitch_sm, stitch_prod])
+    labels = np.concatenate([np.ones([len(AUD)]), np.ones([len(SM)]) * 2,
+                             np.ones([len(PROD)]) * 3])
     # %%
 
     import nimfa

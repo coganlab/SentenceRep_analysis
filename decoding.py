@@ -1,56 +1,84 @@
-from utils.mat_load import load_all, group_elecs
-import matplotlib.pyplot as plt
+# Decoding script, takes a GroupData set and uses a recurrent neural network to decode trial conditions
+
 import numpy as np
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import HistGradientBoostingRegressor
 
-Task, all_sigZ, all_sigA, sig_chans, sigMatChansLoc, sigMatChansName, Subject = load_all('data/pydata.mat')
-SM, AUD, PROD = group_elecs(all_sigA, sig_chans)
-winners, results, w_sav = np.load('data/nmf.npy', allow_pickle=True)
-npSM = np.array(SM)
+from analysis import SubjectData
+import os
+from ieeg.calc.mat import concatenate_arrays, ArrayDict
 
-cond = 'LSwords'
-SMresp = npSM[npSM < len(all_sigA[cond]['Response'])]
-SMrespw = w_sav['SM'][npSM < len(all_sigA['LSwords']['Response'])]
-names = ['Working Memory','Visual','Early Prod','Late Prod']
-epochs = ['AuditorywDelay', 'DelaywGo', 'Response']
+from mne.decoding import (
+    SlidingEstimator,
+    GeneralizingEstimator,
+    Scaler,
+    cross_val_multiscore,
+    LinearModel,
+    get_coef,
+    Vectorizer,
+    CSP,
+)
 
-# %% find the latencies of the max values for each channel and plot the distribution for each group
-epoch = epochs[1]
+class NeuralSignalDecoder:
+    def __init__(self):
+        self.lda = LinearDiscriminantAnalysis()
 
-if epoch == 'Response':
-    channels = SMresp
-    groups = np.argmax(SMrespw, 1)
-else:
-    channels = SM
-    groups = np.argmax(w_sav['SM'], 1)
-sig = np.multiply(all_sigZ[cond][epoch][channels, 1:200], all_sigA[cond][epoch][channels, 1:200])
-#sig = np.concatenate([sig, np.multiply(all_sigZ[cond][epochs[1]][channels, :], all_sigA[cond][epochs[1]][channels, :])],1)
-latency = np.argmax(sig, 1)
-max_vals = np.max(sig, 1)
-latency = latency - 50
-latency = latency / 100
-colors = np.array([[0, 0, 0], [0.6, 0.3, 0], [.9, .9, 0], [1, 0.5, 0]])
-fig, ax = plt.figure(), plt.subplot(111)
-ax2=ax.twinx()
-for i, name in enumerate(names):
-    ax2.boxplot(latency[groups == i], positions=[i / 4 + 2], widths=0.25, whis=[10, 90],
-               showfliers=False, vert=False, patch_artist=True, boxprops=dict(facecolor=colors[i], alpha=0.5))
-    ax.scatter(latency[groups == i], max_vals[groups == i], color=colors[i], alpha=0.5, label=name)
-ax.set_ylabel('Max Value (z-score)')
-ax2.set_yticks([])
-plt.title('Latency of Max Value for Each Cluster Channel')
-ax.legend(names, loc='upper left')
-ax2.set_ylim(ax.get_ylim())
-# epoch = 'Delay'
-ax.set_xlabel(epoch + ' Latency (s)')
+    def train(self, X_train, y_train):
+        """
+        Train the decoder with the given training data.
 
-# plt.title('Latency of Max Value for Each Channel')
-# ax.yaxis.tick_right()
-# ax.yaxis.set_label_position("right")
-# plot the distribution of latencies for each group with a horizontal boxplot
-# for i, name in enumerate(names):
-#     ax.boxplot(latency[groups == i], positions=[i/2+2], widths=0.25, whis=[10,90],
-#                 showfliers=False, vert=False, patch_artist=True, boxprops=dict(facecolor=colors[i], alpha=0.5))
-# plt.xlabel(epoch+' Latency (s)')
-# plt.title('Latency of Max Value for Each Cluster Channel')
-# ax2.yaxis.tick_left()
-# ax.legend(names, loc='upper left')
+        X_train: numpy array
+            Input features (neural signals) for training, shape (n_samples, n_features).
+        y_train: numpy array
+            Target labels (words) for training, shape (n_samples,).
+        """
+        self.lda.fit(X_train, y_train)
+
+    def predict(self, X_test):
+        """
+        Predict the word labels for the given test data.
+
+        X_test: numpy array
+            Input features (neural signals) for testing, shape (n_samples, n_features).
+
+        Returns:
+        predictions: numpy array
+            Predicted word labels for the test data, shape (n_samples,).
+        """
+        predictions = self.lda.predict(X_test)
+        return predictions
+
+# %% Imports
+
+fpath = os.path.expanduser("~/Box/CoganLab")
+sub = SubjectData.from_intermediates("SentenceRep", fpath)
+# pow = sub['power']
+# resp = sub['resp']
+
+# %% Create training set
+
+conds = ('aud_lm', 'aud_ls', 'aud_jl')
+idx = sub.sig_chans
+comb = sub.copy()['power']
+comb._data = comb._data.combine_dims((1, 3))
+exclude = tuple(k for k in comb.keys['condition'] if k not in conds)
+cats = {'heat': 0, 'hoot': 1, 'hot': 0, 'hut': 1}
+get_pre = lambda k: cats[k.split('-')[0]]
+dat = [(comb[c].array[idx].swapaxes(0, 1), tuple(map(get_pre, comb[c]._data.all_keys[1]))) for c in conds]
+# train = concatenate_arrays([d[0] for d in dat], axis=-1)
+# train = train.swapaxes(0, 1)
+# labels = [d[1] for d in dat][1]
+# labels = [k.split('-')[0] for k in labels][:62]
+# x = sub[conds]
+
+clf = make_pipeline(StandardScaler(), HistGradientBoostingRegressor())
+
+time_decod = SlidingEstimator(clf, n_jobs=None, scoring="roc_auc", verbose=True)
+# here we use cv=3 just for speed
+# give y the
+scores = cross_val_multiscore(time_decod, dat[0][0], dat[0][1], cv=5, n_jobs=-1)
+
+# Mean scores across cross-validation splits
+scores = np.mean(scores, axis=0)
