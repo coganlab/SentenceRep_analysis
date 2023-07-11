@@ -170,8 +170,10 @@ class SubjectData:
 
     def __sizeof__(self):
         def inner(obj):
-            if isinstance(obj, (int, float, bool, str, np.ndarray)):
+            if isinstance(obj, (int, float, bool, str)):
                 return obj.__sizeof__()
+            elif isinstance(obj, np.ndarray):
+                return obj.nbytes
             elif isinstance(obj, (tuple, list, set, frozenset)):
                 return sum(inner(i) for i in obj)
             elif isinstance(obj, dict):
