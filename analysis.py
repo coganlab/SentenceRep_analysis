@@ -46,15 +46,15 @@ class SubjectData:
         self._data = LabeledArray.from_dict(data)
         self._categories = categories
         if mask is not None:
-            self.significance = LabeledArray.from_dict(mask)
-            keys = self.significance.labels
+            self._significance = LabeledArray.from_dict(mask)
+            keys = self._significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    self.significance, keys[1], keys[0])
+                    self._significance, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(self.significance)
+                self.sig_chans = self._find_sig_chans(self._significance)
 
     @property
     def shape(self):
@@ -67,7 +67,16 @@ class SubjectData:
 
     @property
     def array(self):
-        return self._data.__array__
+        return self._data.__array__()
+
+    @property
+    def sig(self):
+        if hasattr(self, '_significance'):
+            return self._significance.__array__()
+
+    @property
+    def subjects(self):
+        return set(f"{ch[0]}{int(ch[1:5])}" for ch in self.keys['channel'])
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -82,6 +91,19 @@ class SubjectData:
     @staticmethod
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
         return np.where(np.any(sig == 1, axis=1))[0].tolist()
+
+    def combine(self, levels: tuple[str, str]):
+        assert all(lev in self._categories for lev in levels), "Invalid level"
+        lev_nums = tuple(self._categories.index(lev) for lev in levels)
+        new_data = self._data.combine(lev_nums)
+        new_cats = list(self._categories)
+        new_cats.pop(lev_nums[0])
+        new_sig = None
+        if not hasattr(self, '_significance'):
+            pass
+        elif all(self.keys[lev] in self._significance.labels for lev in levels):
+            new_sig = self._significance.combine(lev_nums)
+        return type(self)(new_data.to_dict(), new_sig, new_cats)
 
     def __getitem__(self, item: str | Sequence[str]):
         if isinstance(item, str):
@@ -119,7 +141,7 @@ class SubjectData:
         new_categories = list(self._categories)
 
         def inner(data, lvl=0):
-            if isinstance(data, dict):
+            if isinstance(data, LabeledArray):
                 if item in data.keys():
                     new_categories.pop(lvl)
                     return data[item]
@@ -133,12 +155,12 @@ class SubjectData:
         if item in self._data.keys():
             sig = None
         else:
-            sig = self.significance
+            sig = self._significance
 
         return type(self)(inner(self._data), sig, tuple(new_categories))
 
     def copy(self):
-        return type(self)(self._data, self.significance, self._categories)
+        return type(self)(self._data, self._significance, self._categories)
 
     def append(self, data):
         """Add entry to underlying data dictionary if other nested keys match
@@ -198,6 +220,25 @@ class SubjectData:
 
     def __iter__(self):
         return self._data.__iter__()
+
+    def plot_groups_on_average(self, groups: list[list[int]] = None,
+                               colors: list[str] = ('red', 'green', 'blue'),
+                               rm_wm: bool = True):
+        if groups is None:
+            assert hasattr(self, 'SM')
+            groups = [self.SM, self.AUD, self.PROD]
+
+        if isinstance(groups[0][0], int):
+            groups = [[self.keys['channel'][idx] for idx in g] for g in groups]
+
+        itergroup = (g for g in groups)
+        if isinstance(colors, tuple):
+            colors = list(colors)
+        brain = plot_on_average(self.subjects, picks=next(itergroup),
+                                color=colors.pop(0), rm_wm=rm_wm)
+        for g, c in zip(itergroup, colors):
+            plot_on_average(self.subjects, picks=g, color=c, fig=brain, rm_wm=rm_wm)
+        return brain
 
 
 class GroupData:
@@ -496,6 +537,10 @@ if __name__ == "__main__":
     sub = SubjectData.from_intermediates("SentenceRep", fpath)
 
     ##
+    # power = sub['power'].combine(('stim', 'trial'))
+    power = sub._data['power'].combine((1, 3))
+    sub.plot_groups_on_average()
+
     # group = list(set(data.AUD + data.PROD + data.SM))
     #
     # W, H, model = data.nmf("significance", idx=group, n_components=3,
