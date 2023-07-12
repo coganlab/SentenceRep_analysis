@@ -40,13 +40,14 @@ class SubjectData:
         out._root = root
         return out
 
-    def __init__(self, data: dict, mask: dict[str, np.ndarray] = None,
+    def __init__(self, data: dict | LabeledArray,
+                 mask: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time')):
-        self._data = LabeledArray.from_dict(data)
+        self._set_data(data, '_data')
         self._categories = categories
         if mask is not None:
-            self._significance = LabeledArray.from_dict(mask)
+            self._set_data(mask, '_significance')
             keys = self._significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -55,6 +56,15 @@ class SubjectData:
                     self._significance, keys[1], keys[0])
             else:
                 self.sig_chans = self._find_sig_chans(self._significance)
+
+    def _set_data(self, data: dict | LabeledArray, attr: str):
+        if isinstance(data, dict):
+            setattr(self, attr, LabeledArray.from_dict(data))
+        elif isinstance(data, LabeledArray):
+            setattr(self, attr, data)
+        else:
+            raise TypeError(f"input has to be dict or LabeledArray, not "
+                            f"{type(data)}")
 
     @property
     def shape(self):
@@ -76,7 +86,7 @@ class SubjectData:
 
     @property
     def subjects(self):
-        return set(f"{ch[0]}{int(ch[1:5])}" for ch in self.keys['channel'])
+        return set(f"{ch[:5]}" for ch in self.keys['channel'])
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -103,7 +113,7 @@ class SubjectData:
             pass
         elif all(self.keys[lev] in self._significance.labels for lev in levels):
             new_sig = self._significance.combine(lev_nums)
-        return type(self)(new_data.to_dict(), new_sig, new_cats)
+        return type(self)(new_data, new_sig, new_cats)
 
     def __getitem__(self, item: str | Sequence[str]):
         if isinstance(item, str):
@@ -537,8 +547,8 @@ if __name__ == "__main__":
     sub = SubjectData.from_intermediates("SentenceRep", fpath)
 
     ##
-    # power = sub['power'].combine(('stim', 'trial'))
-    power = sub._data['power'].combine((1, 3))
+    power = sub['power'].combine(('stim', 'trial'))
+    # power = sub._data['power'].combine((1, 3))
     sub.plot_groups_on_average()
 
     # group = list(set(data.AUD + data.PROD + data.SM))
