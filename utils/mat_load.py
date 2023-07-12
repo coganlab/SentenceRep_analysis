@@ -4,12 +4,8 @@ from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
-from tqdm.asyncio import tqdm_asyncio as asyncio
 from ieeg.calc.mat import concatenate_arrays
 from collections import OrderedDict
-import concurrent.futures
-from asyncio import run, to_thread
-
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
                        value_type: str = "zscore", avg: bool = True,
@@ -78,8 +74,7 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
         out[cond] = OrderedDict()
         try:
             fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                epoch = executor.submit(reader, fname).result()
+            epoch = reader(fname)
         except FileNotFoundError as e:
             mne.utils.logger.warn(e)
             continue

@@ -4,9 +4,9 @@ import numpy as np
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
-from ieeg.calc.mat import LabeledArray, concatenate_arrays, combine
+from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
-from plotting import compare_subjects, plot_clustering
+from plotting import compare_subjects, plot_clustering, plot_weight_dist
 from utils.mat_load import group_elecs, load_dict
 
 import nimfa
@@ -228,7 +228,7 @@ class GroupData:
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
                                colors: list[str] = ('red', 'green', 'blue'),
-                               rm_wm: bool = True):
+                               **kwargs) -> mne.viz.Brain:
         if groups is None:
             assert hasattr(self, 'SM')
             groups = [self.SM, self.AUD, self.PROD]
@@ -240,9 +240,9 @@ class GroupData:
         if isinstance(colors, tuple):
             colors = list(colors)
         brain = plot_on_average(self.subjects, picks=next(itergroup),
-                                color=colors.pop(0), rm_wm=rm_wm)
+                                color=colors.pop(0), **kwargs)
         for g, c in zip(itergroup, colors):
-            plot_on_average(self.subjects, picks=g, color=c, fig=brain, rm_wm=rm_wm)
+            plot_on_average(self.subjects, picks=g, color=c, fig=brain, **kwargs)
         return brain
 
     def groups_from_weights(self, w: np.ndarray[float], idx: list[int] = None):
@@ -262,13 +262,13 @@ class GroupData:
             idx = self.sig_chans
         if dtype in ['power', 'zscore']:
             data = self[dtype]
-            newconds = data.conds
+            newconds = data.keys['epoch']
             gen = (np.nanmean(data[c][idx], axis=0,
                               # where=self.significance[c][idx].astype(bool)
                               ) for c in conds)
         elif dtype == 'significance':
-            data = self.significance
-            newconds = self.conds
+            data = self._significance
+            newconds = self.keys['epoch']
             gen = (data[c][idx] for c in conds)
         else:
             raise ValueError(f"{dtype} not in ['power', 'zscore', "
@@ -311,78 +311,6 @@ class GroupData:
         return type(self)(self._root, self.task, self.units, conds, **out,
                           _subjects=self.subjects, _names=self._names)
 
-    def plot_groups_on_average(self, groups: list[list[int]] = None,
-                               colors: list[str] = ('red', 'green', 'blue'),
-                               rm_wm: bool = True):
-        subjects = [v for v in self.subjects.values() if v]
-        if groups is None:
-            assert hasattr(self, 'SM')
-            groups = [self.SM, self.AUD, self.PROD]
-
-        if isinstance(groups[0][0], int):
-            groups = [[self._names[idx] for idx in g] for g in groups]
-
-        itergroup = (g for g in groups)
-        if isinstance(colors, tuple):
-            colors = list(colors)
-        brain = plot_on_average(subjects, picks=next(itergroup),
-                                color=colors.pop(0), rm_wm=rm_wm)
-        for g, c in zip(itergroup, colors):
-            plot_on_average(subjects, picks=g, color=c, fig=brain, rm_wm=rm_wm)
-        return brain
-
-    def groups_from_weights(self, w: np.ndarray[float], idx: list[int] = None):
-        if idx is None:
-            idx = self.sig_chans
-        labels = np.argmax(w, axis=1)
-        groups = [[idx[i] for i in np.where(labels == j)[0]]
-                  for j in range(w.shape[1])]
-        return groups
-
-    def get_training_data(self, dtype: str,
-                          conds: list[str] | str = ('aud_ls', 'go_ls'),
-                          idx=None) -> np.ndarray:
-        if isinstance(conds, str):
-            conds = [conds]
-        if idx is None:
-            idx = self.sig_chans
-        if dtype in ['power', 'zscore']:
-            data = self[dtype]
-            newconds = data.conds
-            gen = (np.nanmean(data[c][idx], axis=0,
-                              # where=self.significance[c][idx].astype(bool)
-                              ) for c in conds)
-        elif dtype == 'significance':
-            data = self.significance
-            newconds = self.conds
-            gen = (data[c][idx] for c in conds)
-        else:
-            raise ValueError(f"{dtype} not in ['power', 'zscore', "
-                             "'significance']")
-        assert all(cond in newconds for cond in conds)
-        return np.concatenate(list(gen), axis=-1)
-
-    def nmf(self, dtype: str = 'significance', n_components: int = 4,
-            idx: list[int] = None,
-            conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
-        data = self.get_training_data(dtype, conds, idx)
-        data = data - np.min(data)
-        if dtype == 'significance':
-            model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
-                            lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
-        else:
-            # data = sparse_matrix(data)
-            model = nimfa.Nmf(data, seed="nndsvd",
-                              rank=n_components,
-                              max_iter=100000, update='euclidean',
-                              objective='div', options=dict(flag=2)
-                              )
-        model()
-        W = np.array(model.W)
-        H = np.array(model.H)
-        return W, H, model
-
-
 def convert_matrix(matrix):
     max_val = max(matrix) + 1
     result = [[int(i == j) for j in range(max_val)] for i in matrix]
@@ -403,16 +331,17 @@ if __name__ == "__main__":
     ##
     power = sub['power'].combine(('stim', 'trial'))
     resp = sub['resp']
-    # power = sub._data['power'].combine((1, 3))
-    # sub.plot_groups_on_average()
+    resp_power = sub['power', 'resp']
+    # sm = sub.plot_groups_on_average([sub.SM], hemi='both')
+    # sm_wm = sub.plot_groups_on_average([sub.SM], hemi='both', rm_wm=False)
 
-    # group = list(set(data.AUD + data.PROD + data.SM))
-    #
-    # W, H, model = data.nmf("significance", idx=group, n_components=3,
-    #                        conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    # plot_data = data.get_training_data("zscore", ("aud_ls", "go_ls"), group)
-    # plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
-    # plot_weight_dist(plot_data, W)
+    group = sub.SM
+
+    W, H, model = sub.nmf("significance", idx=group, n_components=4,
+                           conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    plot_data = sub.get_training_data("zscore", ("aud_ls", "go_ls"), group)
+    plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
+    plot_weight_dist(plot_data, W)
     # pred = np.argmax(W, axis=1)
     # groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
     #           for j in range(W.shape[1])]
