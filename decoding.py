@@ -6,9 +6,9 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-from analysis import SubjectData
+from analysis import GroupData
 import os
-from ieeg.calc.mat import concatenate_arrays, ArrayDict
+from ieeg.calc.mat import concatenate_arrays, LabeledArray
 
 from mne.decoding import (
     SlidingEstimator,
@@ -53,7 +53,7 @@ class NeuralSignalDecoder:
 # %% Imports
 
 fpath = os.path.expanduser("~/Box/CoganLab")
-sub = SubjectData.from_intermediates("SentenceRep", fpath)
+sub = GroupData.from_intermediates("SentenceRep", fpath)
 # pow = sub['power']
 # resp = sub['resp']
 
