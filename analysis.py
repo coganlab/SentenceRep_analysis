@@ -20,13 +20,14 @@ class GroupData:
 
     @classmethod
     def from_intermediates(cls, task: str, root: PathLike,
-                           conds: dict[str, Doubles] = None):
+                           conds: dict[str, Doubles] = None,
+                           folder: str = 'stats'):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
-        sig = load_dict(layout, conds, "significance")
+        sig = load_dict(layout, conds, "significance", True, folder)
         sig = combine(sig, (0, 2))
-        data = dict(power=load_dict(layout, conds, "power", False),
-                    zscore=load_dict(layout, conds, "zscore", False))
+        data = dict(power=load_dict(layout, conds, "power", False, folder),
+                    zscore=load_dict(layout, conds, "zscore", False, folder))
         data = combine(data, (1, 4))
         # subjects = tuple(data['power'].keys())
         out = cls(data, sig)
@@ -326,7 +327,8 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 if __name__ == "__main__":
     fpath = os.path.expanduser("~/Box/CoganLab")
-    sub = GroupData.from_intermediates("SentenceRep", fpath)
+    sub = GroupData.from_intermediates("SentenceRep", fpath,
+                                       folder='stats_muscle')
 
     ##
     power = sub['power'].combine(('stim', 'trial'))

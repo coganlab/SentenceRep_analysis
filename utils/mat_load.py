@@ -68,7 +68,7 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
 
 
 def load_dict_async(subject: str, suffix: str, reader: callable,
-                          conds: dict, folder: PathLike, avg: bool = True):
+                    conds: dict, folder: PathLike, avg: bool = True):
     out = OrderedDict()
     for cond in conds.keys():
         out[cond] = OrderedDict()
