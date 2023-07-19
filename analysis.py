@@ -260,13 +260,14 @@ class GroupData:
         if isinstance(conds, str):
             conds = [conds]
         if idx is None:
-            idx = self.sig_chans
+            idx = self.sig_chans.combine(('stim', 'trial'))
         if dtype in ['power', 'zscore']:
-            data = self[dtype]
+            data = self[dtype].combine(('stim', 'trial'))
             newconds = data.keys['epoch']
-            gen = (np.nanmean(data[c][idx], axis=0,
+            gen = (np.nanmean(data[c].array[idx], axis=0,
                               # where=self.significance[c][idx].astype(bool)
                               ) for c in conds)
+
         elif dtype == 'significance':
             data = self._significance
             newconds = self.keys['epoch']
@@ -328,7 +329,7 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 if __name__ == "__main__":
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats_muscle')
+                                       folder='stats')
 
     ##
     power = sub['power'].combine(('stim', 'trial'))
