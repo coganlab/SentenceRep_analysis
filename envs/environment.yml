@@ -1,4 +1,4 @@
-name: analysis
+name: ieeg
 channels:
   - defaults
 dependencies:

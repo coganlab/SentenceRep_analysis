@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib
 
-matplotlib.use('TkAgg')
+matplotlib.use('Qt5Agg')
 
 from analysis import GroupData
 from plotting import plot_weight_dist
@@ -92,10 +92,13 @@ if __name__ == "__main__":
                           sub['aud_lm'].sig[aud_slice],
                           sub['go_ls'].sig, sub['resp'].sig])
     zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial'))._data, axis=-2)
+    powers = np.nanmean(sub['power'].combine(('stim', 'trial'))._data, axis=-2)
     plot_data = np.hstack([zscores['aud_ls', :, 0:175], zscores['go_ls']])
 
-    # train = plot_data * stitched
-    # train += np.min(train)
+    train = np.hstack([powers['aud_ls', :, 0:175],
+                       powers['aud_lm', :, 0:175],
+                       powers['go_ls'], powers['resp']])
+    combined = train * stitched - np.min(train * stitched)
 
     ## run the decomposition
     scorer = lambda model: calinski_halbaraz(np.array(model.fit.W).T,
@@ -114,8 +117,13 @@ if __name__ == "__main__":
                                       hemi='lh')
 
     ##
-    # W = NMF(4, init="nndsvda", tol=1e-10, max_iter=1000, solver='mu').fit_transform(train)
-    # plot_weight_dist(train, W)
+    lfnmf = nimfa.Lfnmf(combined[sub.SM], seed="nndsvd", rank=4, max_iter=1000)
+    lfnmf_fit = lfnmf()
+    W = np.array(lfnmf_fit.fit.W)
+
+    # W = NMF(4, init="nndsvda", tol=1e-10, max_iter=10000,
+    #         solver='mu').fit_transform(train * stitched - np.min(train * stitched))
+    plot_weight_dist(plot_data[sub.SM], W)
 
 
     # n = bmf.estimate_rank([2,3,4,5,6,7,8],n_run=100)
