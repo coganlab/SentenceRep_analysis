@@ -1,11 +1,22 @@
 import os
 import numpy as np
-from ieeg.io import get_data
-from ieeg.viz.utils import plot_dist
-from ieeg.calc.utils import stitch_mats
-import matplotlib.pyplot as plt
-from utils.mat_load import load_intermediates, group_elecs
+import matplotlib
+
+matplotlib.use('TkAgg')
+
+from analysis import GroupData
+from plotting import plot_weight_dist
+import nimfa
 from sklearn.decomposition import NMF
+from sklearn.metrics import pairwise_distances
+import sys
+
+sys._excepthook = sys.excepthook
+def exception_hook(exctype, value, traceback):
+    print(exctype, value, traceback)
+    sys._excepthook(exctype, value, traceback)
+    sys.exit(1)
+sys.excepthook = exception_hook
 
 
 def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
@@ -24,53 +35,93 @@ def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
     return dot(Phi, R)
 
 
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
+def calinski_halbaraz(X, W, n_clusters=None):
+    """
+    Here, X is the original data matrix, W and H are the non-negative factor
+    matrices from the ONMF decomposition. The function first computes the
+    centroid of each cluster defined by the columns of W by taking the mean
+    of the data points assigned to that cluster. It then computes the total
+    sum of squares (TSS), which is the sum of squared distances between each
+    data point and the mean of all data points. It computes the
+    between-cluster sum of squares (BSS), which is the sum of squared
+    distances between each cluster centroid and the mean of all data points,
+    weighted by the number of data points assigned to that cluster. Finally,
+    it computes the within-cluster sum of squares (WSS), which is the sum of
+    squared distances between each data point and its assigned cluster
+    centroid, weighted by the assignment weights in W.
+    """
 
-    ## check if currently running a slurm job
-    HOME = os.path.expanduser("~")
-    if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
-        LAB_root = os.path.join(HOME, "workspace", "CoganLab")
-    else:  # if not then set box directory
-        LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    layout = get_data("SentenceRep", root=LAB_root)
-    conds = {"resp": (-1, 1),
-             "aud_ls": (-0.5, 1.5),
-             "aud_lm": (-0.5, 1.5),
-             "aud_jl": (-0.5, 1.5),
-             "go_ls": (-0.5, 1.5),
-             "go_lm": (-0.5, 1.5),
-             "go_jl": (-0.5, 1.5)}
+    if n_clusters is None:
+        n_clusters = W.shape[1]
+    n_samples = X.shape[0]
+
+    # Compute the centroid of each cluster
+    centroids = np.zeros((n_clusters, X.shape[1]))
+    for i in range(n_clusters):
+        centroids[i] = np.mean(X[W[:, i] > 0], axis=0)
+
+    # Compute the between-cluster sum of squares
+    BSS = np.sum(np.sum(W[:, i, np.newaxis] * pairwise_distances(
+        centroids[i, np.newaxis, :], np.mean(X, axis=0, keepdims=True))**2)
+                 for i in range(n_clusters))
+
+    # Compute the within-cluster sum of squares
+    WSS = np.sum(np.sum(W[:, i, np.newaxis] * pairwise_distances(
+        X, centroids[i, np.newaxis, :])**2) for i in range(n_clusters))
+
+    # Compute the CH index
+    ch = (BSS / (n_clusters - 1)) / (WSS / (n_samples - n_clusters))
+
+    return ch
+
+
+def mat_err(W: np.ndarray, H: np.ndarray, orig: np.ndarray) -> float:
+    error = np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
+    return error
+
+
+if __name__ == "__main__":
 
     ## Load the data
-    epochs, all_power, names = load_intermediates(layout, conds, "power")
-    signif, all_sig, _ = load_intermediates(layout, conds, "significance")
+    fpath = os.path.expanduser("~/Box/CoganLab")
+    sub = GroupData.from_intermediates("SentenceRep", fpath,
+                                       folder='stats')
+    ## setup training data
+    aud_slice = (slice(None), slice(0, 175))
+    stitched = np.hstack([sub['aud_ls'].sig[aud_slice],
+                          sub['aud_lm'].sig[aud_slice],
+                          sub['go_ls'].sig, sub['resp'].sig])
+    zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial'))._data, axis=-2)
+    plot_data = np.hstack([zscores['aud_ls', :, 0:175], zscores['go_ls']])
 
-    ## plot significant channels
-    AUD, SM, PROD, sig_chans = group_elecs(all_sig, names, conds)
-    # %%
-    aud_c = "aud_ls"
-    go_c = "go_ls"
-    resp_c = "resp"
-    stitch_aud = stitch_mats([all_power[aud_c][AUD, :150],
-                              all_power[go_c][AUD, :]], [0], axis=1)
-    stitch_sm = stitch_mats([all_power[aud_c][SM, :150],
-                             all_power[go_c][SM, :]], [0], axis=1)
-    stitch_prod = stitch_mats([all_power[aud_c][PROD, :150],
-                               all_power[go_c][PROD, :]], [0], axis=1)
-    stitch_all = np.vstack([stitch_aud, stitch_sm, stitch_prod])
-    labels = np.concatenate([np.ones([len(AUD)]), np.ones([len(SM)]) * 2,
-                             np.ones([len(PROD)]) * 3])
-    # %%
+    # train = plot_data * stitched
+    # train += np.min(train)
 
-    import nimfa
-
-    bmf = nimfa.Bmf(stitched, seed="nndsvd", rank=4, max_iter=1000, lambda_w=1.01, lambda_h=1.01)
+    ## run the decomposition
+    scorer = lambda model: calinski_halbaraz(np.array(model.fit.W).T,
+                                             np.array(model.fit.H))
+    bmf = nimfa.Bmf(stitched[sub.SM], seed="nndsvd", rank=4, max_iter=10000, callback=scorer, track_factor=True, track_error=True)
     bmf_fit = bmf()
-    n = bmf.estimate_rank([2,3,4,5,6,7,8],n_run=100)
-    from MEPONMF.onmf_DA import DA
-    from MEPONMF.onmf_DA import ONMF_DA
-    # k = 10
+    W = np.array(bmf_fit.fit.W)
+    this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
+    plot_weight_dist(this_plot[sub.SM], W)
+    ## plot on brain
+    pred = np.argmax(W, axis=1)
+    groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    fig1 = sub.plot_groups_on_average(groups,
+                                      ['blue', 'orange', 'green', 'red'],
+                                      hemi='lh')
+
+    ##
+    # W = NMF(4, init="nndsvda", tol=1e-10, max_iter=1000, solver='mu').fit_transform(train)
+    # plot_weight_dist(train, W)
+
+
+    # n = bmf.estimate_rank([2,3,4,5,6,7,8],n_run=100)
+    # from MEPONMF.onmf_DA import DA
+    # from MEPONMF.onmf_DA import ONMF_DA
+    # # k = 10
     # param = dict(tol=1e-8, alpha=1.002,
     #            purturb=0.5, verbos=1, normalize=False)
     # W, H, model = ONMF_DA.func(stitched, k=k, **param, auto_weighting=False)

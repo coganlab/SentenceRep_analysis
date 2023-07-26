@@ -158,8 +158,8 @@ class GroupData:
             else:
                 raise TypeError(f"Unexpected data type: {type(data)}")
 
-        if item in self._data.keys():
-            sig = None
+        if item in self._significance.keys():
+            sig = inner(self._significance)
         else:
             sig = self._significance
 
@@ -264,7 +264,7 @@ class GroupData:
         if dtype in ['power', 'zscore']:
             data = self[dtype].combine(('stim', 'trial'))
             newconds = data.keys['epoch']
-            gen = (np.nanmean(data[c].array[idx], axis=0,
+            gen = (np.nanmean(data[c].array[idx], axis=-2,
                               # where=self.significance[c][idx].astype(bool)
                               ) for c in conds)
 
@@ -329,7 +329,7 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 if __name__ == "__main__":
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats')
+                                       folder='stats_muscle')
 
     ##
     power = sub['power'].combine(('stim', 'trial'))
@@ -338,18 +338,37 @@ if __name__ == "__main__":
     # sm = sub.plot_groups_on_average([sub.SM], hemi='both')
     # sm_wm = sub.plot_groups_on_average([sub.SM], hemi='both', rm_wm=False)
 
+    ##
     group = sub.SM
-
-    W, H, model = sub.nmf("significance", idx=group, n_components=4,
+    W, H, model = sub.nmf("significance", idx=group, n_components=3,
                            conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
     plot_data = sub.get_training_data("zscore", ("aud_ls", "go_ls"), group)
     plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
     plot_weight_dist(plot_data, W)
-    # pred = np.argmax(W, axis=1)
-    # groups = [[data._names[data.SM[i]] for i in np.where(pred == j)[0]]
-    #           for j in range(W.shape[1])]
-    # fig1 = data.plot_groups_on_average(groups,
-    #                                    ['blue', 'orange', 'green', 'red'])
+    pred = np.argmax(W, axis=1)
+    groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    # fig1 = sub.plot_groups_on_average(groups,
+    #                                 ['blue', 'orange', 'green', 'red'])
+    #
+    # ##
+    # from MEPONMF.MEP_ONMF import DA
+    # from MEPONMF.MEP_ONMF import ONMF_DA
+    # import matplotlib.pyplot as plt
+    # group = list(set(sub.SM + sub.PROD + sub.AUD))
+    # group = sub.SM
+    # k = 10
+    # param = dict(tol=1e-14, alpha=1.0001,
+    #            purturb=0.5, verbos=1, normalize=False)
+    # model_data = sub.get_training_data("significance", ("aud_ls", "go_ls"), group)
+    # # model_data = np.hstack([model_data[:, 0:175], model_data[:, 200:400]])
+    # W, H, model = ONMF_DA.func(model_data, k=k, **param, auto_weighting=False)
+    # model.plot_criticals(log=True)
+    # plt.show()
+    # ##
+    # k = 2
+    # W, H, model2 = ONMF_DA.func(model_data, k=k, **param, auto_weighting=True)
+    # plot_weight_dist(plot_data, W)
     # # fig2 = data.plot_groups_on_average()
     #
     # ## plot conds
