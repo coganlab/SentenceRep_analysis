@@ -4,7 +4,7 @@ from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
-from ieeg.calc.mat import concatenate_arrays
+from ieeg.calc.mat import concatenate_arrays, LabeledArray
 from collections import OrderedDict
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
@@ -128,7 +128,7 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     return out
 
 
-def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
+def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 conds: dict[str, Doubles] | tuple[str]
                 ) -> (list[int], list[int], list[int], list[int]):
     sig_chans = []
@@ -147,9 +147,14 @@ def group_elecs(all_sig: dict[str, np.ndarray], names: list[str],
                 sig_chans.append(i)
                 break
 
-        audls_is = np.any(all_sig['aud_ls'][idx][50:175] == 1)
-        audlm_is = np.any(all_sig['aud_lm'][idx][50:175] == 1)
-        audjl_is = np.any(all_sig['aud_jl'][idx][50:175] == 1)
+        if all_sig.ndim >= 3:
+            aud_slice = slice(50, 175)
+        else:
+            aud_slice = None
+
+        audls_is = np.any(all_sig['aud_ls'][idx][aud_slice] == 1)
+        audlm_is = np.any(all_sig['aud_lm'][idx][aud_slice] == 1)
+        audjl_is = np.any(all_sig['aud_jl'][idx][aud_slice] == 1)
         mime_is = np.any(all_sig['go_lm'][idx] == 1)
         speak_is = np.any(all_sig['go_ls'][idx] == 1)
 
