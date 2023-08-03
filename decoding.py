@@ -8,7 +8,7 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 
 from analysis import GroupData
 import os
-from ieeg.calc.mat import concatenate_arrays, LabeledArray
+from ieeg.calc.mat import LabeledArray
 
 from mne.decoding import (
     SlidingEstimator,

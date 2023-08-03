@@ -4,8 +4,10 @@ from bids import BIDSLayout
 from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
-from ieeg.calc.mat import concatenate_arrays, LabeledArray
+from ieeg.calc.mat import LabeledArray
+from ieeg.calc.reshape import concatenate_arrays
 from collections import OrderedDict
+
 
 def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
                        value_type: str = "zscore", avg: bool = True,

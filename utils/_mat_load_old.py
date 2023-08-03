@@ -10,7 +10,7 @@ from ieeg.viz.mri import get_sub_dir
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from utils.mat_load import load_intermediates, group_elecs
-from ieeg.calc.mat import concatenate_arrays
+from ieeg.calc.reshape import concatenate_arrays
 
 
 class GroupData:
