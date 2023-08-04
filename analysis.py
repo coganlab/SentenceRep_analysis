@@ -44,6 +44,14 @@ class GroupData:
         self._categories = categories
         if mask is not None:
             self._set_data(mask, '_significance')
+            if not ((self.sig == 0) | (self.sig == 1)).all():
+                if 'epoch' in categories:
+                    for i, arr in enumerate(self.sig):
+                        pvals = mne.stats.fdr_correction(arr)[1]
+                        self._significance[i] = pvals < 0.05
+                else:
+                    pvals = mne.stats.fdr_correction(self.sig)[1]
+                    self._significance = pvals < 0.05
             keys = self._significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -51,7 +59,7 @@ class GroupData:
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                     self._significance, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(self._significance)
+                self.sig_chans = self._find_sig_chans(self.sig)
 
     def _set_data(self, data: dict | LabeledArray, attr: str):
         if isinstance(data, dict):
