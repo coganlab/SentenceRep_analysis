@@ -47,11 +47,13 @@ class GroupData:
             if not ((self.sig == 0) | (self.sig == 1)).all():
                 if 'epoch' in categories:
                     for i, arr in enumerate(self.sig):
-                        pvals = mne.stats.fdr_correction(arr)[1]
-                        self._significance[i] = pvals < 0.05
+                        # pvals = mne.stats.fdr_correction(arr)[1]
+                        # self._significance[i] = pvals < 0.05
+                        self._significance[i] = mne.stats.fdr_correction(arr)[0]
                 else:
-                    pvals = mne.stats.fdr_correction(self.sig)[1]
-                    self._significance = pvals < 0.05
+                    # pvals = mne.stats.fdr_correction(self.sig)[1]
+                    # self._significance = pvals < 0.05
+                    self._significance = mne.stats.fdr_correction(self.sig)[0]
             keys = self._significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -335,27 +337,34 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 
 if __name__ == "__main__":
+    import cProfile
+    import pstats
+
     fpath = os.path.expanduser("~/Box/CoganLab")
-    sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats_muscle')
+    with cProfile.Profile() as pr:
+        sub = GroupData.from_intermediates("SentenceRep", fpath,
+                                           folder='stats')
+
+    stats = pstats.Stats(pr)
+    stats.dump_stats('profile.stats')
 
     ##
-    power = sub['power'].combine(('stim', 'trial'))
-    resp = sub['resp']
-    resp_power = sub['power', 'resp']
-    # sm = sub.plot_groups_on_average([sub.SM], hemi='both')
-    # sm_wm = sub.plot_groups_on_average([sub.SM], hemi='both', rm_wm=False)
-
-    ##
-    group = sub.SM
-    W, H, model = sub.nmf("significance", idx=group, n_components=3,
-                           conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    plot_data = sub.get_training_data("zscore", ("aud_ls", "go_ls"), group)
-    plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
-    plot_weight_dist(plot_data, W)
-    pred = np.argmax(W, axis=1)
-    groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
-              for j in range(W.shape[1])]
+    # power = sub['power'].combine(('stim', 'trial'))
+    # resp = sub['resp']
+    # resp_power = sub['power', 'resp']
+    # # sm = sub.plot_groups_on_average([sub.SM], hemi='both')
+    # # sm_wm = sub.plot_groups_on_average([sub.SM], hemi='both', rm_wm=False)
+    #
+    # ##
+    # group = sub.SM
+    # W, H, model = sub.nmf("significance", idx=group, n_components=3,
+    #                        conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
+    # plot_data = sub.get_training_data("zscore", ("aud_ls", "go_ls"), group)
+    # plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
+    # plot_weight_dist(plot_data, W)
+    # pred = np.argmax(W, axis=1)
+    # groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
+    #           for j in range(W.shape[1])]
     # fig1 = sub.plot_groups_on_average(groups,
     #                                 ['blue', 'orange', 'green', 'red'])
     #
