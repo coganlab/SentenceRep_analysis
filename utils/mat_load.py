@@ -81,22 +81,23 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
             mne.utils.logger.warn(e)
             continue
 
-        avg_func = lambda x: np.nanmean(x, axis=0)
         sig = epoch
         if suffix.endswith("epo"):
             if avg:
-                sig = sig.average(method=avg_func)
+                sig = sig.average(method=lambda x: np.nanmean(x, axis=0))
         else:
             sig = sig[0]
 
-        for ch in sig.ch_names:
+        # get_data calls are expensive!!!!
+        mat = sig.get_data()
+        for i, ch in enumerate(sig.ch_names):
             if suffix.endswith("epo"):
-                for ev in sig.event_id.keys():
-                    out[cond].setdefault(ev, {}).setdefault(ch, {})
-                    mat = sig.get_data(picks=[ch], item=ev)
-                    out[cond][ev][ch] = mat.swapaxes(0, 1)[0]
+                ids = {v: k for k, v in sig.event_id.items()}
+                for j, ev in enumerate(sig.events[:, 2]):
+                    out[cond].setdefault(ids[ev], {}).setdefault(ch, {})
+                    out[cond][ids[ev]][ch] = mat[j, i]
             else:
-                out[cond][ch] = np.squeeze(sig.get_data(picks=[ch]))
+                out[cond][ch] = mat[i]
     return out
 
 
@@ -108,10 +109,10 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     allowed = ["zscore", "power", "significance"]
     match value_type:
         case "zscore":
-            reader = lambda f: mne.read_epochs(f, preload=True)
+            reader = lambda f: mne.read_epochs(f, False, preload=True)
             suffix = "zscore-epo"
         case "power":
-            reader = lambda f: mne.read_epochs(f, preload=True)
+            reader = lambda f: mne.read_epochs(f, False, preload=True)
             suffix = "power-epo"
         case "significance":
             reader = mne.read_evokeds
