@@ -96,10 +96,10 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
         # get_data calls are expensive!!!!
         for i, ch in enumerate(sig.ch_names):
             if suffix.endswith("epo"):
-                ids = {v: k for k, v in sig.event_id.items()}
-                for j, ev in enumerate(sig.events[:, 2]):
-                    out[cond].setdefault(ids[ev], {}).setdefault(ch, {})
-                    out[cond][ids[ev]][ch] = mat[j, i]
+                for ev, id in sig.event_id.items():
+                    ev = ev.split('/')[-1]
+                    out[cond].setdefault(ev, {}).setdefault(ch, {})
+                    out[cond][ev][ch] = mat[sig.events[:, 2] == id, i]
             else:
                 out[cond][ch] = mat[i]
     return out
