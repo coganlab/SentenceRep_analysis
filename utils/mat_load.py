@@ -83,15 +83,17 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
             continue
 
         sig = epoch
+        times = conds[cond]
         if suffix.endswith("epo"):
             if avg:
                 sig = sig.average(method=lambda x: np.nanmean(x, axis=0))
+            mat = sig.get_data(tmin=times[0], tmax=times[1])
         else:
             sig = sig[0]
+            # TODO: remove this hack when we have a better way to get the time
+            mat = sig.get_data(tmin=0, tmax=times[1] - times[0])
 
         # get_data calls are expensive!!!!
-        times = conds[cond]
-        mat = sig.get_data(tmin=times[0], tmax=times[1])
         for i, ch in enumerate(sig.ch_names):
             if suffix.endswith("epo"):
                 ids = {v: k for k, v in sig.event_id.items()}
