@@ -17,10 +17,10 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     allowed = ["zscore", "power", "significance"]
     match value_type:
         case "zscore":
-            reader = mne.read_epochs
+            reader = lambda f: mne.read_epochs(f, False, preload=True)
             suffix = "zscore-epo"
         case "power":
-            reader = mne.read_epochs
+            reader = lambda f: mne.read_epochs(f, False, preload=True)
             suffix = "power-epo"
         case "significance":
             reader = mne.read_evokeds
@@ -43,24 +43,25 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
             except FileNotFoundError as e:
                 mne.utils.logger.warn(e)
                 continue
-
-            avg_func = lambda x: np.nanmean(x, axis=0)
+            sig = epochs[subject][cond]
             if suffix.endswith("epo"):
-                sig = epochs[subject][cond]
                 if avg:
-                    sig = sig.average(method=avg_func)
+                    sig = sig.average(method=lambda x: np.nanmean(x, axis=0))
 
             else:
-                sig = epochs[subject][cond][0]
-                epochs[subject][cond] = epochs[subject][cond][0]
+                sig = LabeledArray.from_signal(sig[0])
+                sig.prepend_labels(subject + '-', 0)
+                sig = sig.to_dict()
+            epochs[subject][cond] = sig
 
-            names = [subject + '-' + ch for ch in sig.ch_names]
+        if not epochs[subject]:
+            continue
+        elif suffix.endswith("epo"):
+            epochs[subject] = mne.concatenate_epochs(list(epochs[subject].values()))
+            epochs[subject] = LabeledArray.from_signal(epochs[subject]).to_dict()
 
-            # add new channels to list if not already there
-            chn_names = chn_names + [ch for ch in names if
-                                     ch not in chn_names]
-
-            all_sig[cond].append(sig.get_data())
+        epochs = LabeledArray.from_dict(epochs)
+        epochs = epochs.combine((0, 2))
 
     for cond in conds.keys():
         # add new channels to power and significance matrix
@@ -89,7 +90,8 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
             sig = sig[0]
 
         # get_data calls are expensive!!!!
-        mat = sig.get_data()
+        times = conds[cond]
+        mat = sig.get_data(tmin=times[0], tmax=times[1])
         for i, ch in enumerate(sig.ch_names):
             if suffix.endswith("epo"):
                 ids = {v: k for k, v in sig.event_id.items()}
