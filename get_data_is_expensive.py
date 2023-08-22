@@ -21,18 +21,19 @@ trials.drop_bad()
 def iter_over_ch_ev():
     for ch in trials.ch_names:
         for ev in events[:, 2]:
-            return trials.get_data([ch], item=ids_rev[ev])
+            yield trials.get_data([ch], item=ids_rev[ev])
 
 
 def iter_over_array():
     arr = trials.get_data()
     for i in range(arr.shape[1]):
         for j in range(arr.shape[0]):
-            return arr[j, i]
+            yield arr[j, i]
 
 
-ch_ev = timeit(iter_over_ch_ev, number=1000)
-arr = timeit(iter_over_array, number=1000)
+ch_ev = timeit(lambda: list(iter_over_ch_ev()), number=10)
+arr = timeit(lambda: list(iter_over_array()), number=10)
 
 print(f'iterating over mne object: {ch_ev:.4}s')
 print(f'iterating over array: {arr:.4}s')
+print(f'array is {ch_ev / arr:.2f}x faster')
