@@ -7,7 +7,7 @@ matplotlib.use('Qt5Agg')
 from analysis import GroupData
 from plotting import plot_weight_dist
 import nimfa
-from sklearn.decomposition import NMF
+import sklearn.decomposition as skd
 from sklearn.metrics import pairwise_distances
 import sys
 from scipy.sparse import csr_matrix, issparse
@@ -36,7 +36,17 @@ def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
     return dot(Phi, R)
 
 
-def calinski_halbaraz(X, W, n_clusters=None):
+def _check_array(arr: np.ndarray | csr_matrix) -> np.ndarray:
+    if issparse(arr):
+        return arr.toarray('C')
+    elif isinstance(arr, np.ndarray):
+        return arr
+    else:
+        raise ValueError("Input must be a numpy array or sparse matrix")
+
+def calinski_halbaraz(X_in: np.ndarray | csr_matrix,
+                      W_in: np.ndarray | csr_matrix, n_clusters: int = None
+                      ) -> float:
     """
     Here, X is the original data matrix, W and H are the non-negative factor
     matrices from the ONMF decomposition. The function first computes the
@@ -52,11 +62,8 @@ def calinski_halbaraz(X, W, n_clusters=None):
     centroid, weighted by the assignment weights in W.
     """
 
-    if issparse(X):
-        X = X.toarray()
-
-    if issparse(W):
-        W = W.toarray()
+    X = _check_array(X_in)
+    W = _check_array(W_in)
 
     if n_clusters is None:
         n_clusters = W.shape[1]
@@ -81,7 +88,7 @@ def calinski_halbaraz(X, W, n_clusters=None):
 
     return ch
 
-
+ 
 def mat_err(W: np.ndarray, H: np.ndarray, orig: np.ndarray) -> float:
     error = np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
     return error
@@ -109,29 +116,37 @@ if __name__ == "__main__":
     raw = train - np.min(train)
     sparse_matrix = csr_matrix((combined[stitched == 1], stitched.nonzero()))
 
+    ## try clustering
+    options = dict(init="random", n_components=4, max_iter=10000, solver='mu',
+                   beta_loss='kullback-leibler',
+                   tol=1e-7, verbose=1)
+    W, H, n = skd.non_negative_factorization(sparse_matrix[sub.SM], **options)
+    # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
+    plot_weight_dist(stitched[sub.SM, 175:550], W)
 
     ## run the decomposition
     ch = [[] for _ in range(9)]
     scorer = lambda model: ch[model.fit.rank-1].append(calinski_halbaraz(
         np.array(model.fit.W).T, np.array(model.fit.H)))
     options = dict(seed="random", rank=4, max_iter=10000,
-                   callback=scorer,
+                   # callback=scorer,
                    update='divergence',
                    objective='div',
                    options=dict(flag=0))
-    nmf = nimfa.Nmf(sparse_matrix[sub.SM], **options)
-    est = nmf.estimate_rank(list(range(1, 10)))
-    matplotlib.pyplot.plot([e['evar'] / e['rss'] for e in est.values()])
+    nmf = nimfa.Bmf(stitched[sub.SM], **options)
+    est = nmf.estimate_rank(list(range(1, 16)), )
+    matplotlib.pyplot.plot([e['evar'] / np.log(e['rss']) for e in est.values()])
     ##
-    # bmf_fit = bmf()
-    # W = np.array(bmf_fit.fit.W)
-    # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
-    # plot_weight_dist(this_plot[sub.SM], W)
-    # ## plot on brain
-    # pred = np.argmax(W, axis=1)
-    # groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
-    #           for j in range(W.shape[1])]
-    # fig1 = sub.plot_groups_on_average(groups,
-    #                                   ['blue', 'orange', 'green', 'red'],
-    #                                   hemi='lh')
+    W, H = nmf.fitted()
+    # W = np.array(bmf.W)
+    this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
+    plot_weight_dist(this_plot[sub.SM], W)
+    ## plot on brain
+    pred = np.argmax(W, axis=1)
+    groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    fig1 = sub.plot_groups_on_average(groups,
+                                      ['blue', 'orange', 'green', 'red'],
+                                      hemi='lh',
+                                      rm_wm=False)
 
