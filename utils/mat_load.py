@@ -156,7 +156,7 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 sig_chans.append(i)
                 break
 
-        if all_sig.ndim >= 3:
+        if np.squeeze(all_sig).ndim >= 3:
             aud_slice = slice(50, 175)
         else:
             aud_slice = None
