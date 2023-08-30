@@ -80,7 +80,7 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
             epoch = reader(fname)
         except FileNotFoundError as e:
             mne.utils.logger.warn(e)
-            continue
+            return
 
         sig = epoch
         times = conds[cond]
@@ -131,7 +131,9 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     subjects = tqdm(subjects, desc=f"Loading {value_type}")
     out = OrderedDict()
     for subject in subjects:
-        out[subject] = load_dict_async(subject, suffix, reader, conds, folder, avg)
+        temp = load_dict_async(subject, suffix, reader, conds, folder, avg)
+        if temp is not None:
+            out[subject] = temp
     return out
 
 
