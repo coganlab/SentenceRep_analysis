@@ -12,13 +12,13 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 8
+    subject = 5
 
 # Load the data
 TASK = "SentenceRep"
 subj = "D" + str(subject).zfill(4)
 layout = get_data("SentenceRep", root=LAB_root)
-cond = 'resp'
+cond = 'aud_ls'
 filename = os.path.join(layout.root, 'derivatives',
                         'spec', 'wavelet', subj, f'{cond}-tfr.h5')
 spec = mne.time_frequency.read_tfrs(filename)[0]

@@ -88,7 +88,7 @@ def calinski_halbaraz(X_in: np.ndarray | csr_matrix,
 
     return ch
 
- 
+
 def mat_err(W: np.ndarray, H: np.ndarray, orig: np.ndarray) -> float:
     error = np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
     return error
@@ -133,9 +133,9 @@ if __name__ == "__main__":
                    update='divergence',
                    objective='div',
                    options=dict(flag=0))
-    nmf = nimfa.Bmf(stitched[sub.SM], **options)
-    est = nmf.estimate_rank(list(range(1, 16)), )
-    matplotlib.pyplot.plot([e['evar'] / np.log(e['rss']) for e in est.values()])
+    nmf = nimfa.Nmf((raw*stitched)[sub.SM], **options)
+    est = nmf.estimate_rank(list(range(1, 6)))
+    matplotlib.pyplot.plot([e['evar'] / e['rss'] for e in est.values()])
     ##
     W, H = nmf.fitted()
     # W = np.array(bmf.W)

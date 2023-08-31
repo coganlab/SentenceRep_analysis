@@ -2,9 +2,10 @@
 
 import numpy as np
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.decomposition import PCA
 
 from analysis import GroupData
 import os
@@ -50,15 +51,20 @@ class NeuralSignalDecoder:
         predictions = self.lda.predict(X_test)
         return predictions
 
+decoder = Pipeline([('reduce_dim', PCA()), ('linear_decoding', LinearDiscriminantAnalysis)])
+
 # %% Imports
 
 fpath = os.path.expanduser("~/Box/CoganLab")
-sub = GroupData.from_intermediates("SentenceRep", fpath)
+sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
 # pow = sub['power']
 # resp = sub['resp']
 
 # %% Create training set
-
+param_grid = {
+    "pca__n_components": [5, 15, 30, 45, 60],
+    "logistic__C": np.logspace(-4, 4, 4),
+}
 conds = ('aud_lm', 'aud_ls', 'aud_jl')
 idx = sub.sig_chans
 comb = sub.copy()['power']

@@ -8,6 +8,7 @@ from ieeg.calc.scaling import rescale
 import os
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
 import numpy as np
+import naplib.preprocessing as pre
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -22,18 +23,16 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
-    if sub != "D0022":
+    if sub != "D0029":
         continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
 
     ## fix SentenceRep events
-    from events import fix_annotations  # noqa E402
     new = crop_empty_data(filt,)
 
     good = new.copy()
-    fix_annotations(good)
 
     ## Crop raw data to minimize processing time
 
@@ -45,7 +44,9 @@ for sub in subjects:
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
-    good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
+    scheme = pre.make_contact_rereference_arr(good.ch_names)
+    good._data = pre.rereference(scheme, field=[good._data.T])[0].T
+    # good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 
     # Remove intermediates from mem
     del new
@@ -53,16 +54,16 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet_ch_ref', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     for epoch, t, name in zip(
             ("Start",  "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
-             "Word/Audio/JL", "Word/Speak/LS", "Word/Mime/LM",
-             "Word/Audio/JL"),
+             "Word/Audio/JL", "Word/Go/LS", "Word/Go/LM",
+             "Word/Go/JL"),
             ((-0.5, 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
-             (-0.5, 1.5), (-0.5, 1.5), (1, 3)),
+             (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5)),
             ("base", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
              "go_jl")):
         times = [None, None]
@@ -84,4 +85,3 @@ for sub in subjects:
         spec_a.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
         mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
-        # spec_a.save(os.path.join(save_dir, f'{name}-avg.fif'), overwrite=True)

@@ -37,3 +37,14 @@ arr = timeit(lambda: list(iter_over_array()), number=10)
 print(f'iterating over mne object: {ch_ev:.4}s')
 print(f'iterating over array: {arr:.4}s')
 print(f'array is {ch_ev / arr:.2f}x faster')
+
+## profiling
+
+import cProfile
+import pstats
+
+with cProfile.Profile() as pr:
+    list(iter_over_ch_ev())
+
+stats = pstats.Stats(pr)
+stats.dump_stats('profile.stats')

@@ -33,4 +33,4 @@ fix_annotations(raw)
 add_stim_conds(raw)
 
 # %% Save the data
-save_derivative(raw, layout, "clean")
+save_derivative(raw, layout, "clean", True)

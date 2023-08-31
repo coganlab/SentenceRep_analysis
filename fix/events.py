@@ -68,6 +68,9 @@ def fix_annotations(inst: Signal):
             else:
                 raise ValueError("Condition {} could not be determined {}"
                                  "".format(i, event['description']))
+        if 'GoCue' in event['description']:
+            event['description'] = 'Go'
+
         event['description'] = trial_type + event['description'] + cond
         if annot is None:
             annot = mne.Annotations(**event)
