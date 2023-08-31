@@ -1,14 +1,14 @@
 ## Preprocess
 import ieeg.viz.utils
 from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
+from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg, channel_outlier_marker
 from ieeg.timefreq import gamma, utils
 from ieeg.calc import stats, scaling
-from ieeg.process import parallelize
-import numpy as np
 import os.path as op
 import os
 import mne
+from itertools import product
+
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -21,7 +21,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if int(subj[1:]) in (3, 65, 71, 73) :
+    if int(subj[1:]) in (3, 32, 65, 71):
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -49,19 +49,15 @@ for subj in subjects:
     ## High Gamma Filter and epoching
     out = []
 
-    for epoch, t in zip(("Start", "Word/Response/LS", "Word/Audio/LS",
-                         "Word/Audio/LM", "Word/Audio/JL", "Word/Speak/LS",
-                         "Word/Mime/LM", "Word/Audio/JL"),
-                        ((-0.5 , 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
-                         (-0.5, 1.5), (-0.5, 1.5), (1, 3))):
+    for epoch, t in zip(("Start", "Word"),
+                        ((-0.5, 0), (-1, 1.5))):
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
-        trials = trial_ieeg(good, epoch, times, preload=True#, reject_tmin=t[0],
-                            # reject_tmax=t[1]
+        trials = trial_ieeg(good, epoch, times, preload=True
                             , reject_by_annotation=False)
         outliers_to_nan(trials, outliers=10)
-        gamma.extract(trials, copy=False, n_jobs=1)
+        gamma.extract(trials, copy=False, n_jobs=-1)
         utils.crop_pad(trials, "0.5s")
         trials.resample(100)
         trials.filenames = good.filenames
@@ -73,22 +69,34 @@ for subj in subjects:
 
     # power = scaling.rescale(out[1], out[0], copy=True, mode='mean')
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
-    # assert False
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "stats")
+    save_dir = op.join(layout.root, "derivatives", "no_cluster_001")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    for epoch, name in zip(out, ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls",
-                                     "go_lm", "go_jl")):
-        sig1 = epoch.get_data()
+    for epoch, name, window in zip(
+            (out[0][e] for e in ["Response"] + list(
+                map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
+            ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
+            ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
+            # ((-0.25, 0.25), *((0, 0.5),) * 3, ((0.25, 0.75),) * 3)):  # ave
+        sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
         sig2 = base.get_data()
+
+        # time-perm
         mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=2000, n_jobs=-2, ignore_adjacency=1)
-        epoch_mask = mne.EvokedArray(mask[name], epoch.average().info)
-        power = scaling.rescale(epoch, base, copy=True, mode='mean')
+                                             n_perm=2000, n_jobs=-2,
+                                             ignore_adjacency=1)
+        epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
+                                     tmax=window[1], tmin=window[0])
+
+        # ave
+        # mask[name] = stats.window_averaged_shuffle(sig1, sig2, 0.01, 2000)
+        # epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
+
+        power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
         data.append((name, epoch_mask.copy(), power.copy(), z_score.copy()))
 
@@ -101,5 +109,5 @@ for subj in subjects:
     del data
 
     ## Plot
-    import matplotlib.pyplot as plt  # noqa E402
-    plt.imshow(mask['go_ls'])
+    # import matplotlib.pyplot as plt  # noqa E402
+    # plt.imshow(mask['go_ls'])#[:, None])
