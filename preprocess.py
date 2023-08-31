@@ -81,7 +81,7 @@ for subj in subjects:
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
             ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
             ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
-            # ((-0.25, 0.25), *((0, 0.5),) * 3, ((0.25, 0.75),) * 3)):  # ave
+            # ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
         sig2 = base.get_data()
 
