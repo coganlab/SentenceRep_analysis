@@ -71,7 +71,7 @@ for subj in subjects:
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "no_cluster_001")
+    save_dir = op.join(layout.root, "derivatives", "stats")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
