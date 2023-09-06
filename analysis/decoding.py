@@ -1,15 +1,11 @@
 # Decoding script, takes a GroupData set and uses a recurrent neural network to decode trial conditions
 
 import numpy as np
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.pipeline import make_pipeline, Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.decomposition import PCA
+from itertools import product
 
-from analysis import GroupData
+from analysis.grouping import GroupData
 import os
-from ieeg.calc.mat import LabeledArray
+from ieeg.calc.mat import LabeledArray, concatenate_arrays
 
 from mne.decoding import (
     SlidingEstimator,
@@ -22,36 +18,7 @@ from mne.decoding import (
     CSP,
 )
 
-class NeuralSignalDecoder:
-    def __init__(self):
-        self.lda = LinearDiscriminantAnalysis()
-
-    def train(self, X_train, y_train):
-        """
-        Train the decoder with the given training data.
-
-        X_train: numpy array
-            Input features (neural signals) for training, shape (n_samples, n_features).
-        y_train: numpy array
-            Target labels (words) for training, shape (n_samples,).
-        """
-        self.lda.fit(X_train, y_train)
-
-    def predict(self, X_test):
-        """
-        Predict the word labels for the given test data.
-
-        X_test: numpy array
-            Input features (neural signals) for testing, shape (n_samples, n_features).
-
-        Returns:
-        predictions: numpy array
-            Predicted word labels for the test data, shape (n_samples,).
-        """
-        predictions = self.lda.predict(X_test)
-        return predictions
-
-decoder = Pipeline([('reduce_dim', PCA()), ('linear_decoding', LinearDiscriminantAnalysis)])
+from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
 
 # %% Imports
 
@@ -61,30 +28,33 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
 # resp = sub['resp']
 
 # %% Create training set
-param_grid = {
-    "pca__n_components": [5, 15, 30, 45, 60],
-    "logistic__C": np.logspace(-4, 4, 4),
-}
-conds = ('aud_lm', 'aud_ls', 'aud_jl')
+
+conds = tuple(map("_".join, product(["aud", "go"], ["ls", "lm", "jl"])))
 idx = sub.sig_chans
 comb = sub.copy()['power']
-comb._data = comb._data.combine_dims((1, 3))
-exclude = tuple(k for k in comb.keys['condition'] if k not in conds)
-cats = {'heat': 0, 'hoot': 1, 'hot': 0, 'hut': 1}
+comb._data = comb.drop_nan()._data.combine((1, 3))
+exclude = tuple(k for k in comb.keys['epoch'] if k not in conds)
+cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
 get_pre = lambda k: cats[k.split('-')[0]]
-dat = [(comb[c].array[idx].swapaxes(0, 1), tuple(map(get_pre, comb[c]._data.all_keys[1]))) for c in conds]
-# train = concatenate_arrays([d[0] for d in dat], axis=-1)
-# train = train.swapaxes(0, 1)
-# labels = [d[1] for d in dat][1]
-# labels = [k.split('-')[0] for k in labels][:62]
+dat = {c: (comb[c]._data[idx], tuple(map(
+    get_pre, comb[c]._data.labels[1]))) for c in conds}
+train = concatenate_arrays([d[0][i] for d in dat.values() for i in range(len(d))], axis=-1)
+
+labels = [d[1] for d in dat.values()][1]
+
+# %% decoder
+
+decoder = PcaLdaClassification()
+decoder.fit(train, labels)
+
 # x = sub[conds]
 
-clf = make_pipeline(StandardScaler(), HistGradientBoostingRegressor())
-
-time_decod = SlidingEstimator(clf, n_jobs=None, scoring="roc_auc", verbose=True)
-# here we use cv=3 just for speed
-# give y the
-scores = cross_val_multiscore(time_decod, dat[0][0], dat[0][1], cv=5, n_jobs=-1)
-
-# Mean scores across cross-validation splits
-scores = np.mean(scores, axis=0)
+# clf = make_pipeline(StandardScaler(), HistGradientBoostingRegressor())
+#
+# time_decod = SlidingEstimator(clf, n_jobs=None, scoring="roc_auc", verbose=True)
+# # here we use cv=3 just for speed
+# # give y the
+# scores = cross_val_multiscore(time_decod, dat[0][0], dat[0][1], cv=5, n_jobs=-1)
+#
+# # Mean scores across cross-validation splits
+# scores = np.mean(scores, axis=0)

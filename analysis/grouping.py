@@ -6,7 +6,6 @@ from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
-from plotting import compare_subjects, plot_clustering, plot_weight_dist
 from utils.mat_load import group_elecs, load_dict
 
 import nimfa
@@ -21,7 +20,8 @@ class GroupData:
     @classmethod
     def from_intermediates(cls, task: str, root: PathLike,
                            conds: dict[str, Doubles] = None,
-                           folder: str = 'stats'):
+                           folder: str = 'stats', fdr=False,
+                           pval: float = 0.05):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
         sig = load_dict(layout, conds, "significance", True, folder)
@@ -30,7 +30,7 @@ class GroupData:
                     zscore=load_dict(layout, conds, "zscore", False, folder))
         data = combine(data, (1, 4))
         # subjects = tuple(data['power'].keys())
-        out = cls(data, sig)
+        out = cls(data, sig, fdr=fdr, pval=pval)
         # out.subjects = subjects
         out.task = task
         out._root = root
@@ -39,7 +39,8 @@ class GroupData:
     def __init__(self, data: dict | LabeledArray,
                  mask: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
-                                              'channel', 'trial', 'time')):
+                                              'channel', 'trial', 'time'),
+                 fdr: bool = False, pval: float = 0.05):
         self._set_data(data, '_data')
         self._categories = categories
         if mask is not None:
@@ -47,13 +48,9 @@ class GroupData:
             if not ((self.sig == 0) | (self.sig == 1)).all():
                 if 'epoch' in categories:
                     for i, arr in enumerate(self.sig):
-                        # pvals = mne.stats.fdr_correction(arr)[1]
-                        # self._significance[i] = pvals < 0.05
-                        self._significance[i] = mne.stats.fdr_correction(arr)[0]
+                        self._significance[i] = self.correction(arr, fdr, pval)
                 else:
-                    # pvals = mne.stats.fdr_correction(self.sig)[1]
-                    # self._significance = pvals < 0.05
-                    self._significance = mne.stats.fdr_correction(self.sig)[0]
+                    self._significance = self.correction(self.sig, fdr, pval)
             keys = self._significance.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -62,6 +59,12 @@ class GroupData:
                     self._significance, keys[1], keys[0])
             else:
                 self.sig_chans = self._find_sig_chans(self.sig)
+
+    @staticmethod
+    def correction(p_vals, fdr: bool, thresh: float):
+        if fdr:
+            p_vals = mne.stats.fdr_correction(p_vals)[1]
+        return p_vals < thresh
 
     def _set_data(self, data: dict | LabeledArray, attr: str):
         if isinstance(data, dict):
@@ -146,6 +149,28 @@ class GroupData:
             i = [isinstance(item[i], str) for i in range(len(item))
                  ].index(False)
             raise TypeError(f"Unexpected type: {type(item)}[{type(item[i])}]")
+
+    def drop_nan(self, verbose: bool = False):
+        # sig_chans = [self.keys['channel'][i] for i in self.sig_chans]
+        out1 = None
+        for i in self.sig_chans:
+            ch = self.keys['channel'][i]
+            out2 = None
+            for j, st in enumerate(self.keys['stim']):
+                temp = self._data[:, st, ch].dropna()
+                temp = LabeledArray(temp[:, None, None], (temp.labels[0],)
+                                    + ((st,),) + ((ch,),) + temp.labels[1:])
+                if out2 is None:
+                    out2 = temp
+                else:
+                    no_good = np.any(np.isnan(temp), axis=-2)
+                    out2.append(temp[..., no_good == False, :], axis=1)
+            if out1 is None:
+                out1 = out2
+            else:
+                no_good = np.any(np.isnan(out2), axis=-2)
+                out1.append(out2[..., no_good == False, :], axis=2)
+        return out1
 
     def filter(self, item: str):
         """Filter data by key
