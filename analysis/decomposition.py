@@ -4,8 +4,8 @@ import matplotlib
 
 matplotlib.use('Qt5Agg')
 
-from analysis import GroupData
-from plotting import plot_weight_dist
+from analysis.grouping import GroupData
+from analysis.utils.plotting import plot_weight_dist
 import nimfa
 import sklearn.decomposition as skd
 from sklearn.metrics import pairwise_distances

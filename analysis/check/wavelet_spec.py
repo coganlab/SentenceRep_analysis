@@ -23,7 +23,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
-    if sub != "D0063":
+    if sub != "D0064":
         continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
@@ -54,7 +54,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet_ch_ref', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
