@@ -29,32 +29,24 @@ for sub in subjects:
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
 
-    ## fix SentenceRep events
-    new = crop_empty_data(filt,)
-
-    good = new.copy()
-
     ## Crop raw data to minimize processing time
+    good = crop_empty_data(filt,).copy()
 
-    # good.drop_channels(good.info['bads'])
     good.info['bads'] = channel_outlier_marker(good, 3, 2)
     good.drop_channels(good.info['bads'])
-    # good.info['bads'] += channel_outlier_marker(good, 4, 2)
-    # good.drop_channels(good.info['bads'])
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
-    scheme = pre.make_contact_rereference_arr(good.ch_names)
-    good._data = pre.rereference(scheme, field=[good._data.T])[0].T
-    # good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
+    # scheme = pre.make_contact_rereference_arr(good.ch_names)
+    # good._data = pre.rereference(scheme, field=[good._data.T])[0].T
+    good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 
     # Remove intermediates from mem
-    del new
-    # good.plot()
+    good.plot()
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet_test', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 

@@ -31,9 +31,10 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 
 conds = tuple(map("_".join, product(["aud", "go"], ["ls", "lm", "jl"])))
 idx = sub.sig_chans
-comb = sub.copy()['power']
-comb._data = comb.drop_nan()._data.combine((1, 3))
-exclude = tuple(k for k in comb.keys['epoch'] if k not in conds)
+comb = sub['power'].copy()
+comb.nan_common_denom(verbose=True)
+comb = comb.combine(('stim', 'trial'))._data
+# exclude = tuple(k for k in comb.keys['epoch'] if k not in conds)
 cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
 get_pre = lambda k: cats[k.split('-')[0]]
 dat = {c: (comb[c]._data[idx], tuple(map(

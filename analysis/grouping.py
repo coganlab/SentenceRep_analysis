@@ -150,30 +150,31 @@ class GroupData:
                  ].index(False)
             raise TypeError(f"Unexpected type: {type(item)}[{type(item[i])}]")
 
-    def drop_nan(self, verbose: bool = False):
-        # sig_chans = [self.keys['channel'][i] for i in self.sig_chans]
-        out1 = None
-        loc_min = self.shape[-2]
-        for i in self.sig_chans:
-            ch = self.keys['channel'][i]
-            out2 = None
-            for j, st in enumerate(self.keys['stim']):
-                temp = self._data[:, st, ch].dropna()
-                temp = LabeledArray(temp[:, None, None], (temp.labels[0],)
-                                    + ((st,),) + ((ch,),) + temp.labels[1:])
-                if out2 is None:
-                    out2 = temp
-                else:
-                    no_good = np.any(np.array(np.isnan(temp)), axis=(0, 1, 2, 4))
-                    loc_min = min(loc_min, np.sum(no_good==False))
-                    out2 = out2[..., np.arange(loc_min), :]
-                    out2.append(temp[..., np.arange(loc_min), :], axis=1)
-            if out1 is None:
-                out1 = out2
-            else:
-                out1 = out1[..., np.arange(loc_min), :]
-                out1.append(out2, axis=2)
-        return out1
+    def nan_common_denom(self, sort: bool = True, verbose: bool = False):
+        """Remove trials with NaNs from all channels"""
+        trials_idx = self._categories.index('trial')
+        ch_idx = self._categories.index('channel')
+        others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
+        nan_trials = np.any(np.isnan(self._data.__array__()), axis=tuple(others))
+        if sort:
+            order = np.argsort(nan_trials, axis=1)
+            old_shape = list(order.shape)
+            new_shape = [1 if ch_idx != i != trials_idx else old_shape.pop(0)
+                         for i in range(len(self._categories))]
+            order = np.reshape(order, new_shape)
+            data = np.take_along_axis(self._data, order, axis=trials_idx)
+            data.labels = self._data.labels
+        else:
+            data = self._data
+
+        ch_min = np.sum(nan_trials, axis=1)
+        if verbose:
+            print(f"Lowest trials {ch_min.min()} at "
+                  f"{self.keys['channel'][ch_min.argmin()]}")
+
+        t_slice = tuple(slice(None) if i != trials_idx else slice(ch_min.min())
+                        for i in range(len(self._categories)))
+        self._data = data[t_slice]
 
     def filter(self, item: str):
         """Filter data by key
