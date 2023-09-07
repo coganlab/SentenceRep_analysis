@@ -23,7 +23,7 @@ from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassificatio
 # %% Imports
 
 fpath = os.path.expanduser("~/Box/CoganLab")
-sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
+sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 # pow = sub['power']
 # resp = sub['resp']
 

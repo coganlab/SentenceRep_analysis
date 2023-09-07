@@ -153,6 +153,7 @@ class GroupData:
     def drop_nan(self, verbose: bool = False):
         # sig_chans = [self.keys['channel'][i] for i in self.sig_chans]
         out1 = None
+        loc_min = self.shape[-2]
         for i in self.sig_chans:
             ch = self.keys['channel'][i]
             out2 = None
@@ -163,13 +164,15 @@ class GroupData:
                 if out2 is None:
                     out2 = temp
                 else:
-                    no_good = np.any(np.isnan(temp), axis=-2)
-                    out2.append(temp[..., no_good == False, :], axis=1)
+                    no_good = np.any(np.array(np.isnan(temp)), axis=(0, 1, 2, 4))
+                    loc_min = min(loc_min, np.sum(no_good==False))
+                    out2 = out2[..., np.arange(loc_min), :]
+                    out2.append(temp[..., np.arange(loc_min), :], axis=1)
             if out1 is None:
                 out1 = out2
             else:
-                no_good = np.any(np.isnan(out2), axis=-2)
-                out1.append(out2[..., no_good == False, :], axis=2)
+                out1 = out1[..., np.arange(loc_min), :]
+                out1.append(out2, axis=2)
         return out1
 
     def filter(self, item: str):
