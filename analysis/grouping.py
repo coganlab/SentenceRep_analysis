@@ -16,6 +16,7 @@ mne.set_log_level("ERROR")
 
 
 class GroupData:
+    array = LabeledArray([])
 
     @classmethod
     def from_intermediates(cls, task: str, root: PathLike,
@@ -146,12 +147,15 @@ class GroupData:
                  ].index(False)
             raise TypeError(f"Unexpected type: {type(item)}[{type(item[i])}]")
 
-    def nan_common_denom(self, sort: bool = True, verbose: bool = False):
+    def nan_common_denom(self, sort: bool = True, min_trials: int = 0,
+                         verbose: bool = False):
         """Remove trials with NaNs from all channels"""
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
         others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
         nan_trials = np.any(np.isnan(self.array.__array__()), axis=tuple(others))
+
+        # Sort the trials by whether they are nan or not
         if sort:
             order = np.argsort(nan_trials, axis=1)
             old_shape = list(order.shape)
@@ -159,18 +163,26 @@ class GroupData:
                          for i in range(len(self._categories))]
             order = np.reshape(order, new_shape)
             data = np.take_along_axis(self.array, order, axis=trials_idx)
-            data.labels = self.array.labels
+            data.labels = self.array.labels.copy()
         else:
             data = self.array
 
-        ch_min = np.sum(nan_trials, axis=1)
+        ch_tnum = np.sum(nan_trials, axis=1)
+        ch_min = ch_tnum.min()
         if verbose:
-            print(f"Lowest trials {ch_min.min()} at "
-                  f"{self.keys['channel'][ch_min.argmin()]}")
+            print(f"Lowest trials {ch_min} at "
+                  f"{self.keys['channel'][ch_tnum.argmin()]}")
 
-        t_slice = tuple(slice(None) if i != trials_idx else slice(ch_min.min())
-                        for i in range(len(self._categories)))
-        self.array = data[t_slice]
+        ntrials = max(ch_min, min_trials)
+        if ch_min < min_trials:
+            data = data.take(np.where(ch_tnum >= ntrials)[0], ch_idx)
+            ch = np.array(self.keys['channel'])[ch_tnum < ntrials].tolist()
+            if verbose:
+                print(f"Channels excluded (too few trials): {ch}")
+
+        data = data.take(np.arange(ntrials), trials_idx)
+
+        return type(self)(data, None, self._categories)
 
     def filter(self, item: str):
         """Filter data by key
