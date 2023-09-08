@@ -33,12 +33,12 @@ conds = tuple(map("_".join, product(["aud", "go"], ["ls", "lm", "jl"])))
 idx = sub.sig_chans
 comb = sub['power'].copy()
 comb.nan_common_denom(verbose=True)
-comb = comb.combine(('stim', 'trial'))._data
+comb = comb.combine(('stim', 'trial'))
 # exclude = tuple(k for k in comb.keys['epoch'] if k not in conds)
 cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
 get_pre = lambda k: cats[k.split('-')[0]]
-dat = {c: (comb[c]._data[idx], tuple(map(
-    get_pre, comb[c]._data.labels[1]))) for c in conds}
+dat = {c: (comb[c].array[idx], tuple(map(
+    get_pre, comb[c].array.labels[1]))) for c in conds}
 train = concatenate_arrays([d[0][i] for d in dat.values() for i in range(len(d))], axis=-1)
 
 labels = [d[1] for d in dat.values()][1]

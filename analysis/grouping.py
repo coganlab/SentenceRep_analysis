@@ -41,7 +41,7 @@ class GroupData:
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
                  fdr: bool = False, pval: float = 0.05):
-        self._set_data(data, '_data')
+        self._set_data(data, 'array')
         self._categories = categories
         if mask is not None:
             self._set_data(mask, '_significance')
@@ -77,16 +77,12 @@ class GroupData:
 
     @property
     def shape(self):
-        return self._data.shape
+        return self.array.shape
 
     @property
     def keys(self):
-        keys = self._data.labels
+        keys = self.array.labels
         return {self._categories[i]: tuple(k) for i, k in enumerate(keys)}
-
-    @property
-    def array(self):
-        return self._data.__array__()
 
     @property
     def sig(self):
@@ -114,7 +110,7 @@ class GroupData:
     def combine(self, levels: tuple[str, str]):
         assert all(lev in self._categories for lev in levels), "Invalid level"
         lev_nums = tuple(self._categories.index(lev) for lev in levels)
-        new_data = self._data.combine(lev_nums)
+        new_data = self.array.combine(lev_nums)
         new_cats = list(self._categories)
         new_cats.pop(lev_nums[0])
         new_sig = None
@@ -155,17 +151,17 @@ class GroupData:
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
         others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
-        nan_trials = np.any(np.isnan(self._data.__array__()), axis=tuple(others))
+        nan_trials = np.any(np.isnan(self.array.__array__()), axis=tuple(others))
         if sort:
             order = np.argsort(nan_trials, axis=1)
             old_shape = list(order.shape)
             new_shape = [1 if ch_idx != i != trials_idx else old_shape.pop(0)
                          for i in range(len(self._categories))]
             order = np.reshape(order, new_shape)
-            data = np.take_along_axis(self._data, order, axis=trials_idx)
-            data.labels = self._data.labels
+            data = np.take_along_axis(self.array, order, axis=trials_idx)
+            data.labels = self.array.labels
         else:
-            data = self._data
+            data = self.array
 
         ch_min = np.sum(nan_trials, axis=1)
         if verbose:
@@ -174,12 +170,12 @@ class GroupData:
 
         t_slice = tuple(slice(None) if i != trials_idx else slice(ch_min.min())
                         for i in range(len(self._categories)))
-        self._data = data[t_slice]
+        self.array = data[t_slice]
 
     def filter(self, item: str):
         """Filter data by key
 
-        Takes the underlying self._data nested dictionary, finds the first
+        Takes the underlying self.array nested dictionary, finds the first
         level with a key that matches the item, and returns a new SubjectData
         object with the all other keys removed at that level. """
 
@@ -197,20 +193,23 @@ class GroupData:
             else:
                 raise TypeError(f"Unexpected data type: {type(data)}")
 
-        if item in self._significance.keys():
-            sig = inner(self._significance)
+        if hasattr(self, '_significance'):
+            if item in self._significance.keys():
+                sig = inner(self._significance)
+            else:
+                sig = self._significance
         else:
-            sig = self._significance
+            sig = None
 
-        return type(self)(inner(self._data), sig, tuple(new_categories))
+        return type(self)(inner(self.array), sig, tuple(new_categories))
 
     def copy(self):
-        return type(self)(self._data, self._significance, self._categories)
+        return type(self)(self.array, self._significance, self._categories)
 
     def append(self, data):
         """Add entry to underlying data dictionary if other nested keys match
 
-        Takes a nested dictionary and adds it to the underlying self._data
+        Takes a nested dictionary and adds it to the underlying self.array
         dictionary. Appended data must have the same nested keys as the
         underlying data, except for the last level, which must be a single key
         that does not already exist in the underlying data."""
@@ -233,7 +232,7 @@ class GroupData:
             else:
                 raise TypeError(f"Unexpected data type: {type(data)}")
 
-        inner(self._data, data._data)
+        inner(self.array, data._data)
 
     def __sizeof__(self):
         def inner(obj):
@@ -264,7 +263,7 @@ class GroupData:
         return self.shape[-2]
 
     def __iter__(self):
-        return self._data.__iter__()
+        return self.array.__iter__()
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
                                colors: list[str] = ('red', 'green', 'blue'),
@@ -339,7 +338,7 @@ class GroupData:
 
     def get_condition(self, condition: str):
         assert condition in self.conds.keys()
-        all = self._data
+        all = self.array
         all["significance"] = self.significance
         out = dict()
         for k, v in all.items():
