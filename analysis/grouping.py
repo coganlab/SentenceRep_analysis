@@ -175,14 +175,22 @@ class GroupData:
 
         ntrials = max(ch_min, min_trials)
         if ch_min < min_trials:
-            data = data.take(np.where(ch_tnum >= ntrials)[0], ch_idx)
+            # data = data.take(np.where(ch_tnum >= ntrials)[0], ch_idx)
             ch = np.array(self.keys['channel'])[ch_tnum < ntrials].tolist()
             if verbose:
                 print(f"Channels excluded (too few trials): {ch}")
 
-        data = data.take(np.arange(ntrials), trials_idx)
+        # data = data.take(np.arange(ntrials), trials_idx)
+        idx = [np.arange(s) if i != trials_idx else np.arange(ntrials)
+               for i, s in enumerate(self.shape)]
+        idx[ch_idx] = np.where([ch_tnum >= ntrials])[1]
 
-        return type(self)(data, None, self._categories)
+        sig = getattr(self, '_significance', None)
+        if sig is not None:
+            sig_ch_idx = sig.labels.index(data.labels[ch_idx])
+            sig = sig.take(idx[ch_idx], sig_ch_idx)
+
+        return type(self)(data[np.ix_(*idx)], sig, self._categories)
 
     def filter(self, item: str):
         """Filter data by key
