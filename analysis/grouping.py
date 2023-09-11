@@ -106,7 +106,7 @@ class GroupData:
 
     @staticmethod
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
-        return np.where(np.any(sig == 1, axis=1))[0].tolist()
+        return np.where(np.any(np.atleast_2d(sig) == 1, axis=1))[0].tolist()
 
     def combine(self, levels: tuple[str, str]):
         assert all(lev in self._categories for lev in levels), "Invalid level"
@@ -146,6 +146,24 @@ class GroupData:
             i = [isinstance(item[i], str) for i in range(len(item))
                  ].index(False)
             raise TypeError(f"Unexpected type: {type(item)}[{type(item[i])}]")
+
+    def smotify_trials(self):
+        trials_idx = self._categories.index('trial')
+        time_idx = self._categories.index('time')
+        nan = np.isnan(self.array.__array__())
+        bad = np.any(nan, time_idx)
+        for idx in np.ndindex(self.shape[:trials_idx]):
+            goods = np.where(bad[idx]==False)[0]
+
+            for i in range(self.shape[trials_idx]):
+                idxi = idx + (i,)
+                if not bad[idxi]:
+                    continue
+                nn = [idx + (n,) for n in np.random.choice(
+                    goods, (2,), replace=False)]
+                narr = np.random.random(self.shape[time_idx])
+                diff = self.array[nn[0]] - self.array[nn[1]]
+                self.array[idxi] = self.array[nn[0]] + diff * narr
 
     def nan_common_denom(self, sort: bool = True, min_trials: int = 0,
                          verbose: bool = False):
@@ -214,17 +232,23 @@ class GroupData:
                 raise TypeError(f"Unexpected data type: {type(data)}")
 
         if hasattr(self, '_significance'):
+            temp = new_categories.copy()
             if item in self._significance.keys():
                 sig = inner(self._significance)
             else:
                 sig = self._significance
+            new_categories = temp
         else:
             sig = None
 
         return type(self)(inner(self.array), sig, tuple(new_categories))
 
     def copy(self):
-        return type(self)(self.array, self._significance, self._categories)
+        if hasattr(self, '_significance'):
+            sig = self._significance
+        else:
+            sig = None
+        return type(self)(self.array, sig, self._categories)
 
     def append(self, data):
         """Add entry to underlying data dictionary if other nested keys match

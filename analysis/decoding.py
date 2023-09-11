@@ -30,17 +30,21 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 # %% Create training set
 
 conds = tuple(map("_".join, product(["aud", "go"], ["ls", "lm", "jl"])))
-reduced = sub.copy().nan_common_denom(min_trials=5, verbose=True)
-idx = reduced.sig_chans
+reduced = sub.copy()# .nan_common_denom(min_trials=5, verbose=True)
+idx = reduced.SM
+reduced.smotify_trials()
 comb = reduced.combine(('stim', 'trial'))['power']
-# exclude = tuple(k for k in comb.keys['epoch'] if k not in conds)
-cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
-get_pre = lambda k: cats[k.split('-')[0]]
-dat = {c: (comb[c].array[idx], tuple(map(
-    get_pre, comb[c].array.labels[1]))) for c in conds}
-train = concatenate_arrays([d[0][i] for d in dat.values() for i in range(len(d))], axis=-1)
+# train = comb['power'].array[:, :, idx].combine((0, 2)).combine((1, 3)).dropna()
+# cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
+# labels = [cats[k.split('-')[0]] for k in train.labels[0]]
+# get_pre = lambda k: cats[k.split('-')[0]]
+# dat = {c: (comb[c].array[idx], tuple(map(
+#     get_pre, comb[c].array.labels[1]))) for c in conds}
+# labels = [d[1] for d in dat.values()][1]
+# train = concatenate_arrays([d[i] for d in dat.values() for i in range(len(d[0]))], axis=-1)
+# labels = [d[1] for d in dat.values()][1]
 
-labels = [d[1] for d in dat.values()][1]
+
 
 # %% decoder
 
