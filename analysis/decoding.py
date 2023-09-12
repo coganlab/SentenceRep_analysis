@@ -33,8 +33,8 @@ conds = tuple(map("_".join, product(["aud", "go"], ["ls", "lm", "jl"])))
 reduced = sub.copy()# .nan_common_denom(min_trials=5, verbose=True)
 idx = reduced.SM
 reduced.smotify_trials()
-comb = reduced.combine(('stim', 'trial'))['power']
-# train = comb['power'].array[:, :, idx].combine((0, 2)).combine((1, 3)).dropna()
+comb = reduced.combine(('stim', 'trial')).combine(('epoch', 'channel'))
+train = comb['power'].combine((1, 3)).dropna()
 # cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
 # labels = [cats[k.split('-')[0]] for k in train.labels[0]]
 # get_pre = lambda k: cats[k.split('-')[0]]
@@ -42,8 +42,6 @@ comb = reduced.combine(('stim', 'trial'))['power']
 #     get_pre, comb[c].array.labels[1]))) for c in conds}
 # labels = [d[1] for d in dat.values()][1]
 # train = concatenate_arrays([d[i] for d in dat.values() for i in range(len(d[0]))], axis=-1)
-# labels = [d[1] for d in dat.values()][1]
-
 
 
 # %% decoder

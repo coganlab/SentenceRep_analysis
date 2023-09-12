@@ -154,6 +154,8 @@ class GroupData:
         bad = np.any(nan, time_idx)
         for idx in np.ndindex(self.shape[:trials_idx]):
             goods = np.where(bad[idx]==False)[0]
+            assert goods.tolist(),\
+                f"Completely empty data at {[self.array.labels[i][x] for i, x in enumerate(idx)]}"
 
             for i in range(self.shape[trials_idx]):
                 idxi = idx + (i,)
