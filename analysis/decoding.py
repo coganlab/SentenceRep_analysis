@@ -16,9 +16,9 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 
 # %% Create training set
 
-reduced = sub.copy().nan_common_denom(min_trials=6, verbose=True)
+reduced = sub.copy()#.nan_common_denom(min_trials=6, verbose=True)
 idx = reduced.SM
-# reduced.smotify_trials()
+reduced.smotify_trials()
 comb = reduced.combine(('stim', 'trial')).combine(('epoch', 'channel'))
 train = comb['power'].array.combine((0, 2)).dropna()
 cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
