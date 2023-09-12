@@ -21,7 +21,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if int(subj[1:]) in (3, 32, 65, 71):
+    if int(subj[1:]) in (3, 32, 65, 71) or int(subj[1:]) != 31:
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -90,7 +90,7 @@ for subj in subjects:
                                              n_perm=2000, n_jobs=-2,
                                              ignore_adjacency=1)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
-                                     tmax=window[1], tmin=window[0])
+                                     tmin=window[0])
 
         # ave
         # mask[name] = stats.window_averaged_shuffle(sig1, sig2, 0.01, 2000)
@@ -99,12 +99,13 @@ for subj in subjects:
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
         data.append((name, epoch_mask.copy(), power.copy(), z_score.copy()))
-
+    power = mne.concatenate_epochs([d[2] for d in data])
+    power.save(save_dir + f"/{subj}_power-epo.fif", overwrite=True,
+               fmt='double')
+    zscore = mne.concatenate_epochs([d[3] for d in data])
+    zscore.save(save_dir + f"/{subj}_zscore-epo.fif", overwrite=True,
+               fmt='double')
     for name, epoch_mask, power, z_score in data:
-        power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
-                   fmt='double')
-        z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
-                     fmt='double')
         epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
     del data
 
