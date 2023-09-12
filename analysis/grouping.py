@@ -187,7 +187,7 @@ class GroupData:
         else:
             data = self.array
 
-        ch_tnum = np.sum(nan_trials, axis=1)
+        ch_tnum = self.shape[trials_idx] - np.sum(nan_trials, axis=1)
         ch_min = ch_tnum.min()
         if verbose:
             print(f"Lowest trials {ch_min} at "
