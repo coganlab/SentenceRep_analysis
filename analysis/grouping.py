@@ -83,7 +83,7 @@ class GroupData:
     @property
     def keys(self):
         keys = self.array.labels
-        return {self._categories[i]: tuple(k) for i, k in enumerate(keys)}
+        return {self._categories[i]: k for i, k in enumerate(keys)}
 
     @property
     def sig(self):
@@ -117,7 +117,8 @@ class GroupData:
         new_sig = None
         if not hasattr(self, '_significance'):
             pass
-        elif all(self.keys[lev] in self._significance.labels for lev in levels):
+        elif np.any([np.array_equal(self.keys[levels[0]], l) for l in self._significance.labels])\
+                and np.any([np.array_equal(self.keys[levels[1]], l) for l in self._significance.labels]):
             new_sig = self._significance.combine(lev_nums)
         return type(self)(new_data, new_sig, new_cats)
 
@@ -131,7 +132,7 @@ class GroupData:
         if sig is not None:
             sig_keys = []
             for i, key in enumerate(item):
-                if self.array.labels[i] in sig.labels:
+                if np.any([np.array_equal(self.array.labels[i], l) for l in sig.labels]):
                     sig_keys.append(key)
             if sig_keys:
                 sig = sig[tuple(sig_keys)]

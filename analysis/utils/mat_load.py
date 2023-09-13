@@ -144,11 +144,8 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
     PROD = []
     for i, name in enumerate(names):
         for cond in conds:
-            if isinstance(all_sig[cond], dict):
-                idx = name
-            else:
-                idx = i
-            if np.any(all_sig[cond][idx] == 1):
+            idx = i
+            if np.any(all_sig[cond, idx] == 1):
                 sig_chans.append(i)
                 break
 
@@ -157,11 +154,11 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
         else:
             aud_slice = None
 
-        audls_is = np.any(all_sig['aud_ls'][idx][aud_slice] == 1)
-        audlm_is = np.any(all_sig['aud_lm'][idx][aud_slice] == 1)
-        audjl_is = np.any(all_sig['aud_jl'][idx][aud_slice] == 1)
-        mime_is = np.any(all_sig['go_lm'][idx] == 1)
-        speak_is = np.any(all_sig['go_ls'][idx] == 1)
+        audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
+        audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
+        audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
+        mime_is = np.any(all_sig['go_lm', idx] == 1)
+        speak_is = np.any(all_sig['go_ls', idx] == 1)
 
         if audls_is and audlm_is and mime_is and speak_is:
             SM.append(i)
