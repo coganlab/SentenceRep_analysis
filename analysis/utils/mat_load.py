@@ -136,16 +136,14 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
 
 
 def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
-                conds: dict[str, Doubles] | tuple[str]
+                conds: tuple[str]
                 ) -> (list[int], list[int], list[int], list[int]):
     sig_chans = []
     AUD = []
     SM = []
     PROD = []
-    if isinstance(conds, tuple):
-        conds = {c: None for c in conds}
     for i, name in enumerate(names):
-        for cond in conds.keys():
+        for cond in conds:
             if isinstance(all_sig[cond], dict):
                 idx = name
             else:

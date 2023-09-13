@@ -6,7 +6,7 @@ from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
-from utils.mat_load import group_elecs, load_dict
+from analysis.utils.mat_load import group_elecs, load_dict
 
 import nimfa
 from scipy import sparse
@@ -121,36 +121,31 @@ class GroupData:
             new_sig = self._significance.combine(lev_nums)
         return type(self)(new_data, new_sig, new_cats)
 
-    def __getitem__(self, item: str | Sequence[str]):
-        if isinstance(item, str):
-            return self.filter(item)
-        elif not isinstance(item, Sequence):
-            raise TypeError(f"Unexpected type: {type(item)}")
-        elif all(isinstance(item[i], str) for i in range(len(item))):
-            if len(item) == 1:
-                return self[item[0]]
-            keys = tuple(v for v in self.keys.values())
-            level_groups = [[v for v in item if v in keys[i]] for i in range(len(keys))]
-            level_groups = [g for g in level_groups if g]
-            level_groups.reverse()
+    def __getitem__(self, item):
+        if not isinstance(item, tuple):
+            item = (item,)
+        while len(item) < self.array.ndim:
+            item += (slice(None),)
 
-            # filter, append, then move up a level
-            out = self.copy()
-            for group in level_groups:
-                this = out[group.pop(0)]
-                while group:
-                    this.append(out[group.pop(0)])
-                out = this
-            return out
-        else:
-            i = [isinstance(item[i], str) for i in range(len(item))
-                 ].index(False)
-            raise TypeError(f"Unexpected type: {type(item)}[{type(item[i])}]")
+        sig = getattr(self, '_significance', None)
+        if sig is not None:
+            sig_keys = []
+            for i, key in enumerate(item):
+                if self.array.labels[i] in sig.labels:
+                    sig_keys.append(key)
+            if sig_keys:
+                sig = sig[tuple(sig_keys)]
+
+        cats = tuple(self._categories[i] for i, key in enumerate(item) if
+                   isinstance(key, (Sequence, slice)) and not isinstance(key, str))
+
+        return type(self)(self.array[item], sig, cats)
+
 
     def smotify_trials(self):
         trials_idx = self._categories.index('trial')
         time_idx = self._categories.index('time')
-        nan = np.isnan(self.array.__array__())
+        nan = np.isnan(self.array)
         bad = np.any(nan, time_idx)
         for idx in np.ndindex(self.shape[:trials_idx]):
             goods = np.where(bad[idx]==False)[0]
@@ -173,7 +168,7 @@ class GroupData:
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
         others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
-        nan_trials = np.any(np.isnan(self.array.__array__()), axis=tuple(others))
+        nan_trials = np.any(np.isnan(self.array), axis=tuple(others))
 
         # Sort the trials by whether they are nan or not
         if sort:
@@ -278,7 +273,7 @@ class GroupData:
             else:
                 raise TypeError(f"Unexpected data type: {type(data)}")
 
-        inner(self.array, data._data)
+        inner(self.array, data.array)
 
     def __sizeof__(self):
         def inner(obj):

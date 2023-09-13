@@ -99,14 +99,14 @@ if __name__ == "__main__":
     ## Load the data
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats')
+                                       folder='stats_old')
     ## setup training data
     aud_slice = slice(0, 175)
     stitched = np.hstack([sub['aud_ls'].sig[:, aud_slice],
                           sub['aud_lm'].sig[:, aud_slice],
                           sub['go_ls'].sig, sub['resp'].sig])
-    zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial'))._data, axis=-2)
-    powers = np.nanmean(sub['power'].combine(('stim', 'trial'))._data, axis=-2)
+    zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial')).array, axis=-2)
+    powers = np.nanmean(sub['power'].combine(('stim', 'trial')).array, axis=-2)
     plot_data = np.hstack([zscores['aud_ls', :, aud_slice], zscores['go_ls']])
 
     train = np.hstack([zscores['aud_ls', :, aud_slice],
