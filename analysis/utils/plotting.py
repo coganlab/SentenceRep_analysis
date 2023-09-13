@@ -1,5 +1,4 @@
-
-from utils.calc import do_decomp, par_calc
+from analysis.utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
 import numpy as np
 from ieeg.calc.stats import dist
@@ -153,7 +152,7 @@ if __name__ == "__main__":
     from ieeg.viz.utils import plot_dist
     from ieeg.viz.mri import get_sub_dir, plot_on_average, gen_labels
     import matplotlib.pyplot as plt
-    from utils.mat_load import load_intermediates, group_elecs
+    from analysis.utils.mat_load import load_intermediates, group_elecs
 
     # %% check if currently running a slurm job
     HOME = os.path.expanduser("~")

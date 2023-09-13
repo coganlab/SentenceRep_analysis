@@ -1,4 +1,4 @@
-from utils.mat_load import load_all, group_elecs
+from analysis.utils._mat_load_old import group_elecs
 import matplotlib.pyplot as plt
 import numpy as np
 

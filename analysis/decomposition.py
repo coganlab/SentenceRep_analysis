@@ -102,9 +102,10 @@ if __name__ == "__main__":
                                        folder='stats_old')
     ## setup training data
     aud_slice = slice(0, 175)
-    stitched = np.hstack([sub['aud_ls'].sig[:, aud_slice],
-                          sub['aud_lm'].sig[:, aud_slice],
-                          sub['go_ls'].sig, sub['resp'].sig])
+    stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
+                          sub.signif['aud_lm', :, aud_slice],
+                          sub.signif['go_ls', :],
+                          sub.signif['resp', :]])
     zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial')).array, axis=-2)
     powers = np.nanmean(sub['power'].combine(('stim', 'trial')).array, axis=-2)
     plot_data = np.hstack([zscores['aud_ls', :, aud_slice], zscores['go_ls']])

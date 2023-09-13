@@ -17,6 +17,7 @@ mne.set_log_level("ERROR")
 
 class GroupData:
     array = LabeledArray([])
+    signif = LabeledArray([])
 
     @classmethod
     def from_intermediates(cls, task: str, root: PathLike,
@@ -45,21 +46,21 @@ class GroupData:
         self._set_data(data, 'array')
         self._categories = categories
         if mask is not None:
-            self._set_data(mask, '_significance')
-            if not ((self.sig == 0) | (self.sig == 1)).all():
+            self._set_data(mask, 'signif')
+            if not ((self.signif == 0) | (self.signif == 1)).all():
                 if 'epoch' in categories:
-                    for i, arr in enumerate(self.sig):
-                        self._significance[i] = self.correction(arr, fdr, pval)
+                    for i, arr in enumerate(self.signif):
+                        self.signif[i] = self.correction(arr, fdr, pval)
                 else:
-                    self._significance = self.correction(self.sig, fdr, pval)
-            keys = self._significance.labels
+                    self.signif = self.correction(self.signif, fdr, pval)
+            keys = self.signif.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    self._significance, keys[1], keys[0])
+                    self.signif, keys[1], keys[0])
             else:
-                self.sig_chans = self._find_sig_chans(self.sig)
+                self.sig_chans = self._find_sig_chans(self.signif)
 
     @staticmethod
     def correction(p_vals, fdr: bool, thresh: float):
@@ -84,11 +85,6 @@ class GroupData:
     def keys(self):
         keys = self.array.labels
         return {self._categories[i]: k for i, k in enumerate(keys)}
-
-    @property
-    def sig(self):
-        if hasattr(self, '_significance'):
-            return self._significance.__array__()
 
     @property
     def subjects(self):
@@ -117,9 +113,9 @@ class GroupData:
         new_sig = None
         if not hasattr(self, '_significance'):
             pass
-        elif np.any([np.array_equal(self.keys[levels[0]], l) for l in self._significance.labels])\
-                and np.any([np.array_equal(self.keys[levels[1]], l) for l in self._significance.labels]):
-            new_sig = self._significance.combine(lev_nums)
+        elif np.any([np.array_equal(self.keys[levels[0]], l) for l in self.signif.labels])\
+                and np.any([np.array_equal(self.keys[levels[1]], l) for l in self.signif.labels]):
+            new_sig = self.signif.combine(lev_nums)
         return type(self)(new_data, new_sig, new_cats)
 
     def __getitem__(self, item):
@@ -141,7 +137,6 @@ class GroupData:
                    isinstance(key, (Sequence, slice)) and not isinstance(key, str))
 
         return type(self)(self.array[item], sig, cats)
-
 
     def smotify_trials(self):
         trials_idx = self._categories.index('trial')
@@ -177,9 +172,9 @@ class GroupData:
             old_shape = list(order.shape)
             new_shape = [1 if ch_idx != i != trials_idx else old_shape.pop(0)
                          for i in range(len(self._categories))]
-            order = np.reshape(order, new_shape)
-            data = np.take_along_axis(self.array, order, axis=trials_idx)
-            data.labels = self.array.labels.copy()
+            order = np.reshape(order.__array__(), new_shape)
+            data = np.take_along_axis(self.array.__array__(), order, axis=trials_idx)
+            data = LabeledArray(data, self.array.labels.copy())
         else:
             data = self.array
 
@@ -231,10 +226,10 @@ class GroupData:
 
         if hasattr(self, '_significance'):
             temp = new_categories.copy()
-            if item in self._significance.keys():
-                sig = inner(self._significance)
+            if item in self.signif.keys():
+                sig = inner(self.signif)
             else:
-                sig = self._significance
+                sig = self.signif
             new_categories = temp
         else:
             sig = None
@@ -243,7 +238,7 @@ class GroupData:
 
     def copy(self):
         if hasattr(self, '_significance'):
-            sig = self._significance
+            sig = self.signif
         else:
             sig = None
         return type(self)(self.array, sig, self._categories)
@@ -349,7 +344,7 @@ class GroupData:
                               ) for c in conds)
 
         elif dtype == 'significance':
-            data = self._significance
+            data = self.signif
             newconds = self.keys['epoch']
             gen = (data[c][idx] for c in conds)
         else:
@@ -381,7 +376,7 @@ class GroupData:
     def get_condition(self, condition: str):
         assert condition in self.conds.keys()
         all = self.array
-        all["significance"] = self.significance
+        all["significance"] = self.signif
         out = dict()
         for k, v in all.items():
             if isinstance(v, dict):
@@ -407,57 +402,54 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 
 if __name__ == "__main__":
-    import cProfile
-    import pstats
-
+    from ieeg.calc.reshape import stitch_mats
+    import matplotlib.pyplot as plt
+    from analysis.utils.plotting import plot_clustering, plot_dist
     fpath = os.path.expanduser("~/Box/CoganLab")
-    with cProfile.Profile() as pr:
-        sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='stats')
+    sub = GroupData.from_intermediates("SentenceRep", fpath,
+                                           folder='stats_old')
+    conds = {"resp": (-1, 1),
+             "aud_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
 
-    stats = pstats.Stats(pr)
-    stats.dump_stats('profile.stats')
+    power = sub['zscore'].combine(('stim', 'trial'))
+    power.array = np.nanmean(power.array, axis=-2)
+
+    ## plot groups
+    # aud_c = "aud_ls"
+    # go_c = "go_ls"
+    # aud_slice = slice(None, 175)
+    # stitch_aud = stitch_mats([power.array[aud_c, sub.AUD, ..., aud_slice].combine((0, 1)),
+    #                           power.array[go_c, sub.AUD].combine((0, 1))], [0], axis=-1)
+    # stitch_sm = stitch_mats([power.array[aud_c, sub.SM, ..., aud_slice].combine((0, 1)),
+    #                          power.array[go_c, sub.SM].combine((0, 1))], [0], axis=-1)
+    # stitch_prod = stitch_mats([power.array[aud_c, sub.PROD, ..., aud_slice].combine((0, 1)),
+    #                            power.array[go_c, sub.PROD].combine((0, 1))], [0], axis=-1)
+    # stitch_all = np.vstack([stitch_aud, stitch_sm, stitch_prod])
+    # labels = np.concatenate([np.ones([stitch_aud.shape[0]]), np.ones([stitch_sm.shape[0]]) * 2,
+    #                          np.ones([stitch_prod.shape[0]]) * 3])
+    # plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
+    #                 colors=[[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+    # plt.legend()
+    # plt.title('Listen-Speak Electrode Groups')
 
     ##
-    # power = sub['power'].combine(('stim', 'trial'))
-    # resp = sub['resp']
-    # resp_power = sub['power', 'resp']
-    # # sm = sub.plot_groups_on_average([sub.SM], hemi='both')
-    # # sm_wm = sub.plot_groups_on_average([sub.SM], hemi='both', rm_wm=False)
-    #
-    # ##
-    # group = sub.SM
-    # W, H, model = sub.nmf("significance", idx=group, n_components=3,
-    #                        conds=('aud_lm', 'aud_ls', 'go_ls', 'resp'))
-    # plot_data = sub.get_training_data("zscore", ("aud_ls", "go_ls"), group)
-    # plot_data = np.hstack([plot_data[:, 0:175], plot_data[:, 200:400]])
-    # plot_weight_dist(plot_data, W)
-    # pred = np.argmax(W, axis=1)
-    # groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
-    #           for j in range(W.shape[1])]
-    # fig1 = sub.plot_groups_on_average(groups,
-    #                                 ['blue', 'orange', 'green', 'red'])
-    #
-    # ##
-    # from MEPONMF.MEP_ONMF import DA
-    # from MEPONMF.MEP_ONMF import ONMF_DA
-    # import matplotlib.pyplot as plt
-    # group = list(set(sub.SM + sub.PROD + sub.AUD))
-    # group = sub.SM
-    # k = 10
-    # param = dict(tol=1e-14, alpha=1.0001,
-    #            purturb=0.5, verbos=1, normalize=False)
-    # model_data = sub.get_training_data("significance", ("aud_ls", "go_ls"), group)
-    # # model_data = np.hstack([model_data[:, 0:175], model_data[:, 200:400]])
-    # W, H, model = ONMF_DA.func(model_data, k=k, **param, auto_weighting=False)
-    # model.plot_criticals(log=True)
-    # plt.show()
-    # ##
-    # k = 2
-    # W, H, model2 = ONMF_DA.func(model_data, k=k, **param, auto_weighting=True)
-    # plot_weight_dist(plot_data, W)
-    # # fig2 = data.plot_groups_on_average()
-    #
-    # ## plot conds
-    # all_group = [data.AUD, data.PROD, data.SM]
-    # plot_weight_dist(data.get_training_data("zscore", ("aud_ls",), all_group))
+    cond = 'aud_ls'
+    # for sub in layout.get_subjects():
+    #     SUB = [s for s in sig_chans if sub in names[s]]
+    #     plot_dist(all_power[cond][SUB], times=conds[cond], label=sub)
+    plt.figure()
+    plot_dist(power.array[cond, sub.AUD].__array__(), times=conds[cond], label='AUD',
+              color=[0, 1, 0])
+    plot_dist(power.array[cond, sub.SM].__array__(), times=conds[cond], label='SM',
+              color=[1, 0, 0])
+    plot_dist(power.array[cond, sub.PROD].__array__(), times=conds[cond], label='PROD',
+              color=[0, 0, 1])
+    plt.legend()
+    plt.xlabel("Time(s)")
+    plt.ylabel("Z-Score (V)")
+    plt.title('Stimulus')

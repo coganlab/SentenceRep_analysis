@@ -39,7 +39,7 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
         for cond in conds.keys():
             try:
                 fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
-                epochs[subject][cond] = reader(fname, verbose=False)
+                epochs[subject][cond] = reader(fname)
             except FileNotFoundError as e:
                 mne.utils.logger.warn(e)
                 continue
