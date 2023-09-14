@@ -124,8 +124,8 @@ class GroupData:
         while len(item) < self.array.ndim:
             item += (slice(None),)
 
-        sig = getattr(self, '_significance', None)
-        if sig is not None:
+        sig = getattr(self, 'signif', LabeledArray([]))
+        if sig.size > 0:
             sig_keys = []
             for i, key in enumerate(item):
                 if np.any([np.array_equal(self.array.labels[i], l) for l in sig.labels]):
@@ -416,40 +416,36 @@ if __name__ == "__main__":
              "go_lm": (-0.5, 1.5),
              "go_jl": (-0.5, 1.5)}
 
-    power = sub['zscore'].combine(('stim', 'trial'))
-    power.array = np.nanmean(power.array, axis=-2)
-
-    ## plot groups
-    # aud_c = "aud_ls"
-    # go_c = "go_ls"
-    # aud_slice = slice(None, 175)
-    # stitch_aud = stitch_mats([power.array[aud_c, sub.AUD, ..., aud_slice].combine((0, 1)),
-    #                           power.array[go_c, sub.AUD].combine((0, 1))], [0], axis=-1)
-    # stitch_sm = stitch_mats([power.array[aud_c, sub.SM, ..., aud_slice].combine((0, 1)),
-    #                          power.array[go_c, sub.SM].combine((0, 1))], [0], axis=-1)
-    # stitch_prod = stitch_mats([power.array[aud_c, sub.PROD, ..., aud_slice].combine((0, 1)),
-    #                            power.array[go_c, sub.PROD].combine((0, 1))], [0], axis=-1)
-    # stitch_all = np.vstack([stitch_aud, stitch_sm, stitch_prod])
-    # labels = np.concatenate([np.ones([stitch_aud.shape[0]]), np.ones([stitch_sm.shape[0]]) * 2,
-    #                          np.ones([stitch_prod.shape[0]]) * 3])
-    # plot_clustering(stitch_all, labels, sig_titles=['AUD', 'SM', 'PROD'],
-    #                 colors=[[0, 1, 0], [1, 0, 0], [0, 0, 1]])
-    # plt.legend()
-    # plt.title('Listen-Speak Electrode Groups')
+    power = sub['power']
+    zscore = sub['zscore']
+    sig = sub.signif
 
     ##
     cond = 'aud_ls'
-    # for sub in layout.get_subjects():
-    #     SUB = [s for s in sig_chans if sub in names[s]]
-    #     plot_dist(all_power[cond][SUB], times=conds[cond], label=sub)
+    # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
+    # arr = sub.signif[cond].__array__()
+    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
+    for subj in list(sub.subjects)[:10]:
+        SUB = [s for s in sub.sig_chans if subj in sub.keys['channel'][s]]
+        plot_dist(arr[SUB], times=conds[cond], label=subj)
+    plt.legend()
+    ##
+    cond = 'resp'
+    # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
+    # arr = sub.signif[cond].__array__()
+    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
     plt.figure()
-    plot_dist(power.array[cond, sub.AUD].__array__(), times=conds[cond], label='AUD',
-              color=[0, 1, 0])
-    plot_dist(power.array[cond, sub.SM].__array__(), times=conds[cond], label='SM',
-              color=[1, 0, 0])
-    plot_dist(power.array[cond, sub.PROD].__array__(), times=conds[cond], label='PROD',
-              color=[0, 0, 1])
+    plot_dist(arr[sub.AUD], times=conds[cond], label='AUD',
+              color='green')
+    plot_dist(arr[sub.SM], times=conds[cond], label='SM',
+              color='red')
+    plot_dist(arr[sub.PROD], times=conds[cond], label='PROD',
+              color='blue')
     plt.legend()
     plt.xlabel("Time(s)")
     plt.ylabel("Z-Score (V)")
-    plt.title('Stimulus')
+    plt.title('Response')
+    plt.ylim(-0.1, 0.9)
+    plt.savefig(cond+'.svg', dpi=300)
+
+
