@@ -116,12 +116,12 @@ if __name__ == "__main__":
                           sub.signif['resp', :]])
     zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     powers = np.nanmean(sub['power'].array, axis=(-4, -2))
+    train = zscores
     sig = sub.signif
-    plot_data = np.hstack([zscores['aud_ls', :, aud_slice], zscores['go_ls']])
 
-    train = np.hstack([zscores['aud_ls', :, aud_slice],
-                       zscores['aud_lm', :, aud_slice],
-                       zscores['go_ls'], zscores['resp']])
+    train = np.hstack([train['aud_ls', :, aud_slice],
+                       train['aud_lm', :, aud_slice],
+                       train['go_ls'], train['resp']])
     combined = train * stitched - np.min(train * stitched)
     raw = train - np.min(train)
     sparse_matrix = csr_matrix((combined[stitched == 1], stitched.nonzero()))
@@ -131,38 +131,85 @@ if __name__ == "__main__":
                    beta_loss='kullback-leibler',
                    tol=1e-7, verbose=1)
     W, H, n = skd.non_negative_factorization(sparse_matrix[sub.SM], **options)
+    # W *= np.mean(zscores) / np.mean(powers) / 1000
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
     ##
-    cond = 'go_jl'
-    plot_weight_dist(sig[cond, sub.SM].__array__() *
-                     zscores[cond, sub.SM].__array__(), W,
-                     times=conds[cond], colors=['c', 'm', 'y', 'orange'])
-    plt.title("Go Cue")
+    colors = ['c', 'm', 'k', 'orange']
+    labels = ['Instructional', 'Motor', 'Auditory', 'Working Memory']
+    cond = 'resp'
+    plot = zscores[cond, sub.SM].__array__().copy()
+    plot[sig[cond, sub.SM].__array__() == 0] = np.nan
+    fig, ax = plot_weight_dist(plot, W, times=conds[cond], colors=colors)
+    if cond.startswith("aud"):
+        title = "Stimulus"
+        times = aud_slice
+    elif cond.startswith("go"):
+        title = "Go Cue"
+        times = slice(None)
+    else:
+        title = "Response"
+        times = slice(None)
+    plt.title(title)
     plt.ylabel("Z-score")
     plt.xlabel("Time (s)")
-    plt.ylim(-0.1, 0.9)
+    plt.ylim(0, 2.5)
+    plt.xlim(*conds[cond])
+    # plt.axhline(linestyle='--', color='k')
+    plt.axvline(linestyle='--', color='k')
     plt.savefig(cond+'_decomp.svg', dpi=300)
 
     ## plot on brain
     pred = np.argmax(W, axis=1)
     groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
                 for j in range(W.shape[1])]
-    fig = sub.plot_groups_on_average(groups, ['c', 'm', [1, 1, 0], 'orange'],
-                                      hemi='lh', rm_wm=False, size=0.4)
+    fig = sub.plot_groups_on_average(groups, colors, hemi='lh', rm_wm=False, size=0.4)
     fig.save_image('SM_decomp.eps')
-    # ## run the decomposition
+
+    ## Find and plot the peaks of each electrode group as a scatter plot / horizontal box plot
+    groups_idx = [[sub.SM[i] for i in np.where(pred == j)[0]]
+                for j in range(W.shape[1])]
+    fig, ax = plt.subplots(1, 1)
+    # ax.set_ylim([np.min(zscores[cond, sub.SM].__array__()),
+    #              np.max(zscores[cond, sub.SM].__array__())])
+    plt.ylim(0.25, 4)
+    plt.xlim(*conds[cond])
+    ylim = ax.get_ylim()
+    for i, group in enumerate(groups):
+        peaks = np.max(zscores[cond, group].__array__(), axis=1)
+        peak_locs = np.argmax(zscores[cond, group].__array__(), axis=1)
+        tscale = np.linspace(conds[cond][0], conds[cond][1], 200)
+        ax.scatter(tscale[peak_locs], peaks, color=colors[i], label=labels[i])
+        # plot horizontal box plot of peak locations
+        spread = (ylim[1] - ylim[0])
+        width = spread / 16
+        pos = [spread / 2 + i * width + width]
+        bplot = ax.boxplot(tscale[peak_locs], manage_ticks=False, widths=width,
+                           positions=pos, boxprops=dict(facecolor=colors[i],
+                                                        fill=True, alpha=0.5),
+                           vert=False, showfliers=False, whis=[15, 85],
+                           patch_artist=True)
+
+    # plt.title(title)
+    plt.ylabel("Z-score")
+    plt.xlabel(title + " Latency Time (s)")
+    # plt.legend()
+    plt.axhline(linestyle='--', color='k')
+    plt.axvline(linestyle='--', color='k')
+    plt.savefig(cond+'_peaks.svg', dpi=300)
+
+    ## run the decomposition
     # ch = [[] for _ in range(9)]
     # scorer = lambda model: ch[model.fit.rank-1].append(calinski_halbaraz(
     #     np.array(model.fit.W).T, np.array(model.fit.H)))
-    # options = dict(seed="nndsvd", rank=3, max_iter=10000,
+    # options = dict(seed="nndsvd", rank=4, max_iter=10000,
     #                # callback=scorer,
-    #                # update='divergence',
-    #                # objective='div',
-    #                # options=dict(flag=0)
+    #                update='divergence',
+    #                objective='div',
+    #                options=dict(flag=0)
     #                )
     # nmf = nimfa.Bmf(stitched[sub.SM], **options)
     # nmf.factorize()
-    # plot_weight_dist(train[sub.SM, 175:550], np.array(nmf.W))
+    # plot_weight_dist(stitched[sub.SM, 175:550], np.array(nmf.W))
     ##
     # est = nmf.estimate_rank(list(range(1, 6)))
     # matplotlib.pyplot.plot([e['evar'] / e['rss'] for e in est.values()])
@@ -179,4 +226,3 @@ if __name__ == "__main__":
     #                                   ['blue', 'orange', 'green', 'red'],
     #                                   hemi='lh',
     #                                   rm_wm=False)
-
