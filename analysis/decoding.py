@@ -18,11 +18,11 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 
 trials = 9
 conds = ['aud_ls', 'aud_lm', 'aud_jl']
-idx = sub.AUD
+idx = sub.SM
 reduced = sub[:, conds, :, idx, :, 50:125]
 reduced.array = reduced.array.dropna()
-reduced.smotify_trials()
-# reduced = reduced.nan_common_denom(True, trials, True)
+# reduced.smotify_trials()
+reduced = reduced.nan_common_denom(True, trials, True)
 comb = reduced.combine(('stim', 'trial')).combine(('epoch', 'trial'))
 train = comb['zscore'].array.combine((0, 2)).dropna()
 cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}

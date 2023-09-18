@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_weight_dist
+from analysis.utils.plotting import plot_weight_dist, plot_dist
 import nimfa
 import sklearn.decomposition as skd
 from sklearn.metrics import pairwise_distances
@@ -95,19 +95,28 @@ def mat_err(W: np.ndarray, H: np.ndarray, orig: np.ndarray) -> float:
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
 
     ## Load the data
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
                                        folder='stats_old')
+    conds = {"resp": (-1, 1),
+             "aud_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
     ## setup training data
     aud_slice = slice(0, 175)
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
                           sub.signif['aud_lm', :, aud_slice],
                           sub.signif['go_ls', :],
                           sub.signif['resp', :]])
-    zscores = np.nanmean(sub['zscore'].combine(('stim', 'trial')).array, axis=-2)
-    powers = np.nanmean(sub['power'].combine(('stim', 'trial')).array, axis=-2)
+    zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
+    powers = np.nanmean(sub['power'].array, axis=(-4, -2))
+    sig = sub.signif
     plot_data = np.hstack([zscores['aud_ls', :, aud_slice], zscores['go_ls']])
 
     train = np.hstack([zscores['aud_ls', :, aud_slice],
@@ -123,31 +132,51 @@ if __name__ == "__main__":
                    tol=1e-7, verbose=1)
     W, H, n = skd.non_negative_factorization(sparse_matrix[sub.SM], **options)
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
-    plot_weight_dist(stitched[sub.SM, 175:550], W)
-
-    ## run the decomposition
-    ch = [[] for _ in range(9)]
-    scorer = lambda model: ch[model.fit.rank-1].append(calinski_halbaraz(
-        np.array(model.fit.W).T, np.array(model.fit.H)))
-    options = dict(seed="random", rank=4, max_iter=10000,
-                   # callback=scorer,
-                   update='divergence',
-                   objective='div',
-                   options=dict(flag=0))
-    nmf = nimfa.Nmf((raw*stitched)[sub.SM], **options)
-    est = nmf.estimate_rank(list(range(1, 6)))
-    matplotlib.pyplot.plot([e['evar'] / e['rss'] for e in est.values()])
     ##
-    W, H = nmf.fitted()
-    # W = np.array(bmf.W)
-    this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
-    plot_weight_dist(this_plot[sub.SM], W)
+    cond = 'go_jl'
+    plot_weight_dist(sig[cond, sub.SM].__array__() *
+                     zscores[cond, sub.SM].__array__(), W,
+                     times=conds[cond], colors=['c', 'm', 'y', 'orange'])
+    plt.title("Go Cue")
+    plt.ylabel("Z-score")
+    plt.xlabel("Time (s)")
+    plt.ylim(-0.1, 0.9)
+    plt.savefig(cond+'_decomp.svg', dpi=300)
+
     ## plot on brain
     pred = np.argmax(W, axis=1)
     groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
-              for j in range(W.shape[1])]
-    fig1 = sub.plot_groups_on_average(groups,
-                                      ['blue', 'orange', 'green', 'red'],
-                                      hemi='lh',
-                                      rm_wm=False)
+                for j in range(W.shape[1])]
+    fig = sub.plot_groups_on_average(groups, ['c', 'm', [1, 1, 0], 'orange'],
+                                      hemi='lh', rm_wm=False, size=0.4)
+    fig.save_image('SM_decomp.eps')
+    # ## run the decomposition
+    # ch = [[] for _ in range(9)]
+    # scorer = lambda model: ch[model.fit.rank-1].append(calinski_halbaraz(
+    #     np.array(model.fit.W).T, np.array(model.fit.H)))
+    # options = dict(seed="nndsvd", rank=3, max_iter=10000,
+    #                # callback=scorer,
+    #                # update='divergence',
+    #                # objective='div',
+    #                # options=dict(flag=0)
+    #                )
+    # nmf = nimfa.Bmf(stitched[sub.SM], **options)
+    # nmf.factorize()
+    # plot_weight_dist(train[sub.SM, 175:550], np.array(nmf.W))
+    ##
+    # est = nmf.estimate_rank(list(range(1, 6)))
+    # matplotlib.pyplot.plot([e['evar'] / e['rss'] for e in est.values()])
+    # ##
+    # W, H = nmf.fitted()
+    # # W = np.array(bmf.W)
+    # this_plot = np.hstack([sub[:,'aud_ls'].signif[aud_slice], sub[:,'go_ls'].signif])
+
+    # ## plot on brain
+    # pred = np.argmax(W, axis=1)
+    # groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
+    #           for j in range(W.shape[1])]
+    # fig1 = sub.plot_groups_on_average(groups,
+    #                                   ['blue', 'orange', 'green', 'red'],
+    #                                   hemi='lh',
+    #                                   rm_wm=False)
 
