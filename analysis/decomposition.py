@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_weight_dist, plot_dist
+from analysis.utils.plotting import plot_weight_dist, plot_dist, boxplot_2d
 import nimfa
 import sklearn.decomposition as skd
 from sklearn.metrics import pairwise_distances
@@ -134,32 +134,74 @@ if __name__ == "__main__":
     # W *= np.mean(zscores) / np.mean(powers) / 1000
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
     ##
-    colors = ['c', 'm', 'k', 'orange']
-    labels = ['Instructional', 'Motor', 'Auditory', 'Working Memory']
-    cond = 'resp'
-    plot = zscores[cond, sub.SM].__array__().copy()
-    plot[sig[cond, sub.SM].__array__() == 0] = np.nan
-    fig, ax = plot_weight_dist(plot, W, times=conds[cond], colors=colors)
+    metric = zscores
+    labeled = [['Instructional', 'c', 2],
+               ['Motor', 'm', 3],
+               ['Feedback', 'k', 1],
+               ['Working Memory', 'orange', 0]]
+    pred = np.argmax(W, axis=1)
+    groups = [[sub.SM[i] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    colors, labels = zip(*((c[1], c[0]) for c in sorted(labeled, key=lambda x: x[2])))
+    for i, g in enumerate(groups):
+        labeled[i][2] = groups[labeled[i][2]]
+    cond = 'aud_ls'
     if cond.startswith("aud"):
-        title = "Stimulus"
-        times = aud_slice
+        title = "Stimulus Onset"
+        times = slice(None)
+        ticks = [-0.5, 0, 0.5, 1, 1.5]
+        legend = True
     elif cond.startswith("go"):
         title = "Go Cue"
         times = slice(None)
+        ticks = [-0.5, 0, 0.5, 1, 1.5]
+        legend = False
     else:
         title = "Response"
         times = slice(None)
-    plt.title(title)
-    plt.ylabel("Z-score")
-    plt.xlabel("Time (s)")
-    plt.ylim(0, 2.5)
+        ticks = [-1, -0.5, 0, 0.5, 1]
+        legend = False
+    plot = metric[cond, sub.SM, times].__array__().copy()
+    # plot[sig[cond, sub.SM, times].__array__() == 0] = np.nan
+    fig, ax = plot_weight_dist(plot, pred, times=conds[cond], colors=colors, sig_titles=labels)
+    plt.xticks(ticks)
+    plt.rcParams.update({'font.size': 14})
+    plt.ylim(0, 1.5)
+    # sort by order
+    labeled = sorted(labeled, key=lambda x: np.median(np.argmax(metric[cond, x[2]].__array__(), axis=1)))
+    ylim = ax.get_ylim()
+
+    for i, (label, color, group) in enumerate(labeled):
+        points = metric[cond, group, times].__array__()
+        # points[sig[cond, group, times].__array__() == 0] = 0
+        peaks = np.max(points, axis=1)
+        peak_locs = np.argmax(points, axis=1)
+        tscale = np.linspace(conds[cond][0], conds[cond][1], metric.shape[-1])
+        # ax.scatter(tscale[peak_locs], peaks, color=colors[i], label=labels[i])
+        # plot horizontal box plot of peak locations
+        spread = (ylim[1] - ylim[0])
+        width = spread / 16
+        pos = [width/2+i * width + spread*3 / 4]
+        # boxplot_2d(tscale[peak_locs], peaks, ax)
+        bplot = ax.boxplot(tscale[peak_locs], manage_ticks=False, widths=width,
+                           positions=pos, boxprops=dict(facecolor=color,
+                                                        fill=True, alpha=0.5),
+                           vert=False, showfliers=False, whis=[15, 85],
+                           patch_artist=True, medianprops=dict(color='k'))
+
+    trans = ax.get_xaxis_transform()
+    # ax.text(50, 0.8, title, rotation=270, transform=trans)
+    plt.ylabel("Z-scored HG power")
+    plt.xlabel(f"Time from {title} (s)")
     plt.xlim(*conds[cond])
+    if legend:
+        plt.legend()
+    plt.tight_layout()
     # plt.axhline(linestyle='--', color='k')
-    plt.axvline(linestyle='--', color='k')
-    plt.savefig(cond+'_decomp.svg', dpi=300)
+    # plt.axvline(linestyle='--', color='k')
+    plt.savefig(cond+'_decomp_ord.svg', dpi=300,)
 
     ## plot on brain
-    pred = np.argmax(W, axis=1)
     groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
                 for j in range(W.shape[1])]
     fig = sub.plot_groups_on_average(groups, colors, hemi='lh', rm_wm=False, size=0.4)
@@ -182,7 +224,7 @@ if __name__ == "__main__":
         # plot horizontal box plot of peak locations
         spread = (ylim[1] - ylim[0])
         width = spread / 16
-        pos = [spread / 2 + i * width + width]
+        pos = [spread / 2 + i * width + 1.5 * width]
         bplot = ax.boxplot(tscale[peak_locs], manage_ticks=False, widths=width,
                            positions=pos, boxprops=dict(facecolor=colors[i],
                                                         fill=True, alpha=0.5),
@@ -192,7 +234,6 @@ if __name__ == "__main__":
     # plt.title(title)
     plt.ylabel("Z-score")
     plt.xlabel(title + " Latency Time (s)")
-    # plt.legend()
     plt.axhline(linestyle='--', color='k')
     plt.axvline(linestyle='--', color='k')
     plt.savefig(cond+'_peaks.svg', dpi=300)

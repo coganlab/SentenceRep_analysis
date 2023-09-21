@@ -111,7 +111,7 @@ class GroupData:
         new_cats = list(self._categories)
         new_cats.pop(lev_nums[0])
         new_sig = None
-        if not hasattr(self, '_significance'):
+        if not hasattr(self, 'signif'):
             pass
         elif np.any([np.array_equal(self.keys[levels[0]], l) for l in self.signif.labels])\
                 and np.any([np.array_equal(self.keys[levels[1]], l) for l in self.signif.labels]):
