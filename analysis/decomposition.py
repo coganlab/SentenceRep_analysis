@@ -204,7 +204,9 @@ if __name__ == "__main__":
     ## plot on brain
     groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
                 for j in range(W.shape[1])]
-    fig = sub.plot_groups_on_average(groups, colors, hemi='lh', rm_wm=False, size=0.4)
+    fig = sub.plot_groups_on_average(groups, colors, hemi='lh',
+                                     # rm_wm=False,
+                                     size=0.4)
     fig.save_image('SM_decomp.eps')
 
     ## Find and plot the peaks of each electrode group as a scatter plot / horizontal box plot
