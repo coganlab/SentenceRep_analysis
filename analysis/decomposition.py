@@ -135,9 +135,9 @@ if __name__ == "__main__":
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
     ##
     metric = zscores
-    labeled = [['Instructional', 'c', 2],
+    labeled = [['Instructional', 'c',1],
                ['Motor', 'm', 3],
-               ['Feedback', 'k', 1],
+               ['Feedback', 'k', 2],
                ['Working Memory', 'orange', 0]]
     pred = np.argmax(W, axis=1)
     groups = [[sub.SM[i] for i in np.where(pred == j)[0]]
@@ -269,3 +269,8 @@ if __name__ == "__main__":
     #                                   ['blue', 'orange', 'green', 'red'],
     #                                   hemi='lh',
     #                                   rm_wm=False)
+
+    ### plot the weights
+    # fig, ax = plt.subplots(1, 1)
+    # ax.set_ylim([np.min(W), np.max(W)])
+
