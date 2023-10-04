@@ -4,9 +4,11 @@ import numpy as np
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
+from ieeg.viz.utils import plot_dist
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
 from analysis.utils.mat_load import group_elecs, load_dict
+import matplotlib.pyplot as plt
 
 import nimfa
 from scipy import sparse
@@ -110,12 +112,13 @@ class GroupData:
         new_data = self.array.combine(lev_nums)
         new_cats = list(self._categories)
         new_cats.pop(lev_nums[0])
-        new_sig = None
         if not hasattr(self, 'signif'):
-            pass
+            new_sig = None
         elif np.any([np.array_equal(self.keys[levels[0]], l) for l in self.signif.labels])\
                 and np.any([np.array_equal(self.keys[levels[1]], l) for l in self.signif.labels]):
             new_sig = self.signif.combine(lev_nums)
+        else:
+            new_sig = self.signif
         return type(self)(new_data, new_sig, new_cats)
 
     def __getitem__(self, item):
@@ -202,6 +205,58 @@ class GroupData:
             sig = sig.take(idx[ch_idx], sig_ch_idx)
 
         return type(self)(data[np.ix_(*idx)], sig, self._categories)
+
+    def plot_each(self, axis: tuple[int, ...] | int = None, n_cols: int = 10,
+                  n_rows: int = 6, times: tuple[float, float] = None,
+                  size: tuple[int, int] = (16, 12), metric: str = 'zscore'
+                  ) -> list[plt.Figure]:
+        """Plot each channel separately"""
+        if axis is None:
+            axis = tuple(self._categories.index('channel'))
+        elif isinstance(axis, int):
+            axis = (axis,)
+        if times is None:
+            times = (self.array.labels[-1][0], self.array.labels[-1][-1])
+        if 'dtype' in self._categories:
+            arr = self[metric].array.copy()
+        else:
+            arr = self.array.copy()
+
+        while len(axis) > 1:
+            arr = arr.combine(axis[:2])
+            axis = tuple(i - 1 for i in axis[1:])
+
+        per_fig = n_cols * n_rows
+        chans = arr.labels[axis[-1]]
+        numfigs = int(np.ceil(len(chans) / per_fig))
+        figs = []
+        indices = np.linspace(times[0], times[-1], arr.shape[-1])
+        for i in range(numfigs):
+            fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, frameon=False,
+                                    figsize=size)
+            for j, ch in enumerate(chans[i * per_fig:(i + 1) * per_fig]):
+                ax = axs.flatten()[j]
+                idx = tuple(slice(None) if k != axis[-1]
+                            else ch for k in range(arr.ndim))
+                plot_dist(arr[idx].__array__(), ax=ax, times=times)
+                bvect = vect2ind(self.signif[ch].__array__())
+                loc = [(indices[b[0]], indices[b[1]]) for b in bvect]
+                ax.broken_barh(loc, (-0.3, 0.3), color='black')
+                ax.set_title(ch)
+            ymax = max(ax.get_ylim()[1] for ax in axs.flatten())
+            ymin = min(ax.get_ylim()[0] for ax in axs.flatten())
+            for ax in axs.flatten():
+                ax.set_ylim(ymin, ymax)
+
+            if i == numfigs - 1:
+                while j + 1 < n_cols * n_rows:
+                    j += 1
+                    ax = axs.flatten()[j]
+                    ax.axis("off")
+
+            fig.tight_layout()
+            figs.append(fig)
+        return figs
 
     def filter(self, item: str):
         """Filter data by key
@@ -388,6 +443,25 @@ class GroupData:
         return type(self)(self._root, self.task, self.units, conds, **out,
                           _subjects=self.subjects, _names=self._names)
 
+
+def vect2ind(bvect):
+    # Find the indices where the binary vector changes
+    change_indices = np.where(np.diff(bvect) != 0)[0] + 1
+
+    # If the binary vector starts with a non-zero value, add 0 at the beginning
+    if bvect[0] != 0:
+        change_indices = np.insert(change_indices, 0, 0)
+
+    # If the binary vector ends with a non-zero value, add the length of the vector at the end
+    if bvect[-1] != 0:
+        change_indices = np.append(change_indices, len(bvect))
+
+    # Reshape the array into a list of tuples
+    tuple_list = [(start, end) for start, end in
+                  zip(change_indices[::2], change_indices[1::2])]
+    return tuple_list
+
+
 def convert_matrix(matrix):
     max_val = max(matrix) + 1
     result = [[int(i == j) for j in range(max_val)] for i in matrix]
@@ -403,8 +477,7 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 if __name__ == "__main__":
     from ieeg.calc.reshape import stitch_mats
-    import matplotlib.pyplot as plt
-    from analysis.utils.plotting import plot_clustering, plot_dist
+    from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
                                            folder='stats_old')
@@ -420,35 +493,40 @@ if __name__ == "__main__":
     zscore = sub['zscore']
     sig = sub.signif
 
-    ##
-    cond = 'aud_ls'
-    # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
-    # arr = sub.signif[cond].__array__()
-    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
-    for subj in list(sub.subjects)[:10]:
-        SUB = [s for s in sub.sig_chans if subj in sub.keys['channel'][s]]
-        plot_dist(arr[SUB], times=conds[cond], label=subj)
-    plt.legend()
-    ##
-    cond = 'resp'
-    # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
-    # arr = sub.signif[cond].__array__()
-    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
-    plt.figure()
-    plot_dist(arr[sub.AUD], times=conds[cond], label='AUD',
-              color='green')
-    plot_dist(arr[sub.SM], times=conds[cond], label='SM',
-              color='red')
-    plot_dist(arr[sub.PROD], times=conds[cond], label='PROD',
-              color='blue')
-    plt.legend()
-    plt.xlabel("Time(s)")
-    plt.ylabel("Z-Score (V)")
-    plt.title('Response')
-    plt.ylim(-0.1, 0.9)
-    plt.savefig(cond+'.svg', dpi=300)
+    # ##
+    # cond = 'aud_ls'
+    # # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
+    # # arr = sub.signif[cond].__array__()
+    # arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
+    # for subj in list(sub.subjects)[:10]:
+    #     SUB = [s for s in sub.sig_chans if subj in sub.keys['channel'][s]]
+    #     plot_dist(arr[SUB], times=conds[cond], label=subj)
+    # plt.legend()
+    # ##
+    # cond = 'resp'
+    # # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
+    # # arr = sub.signif[cond].__array__()
+    # arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
+    # plt.figure()
+    # plot_dist(arr[sub.AUD], times=conds[cond], label='AUD',
+    #           color='green')
+    # plot_dist(arr[sub.SM], times=conds[cond], label='SM',
+    #           color='red')
+    # plot_dist(arr[sub.PROD], times=conds[cond], label='PROD',
+    #           color='blue')
+    # plt.legend()
+    # plt.xlabel("Time(s)")
+    # plt.ylabel("Z-Score (V)")
+    # plt.title('Response')
+    # plt.ylim(-0.1, 0.9)
+    # plt.savefig(cond+'.svg', dpi=300)
+    #
+    # ##
+    # fig = sub.plot_groups_on_average([sub.SM], hemi='lh', size=.5)
+    # fig.save_image('SM.eps')
 
-    ##
-    fig = sub.plot_groups_on_average([sub.SM], hemi='lh', size=.5)
-    fig.save_image('SM.eps')
+    # %% Plot all channels
+    x = sub[:, "aud_ls", :, sub.AUD].combine(('stim', 'trial'))
+    x.smotify_trials()
+    x.plot_each(0, times=(-0.5, 1.5))
 
