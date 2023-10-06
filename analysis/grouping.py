@@ -162,7 +162,7 @@ class GroupData:
                 self.array[idxi] = self.array[nn[0]] + diff * narr
 
     def nan_common_denom(self, sort: bool = True, min_trials: int = 0,
-                         verbose: bool = False):
+                         crop_trials: bool = True, verbose: bool = False):
         """Remove trials with NaNs from all channels"""
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
@@ -175,8 +175,8 @@ class GroupData:
             old_shape = list(order.shape)
             new_shape = [1 if ch_idx != i != trials_idx else old_shape.pop(0)
                          for i in range(len(self._categories))]
-            order = np.reshape(order.__array__(), new_shape)
-            data = np.take_along_axis(self.array.__array__(), order, axis=trials_idx)
+            order = np.reshape(order, new_shape)
+            data = np.take_along_axis(self.array, order, axis=trials_idx)
             data = LabeledArray(data, self.array.labels.copy())
         else:
             data = self.array
@@ -195,8 +195,8 @@ class GroupData:
                 print(f"Channels excluded (too few trials): {ch}")
 
         # data = data.take(np.arange(ntrials), trials_idx)
-        idx = [np.arange(s) if i != trials_idx else np.arange(ntrials)
-               for i, s in enumerate(self.shape)]
+        idx = [np.arange(ntrials) if i == trials_idx and crop_trials
+               else np.arange(s) for i, s in enumerate(self.shape)]
         idx[ch_idx] = np.where([ch_tnum >= ntrials])[1]
 
         sig = getattr(self, '_significance', None)
