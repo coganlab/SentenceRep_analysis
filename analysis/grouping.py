@@ -132,6 +132,8 @@ class GroupData:
             sig_keys = []
             for i, key in enumerate(item):
                 if np.any([np.array_equal(self.array.labels[i], l) for l in sig.labels]):
+                    if isinstance(key, list):
+                        key = tuple(key)
                     sig_keys.append(key)
             if sig_keys:
                 sig = sig[tuple(sig_keys)]
