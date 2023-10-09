@@ -178,7 +178,7 @@ class GroupData:
             new_shape = [1 if ch_idx != i != trials_idx else old_shape.pop(0)
                          for i in range(len(self._categories))]
             order = np.reshape(order, new_shape)
-            data = np.take_along_axis(self.array, order, axis=trials_idx)
+            data = np.take_along_axis(self.array.__array__(), order, axis=trials_idx)
             data = LabeledArray(data, self.array.labels.copy())
         else:
             data = self.array

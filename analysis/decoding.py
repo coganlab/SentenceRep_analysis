@@ -18,22 +18,25 @@ from tqdm import tqdm
 
 class Decoder(PcaLdaClassification):
 
-    def __init__(self, *args, cv=RepeatedStratifiedKFold, **kwargs):
+    def __init__(self, *args, cv=RepeatedStratifiedKFold,
+                 categories: dict = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+                 **kwargs):
         super().__init__(*args, **kwargs)
         self.cv = cv
+        self.categories = categories
 
-    def cv_cm(self, x_data: np.ndarray, labels: np.ndarray, kfolds: int = 5,
+    def cv_cm(self, x_data: LabeledArray, kfolds: int = 5,
               repeats: int = 10, normalize: str = 'true', verbose: bool = True):
-        cv = self.cv(n_splits=kfolds, n_repeats=repeats)
         rep = 0
         n_cats = len(set(labels))
         mats = np.zeros((repeats, kfolds, n_cats, n_cats))
-        for f, (train_idx, test_idx) in enumerate(cv.split(x_data, labels)):
+        for f, (x_train, x_test, y_train, y_test) in enumerate(
+                self.splits(x_data, kfolds, 1)):
             fold = f + 1 - rep * kfolds
             print("Fold {} of {}".format(fold, kfolds))
-            self.fit(x_data[train_idx], labels[train_idx])
-            pred = self.predict(x_data[test_idx])
-            mats[rep, fold-1] = confusion_matrix(labels[test_idx], pred)
+            self.fit(x_train, y_train)
+            pred = self.predict(x_test)
+            mats[rep, fold-1] = confusion_matrix(y_test, pred)
             if f - rep * kfolds == kfolds - 1:
                 rep += 1
         mats = np.mean(np.sum(mats, axis=1), axis=0)
@@ -46,7 +49,7 @@ class Decoder(PcaLdaClassification):
         else:
             return mats
 
-    def sliding_window(self, x_data: np.ndarray, labels: np.ndarray,
+    def sliding_window(self, x_data: np.ndarray,
                        window_size: int = 20, axis: int = -1,
                        kfolds: int = 5, repeats: int = 10,
                        normalize: str = 'true') -> np.ndarray:
@@ -75,11 +78,18 @@ class Decoder(PcaLdaClassification):
                                      False)
             f_data = np.take(x_data.__array__(), f_idx, obs_axs)
 
-        data = [np.take(x_data, f_idx[..., j], obs_axs) for j in range(folds)]
         for j in range(folds):
-            X_test = data[j]
-            X_train = np.concatenate(data[:j] + data[j+1:], axis=obs_axs)
-            yield X_train, X_test, y_train, y_test
+            not_j = [i for i in range(folds) if i != j]
+            X_test = np.take(x_data, f_idx[..., j], obs_axs).combine((0, 1))
+            X_train = np.take(x_data, f_idx[..., not_j], obs_axs).combine((1, 2))
+            if smote:
+                X_train = do_smote(X_test)
+            X_train = X_train.combine((0, 1))
+            y_test = np.array(
+                [self.categories[k.split('-')[0]] for k in X_test.labels[0]])
+            y_train = np.array(
+                [self.categories[k.split('-')[0]] for k in X_train.labels[0]])
+            yield X_train.__array__(), X_test.__array__(), y_train, y_test
 
 
 
@@ -150,35 +160,24 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 # %% Time Sliding decoding
 
 conds = ['aud_ls', 'aud_lm','aud_jl']
-# idx = sub.SM
-idxs = [sub.PROD, sub.AUD, sub.SM]
+# idx = sub.AUD
+idxs = [sub.AUD, sub.SM, sub.PROD]
 colors = ['b', 'g', 'r']
-scores = {'Production': None, 'Auditory': None, 'Sensory-Motor': None}
+scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
 for i, idx in enumerate(idxs):
-    reduced = sub[:, conds, :, idx, :]
+    reduced = sub[:, conds][:, :, :, idx]
     reduced.array = reduced.array.dropna()
-    reduced = reduced.nan_common_denom(True, 10, False)
+    reduced = reduced.nan_common_denom(True, 7, False)
     # reduced.smotify_trials()
     comb = reduced.combine(('epoch', 'trial'))['power']
     x_data = (comb.array.dropna()
               # * W[:, 1, None, None]
               ).swapaxes(1, 2)
-    folds = 5
-    obs_axs = 1
-    non_trial_dims = tuple(i for i in range(x_data.ndim + 1) if i != obs_axs)
-
-    f_idx = np.random.choice(np.arange(x_data.shape[obs_axs]),
-                             (x_data.shape[obs_axs] // folds, folds),
-                             False)
-    f_data = np.take(x_data, f_idx, obs_axs)
-    cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
-    # cats = {'go_ls': 1, 'go_lm': 2, 'go_jl': 3}
-    labels = np.array([cats[k.split('-')[0]] for k in x_data.labels[0]])
 
     # Decoding
     kfolds = 5
     repeats = 4
-    mats = Decoder().sliding_window(x_data.__array__(), labels, 20, -1, kfolds,
+    mats = Decoder().sliding_window(x_data, 20, -1, kfolds,
                                     repeats, None)
     score = mats.T[np.eye(4).astype(bool)].T / np.sum(mats, axis=1)
     scores[list(scores.keys())[i]] = score.copy()
