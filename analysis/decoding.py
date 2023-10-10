@@ -26,13 +26,14 @@ class Decoder(PcaLdaClassification):
         self.categories = categories
 
     def cv_cm(self, x_data: LabeledArray, kfolds: int = 5,
-              repeats: int = 10, normalize: str = 'true', verbose: bool = True):
+              repeats: int = 10, smote: bool = True, normalize: str = 'true',
+              verbose: bool = True):
         rep = 0
         n_cats = len(self.categories)
         mats = np.zeros((repeats, kfolds, n_cats, n_cats))
         data = x_data.combine((x_data.ndim - 2, x_data.ndim - 1))
         for f, (x_train, x_test, y_train, y_test) in enumerate(
-                self.splits(data, kfolds, 1)):
+                self.splits(data, kfolds, 1, smote)):
             fold = f + 1 - rep * kfolds
             if verbose:
                 print("Fold {} of {}".format(fold, kfolds))
@@ -51,10 +52,10 @@ class Decoder(PcaLdaClassification):
         else:
             return mats
 
-    def sliding_window(self, x_data: LabeledArray,
-                       window_size: int = 20, axis: int = -1,
-                       kfolds: int = 5, repeats: int = 10,
-                       normalize: str = 'true', n_jobs: int = -3) -> np.ndarray:
+    def sliding_window(self, x_data: LabeledArray, window_size: int = 20,
+                       axis: int = -1,kfolds: int = 5, repeats: int = 10,
+                       smote: bool = True, normalize: str = 'true',
+                       n_jobs: int = -3) -> np.ndarray:
 
         # make windowing generator
         axis = x_data.ndim + axis if axis < 0 else axis
@@ -69,8 +70,8 @@ class Decoder(PcaLdaClassification):
 
         # Use joblib to parallelize the computation
         gen = Parallel(n_jobs=n_jobs, return_as='generator', verbose=20)(
-            delayed(self.cv_cm)(x_data[idx], kfolds, repeats, normalize, False)
-            for idx in idxs)
+            delayed(self.cv_cm)(x_data[idx], kfolds, repeats, smote, normalize,
+                                False) for idx in idxs)
         for i, mat in enumerate(gen):
             out[i] = mat
 
@@ -87,24 +88,28 @@ class Decoder(PcaLdaClassification):
         f_idx = np.random.choice(np.arange(x_data.shape[obs_axs]),
                                  (x_data.shape[obs_axs] // folds, folds),
                                  False)
+        idx = list(slice(None) if i != obs_axs else f_idx for i in
+               range(x_data.ndim))
         i = 0
-        while np.sum(np.any(np.isnan(np.take(x_data.__array__(), f_idx, obs_axs)),
+        while np.sum(np.any(np.isnan(x_data.__array__()[tuple(idx)]),
                             axis=non_trial_dims) == False) < 2:
             f_idx = np.random.choice(np.arange(x_data.shape[obs_axs]),
                                      (x_data.shape[obs_axs]//folds, folds),
                                      False)
+            idx[obs_axs] = f_idx
             i += 1
             if i > 100000:
                 raise RecursionError("Could not find a valid split")
 
         for j in range(folds):
+            idx[obs_axs] = f_idx[..., j]
+            X_test = deepcopy(x_data[idx])
             not_j = [i for i in range(folds) if i != j]
-            X_test = deepcopy(np.take(x_data, f_idx[..., j], obs_axs))
-            X_train = deepcopy(np.take(x_data, f_idx[..., not_j],
-                                       obs_axs).combine((1, 2)))
+            idx[obs_axs] = f_idx[..., tuple(not_j)].flatten()
+            X_train = deepcopy(x_data[idx])
             if smote:
-                do_smote(X_test, obs_axs, False)
-                do_smote(X_train, obs_axs, False)
+                do_smote(X_test.__array__(), obs_axs, False)
+                do_smote(X_train.__array__(), obs_axs, False)
             X_test = X_test.combine((0, 1))
             X_train = X_train.combine((0, 1))
             y_test = np.array(
@@ -190,7 +195,7 @@ fig, ax = plt.subplots()
 for i, idx in enumerate(idxs):
     reduced = sub[:, conds][:, :, :, idx]
     reduced.array = reduced.array.dropna()
-    reduced = reduced.nan_common_denom(True, 6, False)
+    reduced = reduced.nan_common_denom(True, 7, False)
     # reduced.smotify_trials()
     comb = reduced.combine(('epoch', 'trial'))['power']
     x_data = (comb.array.dropna()
@@ -198,10 +203,10 @@ for i, idx in enumerate(idxs):
               ).swapaxes(1, 2)
 
     # Decoding
-    kfolds = 4
-    repeats = 10
+    kfolds = 5
+    repeats = 5
     mats = Decoder().sliding_window(x_data, 20, -1, kfolds,
-                                    repeats, None, 6)
+                                    repeats, True, None, 6)
     score = mats.T[np.eye(4).astype(bool)].T / np.sum(mats, axis=2)
     scores[list(scores.keys())[i]] = score.copy()
     plot_dist(scores[list(scores.keys())[i]].T, times=(-0.4, 1.4),
