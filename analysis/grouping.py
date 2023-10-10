@@ -169,7 +169,8 @@ class GroupData:
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
         others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
-        nan_trials = np.any(np.isnan(self.array), axis=tuple(others))
+        isn = np.isnan(self.array)
+        nan_trials = np.any(isn, axis=tuple(others))
 
         # Sort the trials by whether they are nan or not
         if sort:
