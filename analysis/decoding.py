@@ -25,20 +25,31 @@ class Decoder(PcaLdaClassification):
         self.cv = cv
         self.categories = categories
 
-    def cv_cm(self, x_data: LabeledArray, kfolds: int = 5,
+    def cv_cm(self, x_data: np.ndarray, labels: np.ndarray, kfolds: int = 5,
               repeats: int = 10, smote: bool = True, normalize: str = 'true',
               verbose: bool = True):
+        cv = self.cv(n_splits=kfolds, n_repeats=repeats)
         rep = 0
-        n_cats = len(self.categories)
+        n_cats = len(set(labels))
         mats = np.zeros((repeats, kfolds, n_cats, n_cats))
-        data = x_data.combine((x_data.ndim - 2, x_data.ndim - 1))
-        for f, (x_train, x_test, y_train, y_test) in enumerate(
-                self.splits(data, kfolds, 1, smote)):
+        for f, (train_idx, test_idx) in enumerate(cv.split(x_data, labels)):
             fold = f + 1 - rep * kfolds
             if verbose:
                 print("Fold {} of {}".format(fold, kfolds))
-            self.fit(x_train, y_train)
-            pred = self.predict(x_test)
+            x_train = np.take(x_data, train_idx, 0)
+            x_test = np.take(x_data, test_idx, 0)
+            y_train = np.take(labels, train_idx, 0)
+            y_test = np.take(labels, test_idx, 0)
+            if smote:
+                for i in set(labels):
+                    x_train[y_train == i] = do_smote(
+                        x_train[y_train == i].swapaxes(0, 1)
+                    ).swapaxes(0, 1)
+            x_test[np.isnan(x_test)] = np.random.rand(np.sum(
+                np.isnan(x_test))) - 0.5
+
+            self.fit(x_train.reshape(len(train_idx), -1), y_train)
+            pred = self.predict(x_test.reshape(len(test_idx), -1))
             mats[rep, fold-1] = confusion_matrix(y_test, pred)
             if f - rep * kfolds == kfolds - 1:
                 rep += 1
@@ -52,17 +63,17 @@ class Decoder(PcaLdaClassification):
         else:
             return mats
 
-    def sliding_window(self, x_data: LabeledArray, window_size: int = 20,
-                       axis: int = -1,kfolds: int = 5, repeats: int = 10,
-                       smote: bool = True, normalize: str = 'true',
-                       n_jobs: int = -3) -> np.ndarray:
+    def sliding_window(self, x_data: np.ndarray, labels: np.ndarray,
+                       window_size: int = 20, axis: int = -1, kfolds: int = 5,
+                       repeats: int = 10, smote: bool = True,
+                       normalize: str = 'true', n_jobs: int = -3) -> np.ndarray:
 
         # make windowing generator
         axis = x_data.ndim + axis if axis < 0 else axis
         slices = (slice(start, start + window_size)
                   for start in range(0, x_data.shape[axis] - window_size))
-        idxs = ([slice(None) if i != axis else sl for i in range(x_data.ndim)]
-                for sl in slices)
+        idxs = (tuple(slice(None) if i != axis else sl for i in
+                      range(x_data.ndim)) for sl in slices)
 
         # initialize output array
         n_cats = len(self.categories)
@@ -70,8 +81,8 @@ class Decoder(PcaLdaClassification):
 
         # Use joblib to parallelize the computation
         gen = Parallel(n_jobs=n_jobs, return_as='generator', verbose=20)(
-            delayed(self.cv_cm)(x_data[idx], kfolds, repeats, smote, normalize,
-                                False) for idx in idxs)
+            delayed(self.cv_cm)(x_data[idx], labels, kfolds, repeats, smote,
+                                normalize, False) for idx in idxs)
         for i, mat in enumerate(gen):
             out[i] = mat
 
@@ -200,13 +211,17 @@ for i, idx in enumerate(idxs):
     comb = reduced.combine(('epoch', 'trial'))['power']
     x_data = (comb.array.dropna()
               # * W[:, 1, None, None]
-              ).swapaxes(1, 2)
+              ).swapaxes(1, 2).combine((0, 1))
+
+    cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
+    # cats = {'go_ls': 1, 'go_lm': 2, 'go_jl': 3}
+    labels = np.array([cats[k.split('-')[0]] for k in x_data.labels[0]])
 
     # Decoding
     kfolds = 5
     repeats = 5
-    mats = Decoder().sliding_window(x_data, 20, -1, kfolds,
-                                    repeats, True, None, 6)
+    mats = Decoder().sliding_window(x_data.__array__(), labels, 20, -1, kfolds,
+                                    repeats, True, None, 1)
     score = mats.T[np.eye(4).astype(bool)].T / np.sum(mats, axis=2)
     scores[list(scores.keys())[i]] = score.copy()
     plot_dist(scores[list(scores.keys())[i]].T, times=(-0.4, 1.4),
