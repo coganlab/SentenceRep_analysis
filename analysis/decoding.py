@@ -108,8 +108,8 @@ class Decoder(PcaLdaClassification):
             idx[obs_axs] = f_idx[..., tuple(not_j)].flatten()
             X_train = deepcopy(x_data[idx])
             if smote:
-                do_smote(X_test.__array__(), obs_axs, False)
-                do_smote(X_train.__array__(), obs_axs, False)
+                do_smote(X_test.__array__().swapaxes(1, 2), False)
+                do_smote(X_train.__array__().swapaxes(1, 2), False)
             X_test = X_test.combine((0, 1))
             X_train = X_train.combine((0, 1))
             y_test = np.array(
