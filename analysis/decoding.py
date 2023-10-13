@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from analysis.grouping import GroupData
 from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
 from ieeg.viz.utils import plot_dist
-from ieeg.calc.reshape import oversample_nan, smote as do_smote, norm
+from ieeg.calc.reshape import oversample_nan, smote as do_smote, norm, mixup
 from joblib import Parallel, delayed
 
 
@@ -75,7 +75,7 @@ class Decoder(PcaLdaClassification):
                     for i in set(labels):
                         idx[obs_axs] = y_train == i
                         x_train[tuple(idx)] = oversample_nan(
-                            x_train[tuple(idx)], do_smote, False)
+                            x_train[tuple(idx)], mixup, False)
                         # fill in test data nans with noise from distribution
                         # of existing test data
                         # idx[obs_axs] = y_test == i
