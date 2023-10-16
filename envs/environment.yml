@@ -10,7 +10,6 @@ dependencies:
   - scipy
   - numpy
   - pandas
-  - tensorly::tensorly
   - conda-forge::nimfa
   - pip:
     - -r ../IEEG_Pipelines/envs/requirements.txt
