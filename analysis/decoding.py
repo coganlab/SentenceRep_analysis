@@ -5,56 +5,13 @@ import numpy as np
 import os
 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
-from sklearn.model_selection import RepeatedStratifiedKFold
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
 from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
 from ieeg.viz.utils import plot_dist
-from ieeg.calc.reshape import oversample_nan, norm, mixup
+from ieeg.calc.oversample import oversample_nan, norm, mixup, TwoSplitNaN
 from joblib import Parallel, delayed
-
-
-class TwoSplitNaN(RepeatedStratifiedKFold):
-    """A Repeated Stratified KFold iterator that splits the data into sections
-    that do and don't contain NaNs"""
-
-    def __init__(self, n_splits, n_repeats=10, random_state=None):
-        super().__init__(n_splits=n_splits, n_repeats=n_repeats,
-                         random_state=random_state)
-        self.n_splits = n_splits
-
-    def split(self, X, y=None, groups=None):
-
-        # find where the nans are
-        where = np.isnan(X).any(axis=tuple(range(X.ndim))[1:])
-        not_where = np.where(~where)[0]
-        where = np.where(where)[0]
-
-        # split the data
-        nan = X[where, ...]
-        not_nan = X[not_where, ...]
-
-        # split the labels and verify the stratification
-        y_nan = y[where, ...]
-        y_not_nan = y[not_where, ...]
-        for i in set(y_nan):
-            least = np.sum(y_not_nan == i)
-            if np.sum(y_not_nan == i) < self.n_splits:
-                raise ValueError(f"Cannot split data into {self.n_splits} "
-                                 f"folds with at most {least} non nan values")
-
-        # split each section into k folds
-        nan_folds = super().split(nan, y_nan)
-        not_nan_folds = super().split(not_nan, y_not_nan)
-
-        # combine the folds
-        for (nan_train, nan_test), (not_nan_train, not_nan_test) in zip(
-                nan_folds, not_nan_folds):
-
-            train = np.concatenate((where[nan_train], not_where[not_nan_train]))
-            test = np.concatenate((where[nan_test], not_where[not_nan_test]))
-            yield train, test
 
 
 class Decoder(PcaLdaClassification):
@@ -172,7 +129,7 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 
 # %% Time Sliding decoding
 
-conds = ['aud_ls', 'aud_lm', 'aud_jl']
+conds = ['aud_ls']
 # idx = sub.AUD
 idxs = [sub.AUD, sub.SM, sub.PROD]
 colors = ['g', 'r', 'b']
@@ -196,7 +153,7 @@ for i, idx in enumerate(idxs):
     repeats = 5
     decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=True)
     mats = decoder.sliding_window(x_data.__array__(), labels, 20, -1, 1,
-                                  'true', 5)
+                                  'true', 6)
     score = mats.T[np.eye(4).astype(bool)].T
     scores[list(scores.keys())[i]] = score.copy()
     if all(c == 'resp' for c in conds):
@@ -208,5 +165,5 @@ for i, idx in enumerate(idxs):
               color=colors[i], label=list(scores.keys())[i], ax=ax)
 plt.axhline(1/len(set(labels)), color='k', linestyle='--')
 plt.legend()
-plt.title("Combined")
+plt.title("Listen-Speak")
 plt.ylim(0.1, 0.8)
