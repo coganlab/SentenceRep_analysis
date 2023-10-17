@@ -5,8 +5,7 @@ import numpy as np
 import os
 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection._split import _RepeatedSplits
+from sklearn.model_selection import RepeatedStratifiedKFold
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
@@ -16,59 +15,59 @@ from ieeg.calc.reshape import oversample_nan, norm, mixup
 from joblib import Parallel, delayed
 
 
-class AtLeastNDataPoints(StratifiedKFold):
-    """A StratifiedKFold iterator that requires at least N non-nan data points
-    in each stratification of each fold"""
+class TwoSplitNaN(RepeatedStratifiedKFold):
+    """A Repeated Stratified KFold iterator that splits the data into sections
+    that do and don't contain NaNs"""
 
-    def __init__(self, n_splits, minimum_trials=1,
-                 random_state=None, shuffle=True):
-        super().__init__(n_splits=n_splits,
-                         random_state=random_state,
-                         shuffle=shuffle)
-        self.minimum_trials = minimum_trials
+    def __init__(self, n_splits, n_repeats=10, random_state=None):
+        super().__init__(n_splits=n_splits, n_repeats=n_repeats,
+                         random_state=random_state)
+        self.n_splits = n_splits
 
-    def _iter_test_masks(self, X, y=None, groups=None):
-        test_folds = self._make_test_folds(X, y)
-        i = 0
-        while self._check_test_folds(X, y, test_folds) is False:
-            test_folds = self._make_test_folds(X, y)
-            i += 1
-            if i > 10000:
-                raise RecursionError('Could not find a valid split')
-        for i in range(self.n_splits):
-            yield test_folds == i
+    def split(self, X, y=None, groups=None):
 
-    def _check_test_folds(self, X, y, test_folds):
-        for fold in set(test_folds):
-            for i in set(y):
-                idx = np.logical_and(test_folds == fold, y == i)
-                if (np.sum(~np.isnan(X[idx]).any(
-                        axis=tuple(range(X.ndim))[1:])) < self.minimum_trials):
-                    return False
-        return True
+        # find where the nans are
+        where = np.isnan(X).any(axis=tuple(range(X.ndim))[1:])
+        not_where = np.where(~where)[0]
+        where = np.where(where)[0]
 
+        # split the data
+        nan = X[where, ...]
+        not_nan = X[not_where, ...]
 
-class Repeater(_RepeatedSplits):
-    """Implements a class that repeats a cross-validation strategy n times"""
+        # split the labels and verify the stratification
+        y_nan = y[where, ...]
+        y_not_nan = y[not_where, ...]
+        for i in set(y_nan):
+            least = np.sum(y_not_nan == i)
+            if np.sum(y_not_nan == i) < self.n_splits:
+                raise ValueError(f"Cannot split data into {self.n_splits} "
+                                 f"folds with at most {least} non nan values")
 
-    def __init__(self, cv, *, n_splits=5, n_repeats=10, random_state=None):
-        super().__init__(cv,
-                         n_repeats=n_repeats,
-                         random_state=random_state,
-                         n_splits=n_splits)
+        # split each section into k folds
+        nan_folds = super().split(nan, y_nan)
+        not_nan_folds = super().split(not_nan, y_not_nan)
+
+        # combine the folds
+        for (nan_train, nan_test), (not_nan_train, not_nan_test) in zip(
+                nan_folds, not_nan_folds):
+
+            train = np.concatenate((where[nan_train], not_where[not_nan_train]))
+            test = np.concatenate((where[nan_test], not_where[not_nan_test]))
+            yield train, test
 
 
 class Decoder(PcaLdaClassification):
 
     def __init__(self, *args,
-                 cv=AtLeastNDataPoints,
+                 cv=TwoSplitNaN,
                  categories: dict = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                  n_splits: int = 5,
                  n_repeats: int = 10,
                  oversample: bool = True,
                  **kwargs):
         super().__init__(*args, **kwargs)
-        self.cv = Repeater(cv, n_splits=n_splits, n_repeats=n_repeats)
+        self.cv = cv(n_splits=n_splits, n_repeats=n_repeats)
         self.categories = categories
 
         if not oversample:
@@ -173,7 +172,7 @@ sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 
 # %% Time Sliding decoding
 
-conds = ['aud_lm']
+conds = ['aud_ls', 'aud_lm', 'aud_jl']
 # idx = sub.AUD
 idxs = [sub.AUD, sub.SM, sub.PROD]
 colors = ['g', 'r', 'b']
@@ -194,10 +193,10 @@ for i, idx in enumerate(idxs):
 
     # Decoding
     kfolds = 5
-    repeats = 4
+    repeats = 5
     decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=True)
     mats = decoder.sliding_window(x_data.__array__(), labels, 20, -1, 1,
-                                  'true', 6)
+                                  'true', 5)
     score = mats.T[np.eye(4).astype(bool)].T
     scores[list(scores.keys())[i]] = score.copy()
     if all(c == 'resp' for c in conds):
@@ -209,5 +208,5 @@ for i, idx in enumerate(idxs):
               color=colors[i], label=list(scores.keys())[i], ax=ax)
 plt.axhline(1/len(set(labels)), color='k', linestyle='--')
 plt.legend()
-plt.title("Listen-Mime")
+plt.title("Combined")
 plt.ylim(0.1, 0.8)
