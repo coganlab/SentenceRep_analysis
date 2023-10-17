@@ -10,6 +10,7 @@ dependencies:
   - scipy
   - numpy
   - pandas
+  - numba
   - conda-forge::nimfa
   - pip:
     - -r ../IEEG_Pipelines/envs/requirements.txt
