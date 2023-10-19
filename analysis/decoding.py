@@ -30,7 +30,7 @@ class Decoder(PcaLdaClassification):
         if not oversample:
             self.oversample = lambda x: x
         else:
-            self.oversample = lambda x, func: oversample_nan(x, func, False)
+            self.oversample = lambda x, func, ax: oversample_nan(x, func, ax, False)
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = 'true', obs_axs: int = -2):
@@ -41,28 +41,27 @@ class Decoder(PcaLdaClassification):
         idx = [slice(None) for _ in range(x_data.ndim)]
         for f, (train_idx, test_idx) in enumerate(cv.split(x_data.swapaxes(
                 0, obs_axs), labels)):
-            rep = f // kfolds
-            fold = f % kfolds
+            rep, fold = divmod(f, kfolds)
             x_train = np.take(x_data, train_idx, obs_axs)
             x_test = np.take(x_data, test_idx, obs_axs)
-            y_train = np.take(labels, train_idx, 0)
-            y_test = np.take(labels, test_idx, 0)
+            y_train = labels[train_idx]
+            y_test = labels[test_idx]
             for i in set(labels):
                 # fill in train data nans with random combinations of
                 # existing train data trials (mixup)
                 idx[obs_axs] = y_train == i
                 x_train[tuple(idx)] = self.oversample(
-                    x_train[tuple(idx)], mixup)
+                    x_train[tuple(idx)], mixup, obs_axs)
 
                 # fill in test data nans with noise from distribution
                 # of existing test data
-                idx[obs_axs] = y_test == i
-                x_test[tuple(idx)] = self.oversample(
-                    x_test[tuple(idx)], norm)
+                # idx[obs_axs] = y_test == i
+                # x_test[tuple(idx)] = self.oversample(
+                #     x_test[tuple(idx)], norm)
 
-            # x_test[np.isnan(x_test)] = np.random.normal(
-            #     np.nanmean(x_test), np.nanstd(x_test),
-            #     np.sum(np.isnan(x_test)))
+            x_test[np.isnan(x_test)] = np.random.normal(
+                np.nanmean(x_test), np.nanstd(x_test),
+                np.sum(np.isnan(x_test)))
 
             self.fit(flatten_features(x_train, obs_axs), y_train)
             pred = self.predict(flatten_features(x_test, obs_axs))
@@ -125,11 +124,11 @@ def classes_from_labels(labels: np.ndarray, delim: str = '-', which: int = 0,
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
-
+all_scores = {}
 
 # %% Time Sliding decoding
 
-conds = ['aud_ls']
+conds = ['aud_lm']
 # idx = sub.AUD
 idxs = [sub.AUD, sub.SM, sub.PROD]
 colors = ['g', 'r', 'b']
@@ -153,7 +152,7 @@ for i, idx in enumerate(idxs):
     repeats = 5
     decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=True)
     mats = decoder.sliding_window(x_data.__array__(), labels, 20, -1, 1,
-                                  'true', 6)
+                                  'true', 7)
     score = mats.T[np.eye(4).astype(bool)].T
     scores[list(scores.keys())[i]] = score.copy()
     if all(c == 'resp' for c in conds):
@@ -165,5 +164,6 @@ for i, idx in enumerate(idxs):
               color=colors[i], label=list(scores.keys())[i], ax=ax)
 plt.axhline(1/len(set(labels)), color='k', linestyle='--')
 plt.legend()
-plt.title("Listen-Speak")
+plt.title("Listen-Mime")
 plt.ylim(0.1, 0.8)
+all_scores["-".join(conds)] = scores
