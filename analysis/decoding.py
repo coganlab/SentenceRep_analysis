@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from analysis.grouping import GroupData
 from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
 from ieeg.viz.utils import plot_dist
-from ieeg.calc.oversample import oversample_nan, norm, mixup, TwoSplitNaN
+from ieeg.calc.oversample import oversample_nan, normnd as norm, mixupnd as mixup, TwoSplitNaN
 from joblib import Parallel, delayed
 
 
@@ -28,7 +28,7 @@ class Decoder(PcaLdaClassification):
         self.categories = categories
 
         if not oversample:
-            self.oversample = lambda x: x
+            self.oversample = lambda x, *_: x
         else:
             self.oversample = lambda x, func, ax: oversample_nan(x, func, ax, False)
 
@@ -36,12 +36,11 @@ class Decoder(PcaLdaClassification):
               normalize: str = 'true', obs_axs: int = -2):
         cv = self.cv
         n_cats = len(set(labels))
-        mats = np.zeros((repeats, kfolds, n_cats, n_cats))
+        mats = np.zeros((cv.n_repeats, cv.n_splits, n_cats, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
         for f, (train_idx, test_idx) in enumerate(cv.split(x_data.swapaxes(
                 0, obs_axs), labels)):
-            rep, fold = divmod(f, kfolds)
             x_train = np.take(x_data, train_idx, obs_axs)
             x_test = np.take(x_data, test_idx, obs_axs)
             y_train = labels[train_idx]
@@ -55,16 +54,16 @@ class Decoder(PcaLdaClassification):
 
                 # fill in test data nans with noise from distribution
                 # of existing test data
-                # idx[obs_axs] = y_test == i
-                # x_test[tuple(idx)] = self.oversample(
-                #     x_test[tuple(idx)], norm)
+                idx[obs_axs] = y_test == i
+                x_test[tuple(idx)] = self.oversample(x_test[tuple(idx)], norm, obs_axs)
 
-            x_test[np.isnan(x_test)] = np.random.normal(
-                np.nanmean(x_test), np.nanstd(x_test),
-                np.sum(np.isnan(x_test)))
+            # x_test[np.isnan(x_test)] = np.random.normal(
+            #     np.nanmean(x_test), np.nanstd(x_test),
+            #     np.sum(np.isnan(x_test)))
 
             self.fit(flatten_features(x_train, obs_axs), y_train)
             pred = self.predict(flatten_features(x_test, obs_axs))
+            rep, fold = divmod(f, cv.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
 
         # average the repetitions, sum the folds
@@ -140,18 +139,18 @@ for i, idx in enumerate(idxs):
     # also sorts the trials by nan or not
     reduced = reduced.nan_common_denom(True, 5, False)
     comb = reduced.combine(('epoch', 'trial'))['zscore']
-    x_data = (comb.array.dropna()).combine((0, 2))
+    X = (comb.array.dropna()).combine((0, 2))
 
-    cats, labels = classes_from_labels(x_data.labels[1], crop=slice(0, 4))
-    _, groups = classes_from_labels(x_data.labels[0], crop=slice(0, 5))
+    cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+    # _, groups = classes_from_labels(x_data.labels[0], crop=slice(0, 5))
 
     # np.random.shuffle(labels)
 
     # Decoding
     kfolds = 5
     repeats = 5
-    decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=True)
-    mats = decoder.sliding_window(x_data.__array__(), labels, 20, -1, 1,
+    decoder = Decoder(n_splits=kfolds, n_repeats=repeats)
+    mats = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
                                   'true', 7)
     score = mats.T[np.eye(4).astype(bool)].T
     scores[list(scores.keys())[i]] = score.copy()
@@ -167,3 +166,11 @@ plt.legend()
 plt.title("Listen-Mime")
 plt.ylim(0.1, 0.8)
 all_scores["-".join(conds)] = scores
+
+# %% plot the electrode groups together
+fig, axs = plt.subplots(1,3)
+# plot different conditions as different shade of the same color within group
+colors = ['g', 'r', 'b']
+for i, ax in enumerate(axs):
+    for cond, elecs in all_scores.items():
+        pass
