@@ -6,6 +6,7 @@ import os
 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 from analysis.grouping import GroupData
 from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
@@ -127,7 +128,7 @@ all_scores = {}
 
 # %% Time Sliding decoding
 
-conds = ['aud_lm']
+conds = ['go_jl']
 # idx = sub.AUD
 idxs = [sub.AUD, sub.SM, sub.PROD]
 colors = ['g', 'r', 'b']
@@ -163,14 +164,22 @@ for i, idx in enumerate(idxs):
               color=colors[i], label=list(scores.keys())[i], ax=ax)
 plt.axhline(1/len(set(labels)), color='k', linestyle='--')
 plt.legend()
-plt.title("Listen-Mime")
+plt.title("Just-Listen")
 plt.ylim(0.1, 0.8)
 all_scores["-".join(conds)] = scores
 
 # %% plot the electrode groups together
-fig, axs = plt.subplots(1,3)
+fig, axs = plt.subplots(1, 3)
 # plot different conditions as different shade of the same color within group
 colors = ['g', 'r', 'b']
 for i, ax in enumerate(axs):
-    for cond, elecs in all_scores.items():
-        pass
+    for j, (cond, elecs) in enumerate(all_scores.items()):
+        color = [0 if k == i else 1 for k in range(3)]
+        color = list(max(min(k-0.33*(j-1), 1), 0) for k in mpl.colors.to_rgb(colors[i]))
+        pl_sc = elecs[list(elecs.keys())[i]]
+        plot_dist(np.reshape(pl_sc, (pl_sc.shape[0], -1)).T,
+                  times=times, color=color, label=cond, ax=ax)
+    ax.axhline(1/len(set(labels)), color='k', linestyle='--')
+    ax.set_title(list(elecs.keys())[i])
+    ax.set_ylim(0.1, 0.8)
+    ax.legend()
