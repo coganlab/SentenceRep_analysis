@@ -34,7 +34,7 @@ class Decoder(PcaLdaClassification):
             self.oversample = lambda x, func, ax: oversample_nan(x, func, ax, False)
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
-              normalize: str = 'true', obs_axs: int = -2):
+              normalize: str = None, obs_axs: int = -2):
         cv = self.cv
         n_cats = len(set(labels))
         mats = np.zeros((cv.n_repeats, cv.n_splits, n_cats, n_cats))
@@ -69,16 +69,16 @@ class Decoder(PcaLdaClassification):
             mats[rep, fold] = confusion_matrix(y_test, pred)
 
         # average the repetitions, sum the folds
-        mats = np.sum(mats, axis=1)
+        matk = np.sum(mats, axis=1)
         if normalize == 'true':
-            return (mats.swapaxes(-2, -1) / np.sum(mats, axis=2, keepdims=True
-                                                   )).swapaxes(-2, -1)
+            divisor = np.sum(matk, axis=-1, keepdims=True)
         elif normalize == 'pred':
-            return mats / np.sum(mats, axis=1, keepdims=True)
+            divisor = np.sum(matk, axis=-2, keepdims=True)
         elif normalize == 'all':
-            return mats / np.sum(mats)
+            divisor = cv.n_repeats #np.sum(matk, keepdims=True)
         else:
-            return mats
+            divisor = 1
+        return matk / divisor
 
     def sliding_window(self, x_data: np.ndarray, labels: np.ndarray,
                        window_size: int = 20, axis: int = -1,
@@ -132,7 +132,6 @@ def extract(sub: GroupData, conds: list[str], idx: list[int], common: int = 5,
     return (comb.array.dropna()).combine((0, 2))
 
 # %% Imports
-
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
 all_scores = {}
@@ -140,16 +139,19 @@ all_data = []
 
 # %% Time Sliding decoding
 
-conds = ['aud_ls', 'aud_lm', 'aud_jl']
+conds = ['go_ls', 'go_lm', 'go_jl']
 # idx = sub.AUD
 colors = ['g', 'r', 'b']
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
 names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
+fig2, axs2 = plt.subplots(1, len(conds))
 if len(conds) == 1:
     axs = [axs]
-for i, idx in enumerate([sub.AUD, sub.SM, sub.PROD]):
-    x_data = extract(sub, conds, idx, 9, 'zscore', True)
+    axs2 = [axs2]
+for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
+    x_data = extract(sub, conds, idx, 12, 'zscore', True)
+    ax2.set_title(names[i])
     for cond, ax in zip(conds, axs):
         X = x_data[:, cond]
         all_data.append(X)
@@ -160,19 +162,20 @@ for i, idx in enumerate([sub.AUD, sub.SM, sub.PROD]):
 
         # Decoding
         kfolds = 5
-        repeats = 20
+        repeats = 15
         decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=False)
         mats = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
                                       'true', 7)
-        score = mats.T[np.eye(4).astype(bool)].T
+        score = mats.T[np.eye(4).astype(bool)].T # [acc_idx] / np.sum(mats, axis=-1)
         scores[names[i]] = score.copy()
         if cond == 'resp':
             times = (-0.9, 0.9)
         else:
             times = (-0.4, 1.4)
-        pl_sc = scores[names[i]]
-        plot_dist(np.reshape(pl_sc, (pl_sc.shape[0], -1)).T, times=times,
+        pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
+        plot_dist(pl_sc, times=times,
                   color=colors[i], label=list(scores.keys())[i], ax=ax)
+        plot_dist(pl_sc, times=times, label=cond, ax=ax2, mode='std')
         all_scores["-".join([names[i], cond])] = score.copy()
 
         if i == 2:
@@ -180,20 +183,24 @@ for i, idx in enumerate([sub.AUD, sub.SM, sub.PROD]):
             ax.legend()
             ax.set_title(cond)
             ax.set_ylim(0.1, 0.8)
+    if i == 0:
+        ax2.legend()
+    ax2.set_ylim(0.1, 0.8)
+    ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
 
 # %% plot the electrode groups together
-fig, axs = plt.subplots(1, 3)
-# plot different conditions as different shade of the same color within group
-colors = ['g', 'r', 'b']
-colormap = {'r': [1, 0, 0], 'g': [0, 1, 0], 'b': [0, 0, 1]}
-for i, (ax, name) in enumerate(zip(axs, names)):
-    iterator = ((c, e) for c, e in all_scores.items() if c.startswith(name))
-    for j, (cond, elecs) in enumerate(iterator):
-        color = list(max(min(k-0.5*(1-j) - 0.25, 1), 0) for k in colormap[colors[i]])
-        pl_sc = elecs[name]
-        plot_dist(np.reshape(pl_sc, (pl_sc.shape[0], -1)).T,
-                  times=times, color=color, label=cond, ax=ax)
-    ax.axhline(1/len(set(labels)), color='k', linestyle='--')
-    ax.set_title(list(elecs.keys())[i])
-    ax.set_ylim(0.1, 0.8)
-    ax.legend()
+# fig, axs = plt.subplots(1, 3)
+# # plot different conditions as different shade of the same color within group
+# colors = ['g', 'r', 'b']
+# colormap = {'r': [1, 0, 0], 'g': [0, 1, 0], 'b': [0, 0, 1]}
+# for i, (ax, name) in enumerate(zip(axs, names)):
+#     iterator = ((c, e) for c, e in all_scores.items() if c.startswith(name))
+#     for j, (cond, elecs) in enumerate(iterator):
+#         color = list(max(min(k-0.5*(1-j) - 0.25, 1), 0) for k in colormap[colors[i]])
+#         pl_sc = elecs[name]
+#         plot_dist(np.reshape(pl_sc, (pl_sc.shape[0], -1)).T,
+#                   times=times, color=color, label=cond, ax=ax)
+#     ax.axhline(1/len(set(labels)), color='k', linestyle='--')
+#     ax.set_title(list(elecs.keys())[i])
+#     ax.set_ylim(0.1, 0.8)
+#     ax.legend()

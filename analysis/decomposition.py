@@ -1,16 +1,21 @@
+##
 import os
 import numpy as np
+from collections.abc import Sequence
 import matplotlib
 
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_weight_dist, plot_dist, boxplot_2d
-import nimfa
 import sklearn.decomposition as skd
-from sklearn.metrics import pairwise_distances
 import sys
 from scipy.sparse import csr_matrix, issparse
+# from numba import njit
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+from joblib import Parallel, delayed, Memory
 
 sys._excepthook = sys.excepthook
 def exception_hook(exctype, value, traceback):
@@ -44,9 +49,8 @@ def _check_array(arr: np.ndarray | csr_matrix) -> np.ndarray:
     else:
         raise ValueError("Input must be a numpy array or sparse matrix")
 
-def calinski_halbaraz(X_in: np.ndarray | csr_matrix,
-                      W_in: np.ndarray | csr_matrix, n_clusters: int = None
-                      ) -> float:
+
+def calinski_harabasz(X: np.ndarray, W: np.ndarray):
     """
     Here, X is the original data matrix, W and H are the non-negative factor
     matrices from the ONMF decomposition. The function first computes the
@@ -61,37 +65,60 @@ def calinski_halbaraz(X_in: np.ndarray | csr_matrix,
     squared distances between each data point and its assigned cluster
     centroid, weighted by the assignment weights in W.
     """
-
-    X = _check_array(X_in)
-    W = _check_array(W_in)
-
-    if n_clusters is None:
-        n_clusters = W.shape[1]
-    n_samples = X.shape[0]
-
-    # Compute the centroid of each cluster
-    centroids = np.zeros((n_clusters, X.shape[1]))
-    for i in range(n_clusters):
-        centroids[i] = np.mean(X[W[:, i] > 0], axis=0)
-
-    # Compute the between-cluster sum of squares
-    BSS = np.sum(np.sum(W[:, i, np.newaxis] * pairwise_distances(
-        centroids[i, np.newaxis, :], np.mean(X, axis=0, keepdims=True))**2)
-                 for i in range(n_clusters))
-
-    # Compute the within-cluster sum of squares
-    WSS = np.sum(np.sum(W[:, i, np.newaxis] * pairwise_distances(
-        X, centroids[i, np.newaxis, :])**2) for i in range(n_clusters))
-
-    # Compute the CH index
-    ch = (BSS / (n_clusters - 1)) / (WSS / (n_samples - n_clusters))
-
-    return ch
+    labels = np.argmax(W, axis=1)
+    return calinski_harabasz_score(X, labels)
 
 
-def mat_err(W: np.ndarray, H: np.ndarray, orig: np.ndarray) -> float:
-    error = np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
-    return error
+def davies_bouldin(X: np.ndarray, W: np.ndarray):
+    labels = np.argmax(W, axis=1)
+    return davies_bouldin_score(X, labels)
+
+
+# @njit("f8(f8[:,::1], f8[:,::1], f8[:,::1])", nogil=True)
+def explained_variance(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
+    return 1 - np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
+
+
+def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
+          metric: callable = explained_variance, n_jobs: int = -3
+          ) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
+    """Estimate the number of components to use for NMF
+
+    Parameters
+    ----------
+    X : np.ndarray
+        The data to fit
+    k_test : tuple[int], optional
+        The range of k values to test, by default tuple(range(1, 10))
+    metric : callable, optional
+        The metric to use for estimation, by default explained_variance
+    **options
+        Additional options to pass to the estimator model
+
+    Returns
+    -------
+    matplotlib.pyplot.Figure
+        The figure containing the plot
+    """
+
+    def _repeated_estim(k: int, reps: int = 10, estimator=estimator
+                        ) -> np.ndarray[float]:
+        est = np.zeros(reps)
+        for i in range(reps):
+            Y = estimator.set_params(n_components=k).fit_transform(X)
+            est[i] = metric(X, Y, estimator.components_)
+        return est
+
+    reps = 10
+    par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
+        delayed(_repeated_estim)(k, reps) for k in k_test)
+    est = np.zeros((reps, len(k_test)))
+    for i, o in enumerate(par_gen):
+        est[:, i] = o[...]
+
+    ax = plot_dist(est, mode='std', times=(k_test[0], k_test[-1]))
+
+    return ax, est
 
 
 if __name__ == "__main__":
@@ -116,36 +143,54 @@ if __name__ == "__main__":
                           sub.signif['resp', :]])
     zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     powers = np.nanmean(sub['power'].array, axis=(-4, -2))
-    train = zscores
     sig = sub.signif
 
-    train = np.hstack([train['aud_ls', :, aud_slice],
-                       train['aud_lm', :, aud_slice],
-                       train['go_ls'], train['resp']])
-    combined = train * stitched - np.min(train * stitched)
-    raw = train - np.min(train)
-    sparse_matrix = csr_matrix((combined[stitched == 1], stitched.nonzero()))
+    trainz = np.hstack([zscores['aud_ls', :, aud_slice],
+                       zscores['aud_lm', :, aud_slice],
+                       zscores['go_ls'], zscores['resp']])
+    trainp = np.hstack([powers['aud_ls', :, aud_slice],
+                       powers['aud_lm', :, aud_slice],
+                       powers['go_ls'], powers['resp']])
+    combinedz = trainz * stitched - np.min(trainz * stitched)
+    combinedp = trainp * stitched - np.min(trainp * stitched)
+    combined = np.hstack([combinedz, combinedp])
+    # raw = train - np.min(train)
+    sparse_matrix = csr_matrix((combined[np.repeat(stitched,2, 1) == 1], np.repeat(stitched,2, 1).nonzero()))
 
     ## try clustering
-    options = dict(init="random", n_components=4, max_iter=10000, solver='mu',
-                   beta_loss='kullback-leibler',
-                   tol=1e-7, verbose=1)
-    W, H, n = skd.non_negative_factorization(sparse_matrix[sub.SM], **options)
+
+    options = dict(init="nndsvda", max_iter=10000, solver='mu',
+                   # beta_loss='kullback-leibler',
+                   tol=1e-8)
+    pipe = Pipeline([
+        # ('noise removal', skd.PCA(0.99)),
+        ('scale', MinMaxScaler((0, 1)))])
+    met_func = lambda X, W, H: calinski_harabasz(X, W)
+    for idx in [sub.AUD, sub.SM, sub.PROD]:
+        ax, data = get_k(stitched[idx] * combinedp[idx],
+                         skd.NMF(**options),
+                         range(2, 10),
+                         met_func,
+                         n_jobs=6)
+
+    ##
+    W, H, n = skd.non_negative_factorization(stitched[sub.SM], n_components=4,
+                                             **options)
     # W *= np.mean(zscores) / np.mean(powers) / 1000
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
     ##
-    metric = zscores
-    labeled = [['Instructional', 'c',1],
+    metric = powers
+    labeled = [['Instructional', 'c',2],
                ['Motor', 'm', 3],
-               ['Feedback', 'k', 2],
-               ['Working Memory', 'orange', 0]]
+               ['Feedback', 'k', 0],
+               ['Working Memory', 'orange', 1]]
     pred = np.argmax(W, axis=1)
     groups = [[sub.SM[i] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
     colors, labels = zip(*((c[1], c[0]) for c in sorted(labeled, key=lambda x: x[2])))
     for i, g in enumerate(groups):
         labeled[i][2] = groups[labeled[i][2]]
-    cond = 'aud_ls'
+    cond = 'go_ls'
     if cond.startswith("aud"):
         title = "Stimulus Onset"
         times = slice(None)
@@ -166,7 +211,7 @@ if __name__ == "__main__":
     fig, ax = plot_weight_dist(plot, pred, times=conds[cond], colors=colors, sig_titles=labels)
     plt.xticks(ticks)
     plt.rcParams.update({'font.size': 14})
-    plt.ylim(0, 1.5)
+    # plt.ylim(0, 1.5)
     # sort by order
     labeled = sorted(labeled, key=lambda x: np.median(np.argmax(metric[cond, x[2]].__array__(), axis=1)))
     ylim = ax.get_ylim()
@@ -205,7 +250,7 @@ if __name__ == "__main__":
     groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
                 for j in range(W.shape[1])]
     fig = sub.plot_groups_on_average(groups, colors, hemi='lh',
-                                     # rm_wm=False,
+                                     rm_wm=False,
                                      size=0.4)
     fig.save_image('SM_decomp.eps')
 
