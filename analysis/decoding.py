@@ -23,10 +23,12 @@ class Decoder(PcaLdaClassification):
                  n_splits: int = 5,
                  n_repeats: int = 10,
                  oversample: bool = True,
+                 max_features: int = float("inf"),
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.cv = cv(n_splits=n_splits, n_repeats=n_repeats)
         self.categories = categories
+        self.max_features = max_features
 
         if not oversample:
             self.oversample = lambda x, func, ax: x
@@ -62,9 +64,15 @@ class Decoder(PcaLdaClassification):
             # x_test[np.isnan(x_test)] = np.random.normal(
             #     np.nanmean(x_test), np.nanstd(x_test),
             #     np.sum(np.isnan(x_test)))
-
-            self.fit(flatten_features(x_train, obs_axs), y_train)
-            pred = self.predict(flatten_features(x_test, obs_axs))
+            train_in = flatten_features(x_train, obs_axs)
+            if train_in.shape[1] > self.max_features:
+                tidx = np.random.choice(train_in.shape[1], self.max_features,
+                                       replace=False)
+                train_in = train_in[:, tidx]
+            else:
+                tidx = slice(None)
+            self.fit(train_in, y_train)
+            pred = self.predict(flatten_features(x_test, obs_axs)[:, tidx])
             rep, fold = divmod(f, cv.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
 
@@ -94,7 +102,7 @@ class Decoder(PcaLdaClassification):
 
         # initialize output array
         n_cats = len(self.categories)
-        out = np.zeros((x_data.shape[axis] - window_size, repeats, n_cats, n_cats))
+        out = np.zeros((x_data.shape[axis] - window_size, self.cv.n_repeats, n_cats, n_cats))
 
         # Use joblib to parallelize the computation
         gen = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
@@ -131,9 +139,13 @@ def extract(sub: GroupData, conds: list[str], idx: list[int], common: int = 5,
     comb = reduced.combine(('epoch', 'trial'))[datatype]
     return (comb.array.dropna()).combine((0, 2))
 
+def scale(X, xmax: float, xmin: float):
+    return (X - xmin) / (xmax - xmin)
+
 # %% Imports
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
+sub['power'].array = scale(sub['power'].array, np.max(sub['zscore'].array), np.min(sub['zscore'].array))
 all_scores = {}
 all_data = []
 
@@ -146,26 +158,23 @@ scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
 names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
 fig2, axs2 = plt.subplots(1, len(conds))
+decoder = Decoder(0.7, n_splits=5, n_repeats=7, oversample=True, max_features=120*20)
 if len(conds) == 1:
     axs = [axs]
-    axs2 = [axs2]
+    axs2 = [axs2, axs2, axs2]
 for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
-    x_data = extract(sub, conds, idx, 12, 'zscore', True)
+    x_data = extract(sub, conds, idx, 5, 'zscore', False)
     ax2.set_title(names[i])
     for cond, ax in zip(conds, axs):
         X = x_data[:, cond]
         all_data.append(X)
 
         cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
-
         # np.random.shuffle(labels)
 
         # Decoding
-        kfolds = 5
-        repeats = 15
-        decoder = Decoder(n_splits=kfolds, n_repeats=repeats, oversample=False)
         mats = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
-                                      'true', 7)
+                                      'true', 6)
         score = mats.T[np.eye(4).astype(bool)].T # [acc_idx] / np.sum(mats, axis=-1)
         scores[names[i]] = score.copy()
         if cond == 'resp':
@@ -175,10 +184,10 @@ for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
         pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
         plot_dist(pl_sc, times=times,
                   color=colors[i], label=list(scores.keys())[i], ax=ax)
-        plot_dist(pl_sc, times=times, label=cond, ax=ax2, mode='std')
+        plot_dist(pl_sc, times=times, label=cond, ax=ax2)
         all_scores["-".join([names[i], cond])] = score.copy()
 
-        if i == 2:
+        if i == len(conds) - 1:
             ax.axhline(1/len(set(labels)), color='k', linestyle='--')
             ax.legend()
             ax.set_title(cond)
