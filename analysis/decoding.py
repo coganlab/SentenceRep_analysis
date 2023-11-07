@@ -8,7 +8,7 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, roc_auc_sc
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
-from IEEG_Pipelines.decoding.Neural_Decoding.decoders import PcaLdaClassification
+from ieeg.decoding import PcaLdaClassification
 from ieeg.calc.mat import LabeledArray
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.oversample import oversample_nan, normnd as norm, mixupnd as mixup, TwoSplitNaN
