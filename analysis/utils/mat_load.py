@@ -159,12 +159,13 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
         audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
         mime_is = np.any(all_sig['go_lm', idx] == 1)
         speak_is = np.any(all_sig['go_ls', idx] == 1)
+        resp_is = np.any(all_sig['resp', idx] == 1)
 
         if audls_is and audlm_is and mime_is and speak_is:
             SM.append(i)
         elif audls_is and audlm_is and audjl_is:
             AUD.append(i)
-        elif mime_is and speak_is:
+        elif mime_is and speak_is and resp_is:
             PROD.append(i)
     return AUD, SM, PROD, sig_chans
 

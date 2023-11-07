@@ -4,7 +4,7 @@
 import numpy as np
 import os
 
-from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, roc_auc_score
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
@@ -40,6 +40,7 @@ class Decoder(PcaLdaClassification):
         cv = self.cv
         n_cats = len(set(labels))
         mats = np.zeros((cv.n_repeats, cv.n_splits, n_cats, n_cats))
+        auc = np.zeros((cv.n_repeats, cv.n_splits, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
         for f, (train_idx, test_idx) in enumerate(cv.split(x_data.swapaxes(
@@ -65,19 +66,26 @@ class Decoder(PcaLdaClassification):
             #     np.nanmean(x_test), np.nanstd(x_test),
             #     np.sum(np.isnan(x_test)))
             train_in = flatten_features(x_train, obs_axs)
+            test_in = flatten_features(x_test, obs_axs)
             if train_in.shape[1] > self.max_features:
                 tidx = np.random.choice(train_in.shape[1], self.max_features,
                                        replace=False)
                 train_in = train_in[:, tidx]
+                test_in = test_in[:, tidx]
             else:
                 tidx = slice(None)
             self.fit(train_in, y_train)
-            pred = self.predict(flatten_features(x_test, obs_axs)[:, tidx])
+            pred = self.predict(test_in)
             rep, fold = divmod(f, cv.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
+            bin_y_test = np.array([y_test == i for i in range(n_cats)]).T
+            auc[rep, fold] = roc_auc_score(
+                bin_y_test, self.model.decision_function(test_in),
+                multi_class='ovr', average=None)
 
         # average the repetitions, sum the folds
         matk = np.sum(mats, axis=1)
+        auck = np.mean(auc, axis=1)
         if normalize == 'true':
             divisor = np.sum(matk, axis=-1, keepdims=True)
         elif normalize == 'pred':
@@ -86,7 +94,7 @@ class Decoder(PcaLdaClassification):
             divisor = cv.n_repeats #np.sum(matk, keepdims=True)
         else:
             divisor = 1
-        return matk / divisor
+        return matk / divisor, auck
 
     def sliding_window(self, x_data: np.ndarray, labels: np.ndarray,
                        window_size: int = 20, axis: int = -1,
@@ -103,15 +111,16 @@ class Decoder(PcaLdaClassification):
         # initialize output array
         n_cats = len(self.categories)
         out = np.zeros((x_data.shape[axis] - window_size, self.cv.n_repeats, n_cats, n_cats))
+        out_auc = np.zeros((x_data.shape[axis] - window_size, self.cv.n_repeats, n_cats))
 
         # Use joblib to parallelize the computation
         gen = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
             delayed(self.cv_cm)(x_data[idx], labels, normalize, obs_axs
                                 ) for idx in idxs)
         for i, mat in enumerate(gen):
-            out[i] = mat
+            out[i], out_auc[i] = mat
 
-        return out
+        return out, out_auc
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
@@ -158,7 +167,10 @@ scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
 names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
 fig2, axs2 = plt.subplots(1, len(conds))
-decoder = Decoder(0.7, n_splits=5, n_repeats=7, oversample=True, max_features=120*20)
+decoder = Decoder(0.7, n_splits=5, n_repeats=5, oversample=True,
+                  DA_kwargs={'solver': 'eigen', 'shrinkage': 'auto'})
+                  # , max_features=120*20)
+scorer = 'acc'
 if len(conds) == 1:
     axs = [axs]
     axs2 = [axs2, axs2, axs2]
@@ -173,9 +185,12 @@ for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
         # np.random.shuffle(labels)
 
         # Decoding
-        mats = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
-                                      'true', 6)
-        score = mats.T[np.eye(4).astype(bool)].T # [acc_idx] / np.sum(mats, axis=-1)
+        mats, auc = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
+                                      'true', 7)
+        if scorer == 'acc':
+            score = mats.T[np.eye(4).astype(bool)].T# [acc_idx] / np.sum(mats, axis=-1)
+        else:
+            score = auc
         scores[names[i]] = score.copy()
         if cond == 'resp':
             times = (-0.9, 0.9)
@@ -191,10 +206,10 @@ for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
             ax.axhline(1/len(set(labels)), color='k', linestyle='--')
             ax.legend()
             ax.set_title(cond)
-            ax.set_ylim(0.1, 0.8)
+            # ax.set_ylim(0.1, 0.8)
     if i == 0:
         ax2.legend()
-    ax2.set_ylim(0.1, 0.8)
+    # ax2.set_ylim(0.1, 0.8)
     ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
 
 # %% plot the electrode groups together

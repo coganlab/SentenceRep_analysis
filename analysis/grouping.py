@@ -524,12 +524,9 @@ if __name__ == "__main__":
     # plt.ylim(-0.1, 0.9)
     # plt.savefig(cond+'.svg', dpi=300)
     #
-    # ##
-    # fig = sub.plot_groups_on_average([sub.SM], hemi='lh', size=.5)
+    ##
+    fig = sub.plot_groups_on_average([sub.SM], hemi='lh', label_every=1)
     # fig.save_image('SM.eps')
 
-    # %% Plot all channels
-    x = sub[:, "aud_ls", :, sub.AUD].combine(('stim', 'trial'))
-    x.smotify_trials()
-    x.plot_each(0, times=(-0.5, 1.5))
+
 

@@ -2,7 +2,7 @@ from analysis.utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
 import numpy as np
 from ieeg.calc.stats import dist
-from ieeg.calc.mat import get_elbow
+from ieeg.calc.mat import get_elbow, LabeledArray
 from ieeg.viz.utils import plot_dist, plot_weight_dist
 import matplotlib.pyplot as plt
 from collections.abc import Iterable
@@ -57,7 +57,7 @@ def compare_subjects(data: np.ndarray, names: list[str], subj_per_plot: int = 8)
     subj_data = np.zeros((0, data.shape[1]))
     prev_sub = names[0].split("-")[0]
     for c, name in zip(range(data.shape[0]), names):
-        subj = name.split('-')[0]
+        subj = name.split('-', )[0]
         chan = data[c]
         plt_idx = int(sub_all.index(subj) / subj_per_plot)
 
@@ -261,6 +261,25 @@ def alt_plot(X_train: np.ndarray, y_pred: np.ndarray):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_channels(arr: LabeledArray, n_cols: int = 10, n_rows: int = 6,
+                  size: tuple[int, int] = (8, 12)):
+    # n_rows = int(np.ceil(arr.shape[-3] / n_cols))
+    per_fig = n_cols * n_rows
+    numfigs = int(np.ceil(arr.shape[-3] / per_fig))
+    figs = []
+    for i in range(numfigs):
+        fig, axs = plt.subplots(n_cols, n_rows, figsize=size, frameon=False)
+        for j, ax in enumerate(axs.flatten()):
+            sig_num = j + i * per_fig
+            if sig_num > arr.shape[-3]:
+                break
+            plot_dist(arr[sig_num].__array__(), axis=0, ax=ax, mode='std')
+            ax.set_title(arr.labels[-3][sig_num])
+        figs.append(fig)
+    return figs
+
 
 
 if __name__ == "__main__":
