@@ -160,21 +160,22 @@ all_data = []
 
 # %% Time Sliding decoding
 
-conds = ['go_ls', 'go_lm', 'go_jl']
+conds = ['aud_ls', 'resp']
 # idx = sub.AUD
 colors = ['g', 'r', 'b']
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
 names = list(scores.keys())
+idxs = [sub.AUD, sub.SM, sub.PROD]
 fig, axs = plt.subplots(1, len(conds))
-fig2, axs2 = plt.subplots(1, len(conds))
-decoder = Decoder(0.7, n_splits=5, n_repeats=5, oversample=True,
-                  DA_kwargs={'solver': 'eigen', 'shrinkage': 'auto'})
-                  # , max_features=120*20)
+fig2, axs2 = plt.subplots(1, len(idxs))
+decoder = Decoder(0.8, n_splits=5, n_repeats=5, oversample=True,
+                  DA_kwargs={'solver': 'svd', 'store_covariance': True}
+                  , max_features=170*20)
 scorer = 'acc'
 if len(conds) == 1:
     axs = [axs]
     axs2 = [axs2, axs2, axs2]
-for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
+for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
     x_data = extract(sub, conds, idx, 5, 'zscore', False)
     ax2.set_title(names[i])
     for cond, ax in zip(conds, axs):
@@ -185,7 +186,7 @@ for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
         # np.random.shuffle(labels)
 
         # Decoding
-        mats, auc = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
+        mats, auc = decoder.sliding_window(X.__array__(), labels, 30, -1, 1,
                                       'true', 7)
         if scorer == 'acc':
             score = mats.T[np.eye(4).astype(bool)].T# [acc_idx] / np.sum(mats, axis=-1)
@@ -204,27 +205,42 @@ for i, (idx, ax2) in enumerate(zip([sub.AUD, sub.SM, sub.PROD], axs2)):
 
         if i == len(conds) - 1:
             ax.axhline(1/len(set(labels)), color='k', linestyle='--')
-            ax.legend()
+            # ax.legend()
             ax.set_title(cond)
             # ax.set_ylim(0.1, 0.8)
-    if i == 0:
-        ax2.legend()
+    # if i == 0:
+    #     ax2.legend()
     # ax2.set_ylim(0.1, 0.8)
     ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
 
-# %% plot the electrode groups together
-# fig, axs = plt.subplots(1, 3)
-# # plot different conditions as different shade of the same color within group
-# colors = ['g', 'r', 'b']
-# colormap = {'r': [1, 0, 0], 'g': [0, 1, 0], 'b': [0, 0, 1]}
-# for i, (ax, name) in enumerate(zip(axs, names)):
-#     iterator = ((c, e) for c, e in all_scores.items() if c.startswith(name))
-#     for j, (cond, elecs) in enumerate(iterator):
-#         color = list(max(min(k-0.5*(1-j) - 0.25, 1), 0) for k in colormap[colors[i]])
-#         pl_sc = elecs[name]
-#         plot_dist(np.reshape(pl_sc, (pl_sc.shape[0], -1)).T,
-#                   times=times, color=color, label=cond, ax=ax)
+# %% plot the auditory and response aligned decoding
+
+# fig, axs = plt.subplots(1, 2)
+# conds = ['aud_ls', 'resp']
+# idx = sub.SM
+# x_data = extract(sub, conds, idx, 5, 'zscore', False)
+# for i, (cond, ax) in enumerate(zip(conds, axs)):
+#     X = x_data[:, cond]
+#     cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+#     # np.random.shuffle(labels)
+#
+#     # Decoding
+#     mats, auc = decoder.sliding_window(X.__array__(), labels, 30, -1, 1,
+#                                   'true', 7)
+#     if scorer == 'acc':
+#         score = mats.T[np.eye(4).astype(bool)].T
+#     else:
+#         score = auc
+#     scores[names[i]] = score.copy()
+#     if cond == 'resp':
+#         times = (-0.9, 0.9)
+#     else:
+#         times = (-0.4, 1.4)
+#     pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
+#     plot_dist(pl_sc, times=times, color='r', ax=ax)
+#     all_scores["-".join([names[i], cond])] = score.copy()
+#
 #     ax.axhline(1/len(set(labels)), color='k', linestyle='--')
-#     ax.set_title(list(elecs.keys())[i])
+#     ax.set_title(cond)
 #     ax.set_ylim(0.1, 0.8)
-#     ax.legend()
+
