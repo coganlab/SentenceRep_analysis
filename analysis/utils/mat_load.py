@@ -135,69 +135,6 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
     return out
 
 
-def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
-                conds: tuple[str]
-                ) -> (list[int], list[int], list[int], list[int]):
-    sig_chans = []
-    AUD = []
-    SM = []
-    PROD = []
-    for i, name in enumerate(names):
-        for cond in conds:
-            idx = i
-            if np.any(all_sig[cond, idx] == 1):
-                sig_chans.append(i)
-                break
-
-        if np.squeeze(all_sig).ndim >= 3:
-            aud_slice = slice(50, 175)
-        else:
-            aud_slice = None
-
-        audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
-        audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
-        audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
-        mime_is = np.any(all_sig['go_lm', idx] == 1)
-        speak_is = np.any(all_sig['go_ls', idx] == 1)
-        resp_is = np.any(all_sig['resp', idx] == 1)
-
-        if audls_is and audlm_is and mime_is and speak_is:
-            SM.append(i)
-        elif audls_is and audlm_is and audjl_is:
-            AUD.append(i)
-        elif mime_is and speak_is and resp_is:
-            PROD.append(i)
-    return AUD, SM, PROD, sig_chans
-
-
-def nan_concat(arrs: tuple | list, axis: int = 0) -> np.ndarray:
-    """Concatenate arrays, filling in missing values with NaNs"""
-    unequal_ax = [ax for ax in range(arrs[0].ndim) if arrs[0].shape[ax] != arrs[1].shape[ax]]
-    stretch_ax = [ax for ax in unequal_ax if ax != axis]
-    if len(stretch_ax) > 1:
-        return np.concatenate(arrs, axis=axis)
-    else:
-        stretch_ax = stretch_ax[0]
-    max_len = max([arr.shape[stretch_ax] for arr in arrs])
-    new_arrs = []
-    for arr in arrs:
-        new_shape = list(arr.shape)
-        new_shape[stretch_ax] = max_len
-        if 0 in arr.shape:
-            continue
-        elif arr.shape[stretch_ax] < max_len:
-            new_arr = np.full(new_shape, np.nan)
-
-            # fill in the array with the original values
-            idx = [slice(None)] * arr.ndim
-            idx[stretch_ax] = slice(0, arr.shape[stretch_ax])
-            new_arr[*idx] = arr
-            new_arrs.append(new_arr)
-        else:
-            new_arrs.append(arr)
-    return np.concatenate(new_arrs, axis=axis)
-
-
 if __name__ == "__main__":
     from ieeg.io import get_data
     HOME = os.path.expanduser("~")

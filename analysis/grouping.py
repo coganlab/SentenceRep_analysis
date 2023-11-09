@@ -7,7 +7,8 @@ from ieeg.viz.mri import plot_on_average
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
-from analysis.utils.mat_load import group_elecs, load_dict
+from analysis.utils.mat_load import load_dict
+from ieeg.viz.mri import subject_to_info, gen_labels, get_sub, pick_no_wm
 import matplotlib.pyplot as plt
 
 import nimfa
@@ -91,6 +92,11 @@ class GroupData:
     @property
     def subjects(self):
         return set(f"{ch[:5]}" for ch in self.keys['channel'])
+
+    @property
+    def grey_matter(self):
+        wm = get_grey_matter(self.subjects)
+        return {i for i, ch in enumerate(self.keys['channel']) if ch in wm}
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -478,6 +484,60 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
                              shape=ndarray_with_nan.shape).tolil()
 
 
+def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
+                conds: tuple[str]
+                ) -> (set[int], set[int], set[int], set[int]):
+    sig_chans = set()
+    AUD = set()
+    SM = set()
+    PROD = set()
+    for i, name in enumerate(names):
+        for cond in conds:
+            idx = i
+            if np.any(all_sig[cond, idx] == 1):
+                sig_chans |= {i}
+                break
+
+        if np.squeeze(all_sig).ndim >= 3:
+            aud_slice = slice(50, 175)
+            early = slice(0, 90)
+        else:
+            aud_slice = None
+            early = None
+
+        audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
+        audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
+        audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
+        mime_is = np.any(all_sig['go_lm', idx] == 1)
+        resp_is = np.any(all_sig['resp', idx] == 1)
+        resp_early = np.any(all_sig['resp', idx, early] == 1)
+        speak_is = np.any(all_sig['go_ls', idx] == 1)
+
+        if audls_is and audlm_is and mime_is and (speak_is or resp_is):
+            SM |= {i}
+        elif audls_is and audlm_is and audjl_is:
+            AUD |= {i}
+        elif mime_is and (speak_is or resp_is):
+            PROD |= {i}
+    return AUD, SM, PROD, sig_chans
+
+
+def get_grey_matter(subjects: Sequence[str]) -> set[str]:
+    grey_matter = set()
+    for i, subj in enumerate(subjects):
+        info = subject_to_info(get_sub(subj))
+        parcel_label = gen_labels(info, get_sub(subj))
+        subj_grey_matter = pick_no_wm(info.ch_names, parcel_label)
+
+        # get the indices of channels in info that are not in grey_matter
+        grey_matter |= {f"{subj}-{ch}" for ch in info.ch_names
+                        if ch in subj_grey_matter}
+    return grey_matter
+
+
+
+
+
 if __name__ == "__main__":
     from ieeg.calc.reshape import stitch_mats
     from analysis.utils.plotting import plot_clustering
@@ -496,7 +556,7 @@ if __name__ == "__main__":
     zscore = sub['zscore']
     sig = sub.signif
 
-    # ##
+    #
     # cond = 'aud_ls'
     # # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
     # # arr = sub.signif[cond].__array__()
@@ -505,27 +565,28 @@ if __name__ == "__main__":
     #     SUB = [s for s in sub.sig_chans if subj in sub.keys['channel'][s]]
     #     plot_dist(arr[SUB], times=conds[cond], label=subj)
     # plt.legend()
-    # ##
-    # cond = 'resp'
-    # # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
-    # # arr = sub.signif[cond].__array__()
-    # arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
-    # plt.figure()
-    # plot_dist(arr[sub.AUD], times=conds[cond], label='AUD',
-    #           color='green')
-    # plot_dist(arr[sub.SM], times=conds[cond], label='SM',
-    #           color='red')
-    # plot_dist(arr[sub.PROD], times=conds[cond], label='PROD',
-    #           color='blue')
-    # plt.legend()
-    # plt.xlabel("Time(s)")
-    # plt.ylabel("Z-Score (V)")
-    # plt.title('Response')
-    # plt.ylim(-0.1, 0.9)
+    ##
+    cond = 'go_lm'
+    # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
+    # arr = sub.signif[cond].__array__()
+    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
+    fig = plt.figure()
+    ax = fig.gca()
+    plot_dist(arr[list(sub.AUD)], times=conds[cond], label='AUD',
+              color='green', ax=ax)
+    plot_dist(arr[list(sub.SM)], times=conds[cond], label='SM',
+              color='red', ax=ax)
+    plot_dist(arr[list(sub.PROD)], times=conds[cond], label='PROD',
+              color='blue', ax=ax)
+    plt.legend()
+    plt.xlabel("Time(s)")
+    plt.ylabel("Z-Score (V)")
+    plt.title('Response')
+    plt.ylim(-0.1, 0.9)
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##
-    fig = sub.plot_groups_on_average([sub.SM], hemi='lh', label_every=1)
+    fig = sub.plot_groups_on_average([list(sub.SM)], hemi='lh')
     # fig.save_image('SM.eps')
 
 
