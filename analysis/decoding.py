@@ -8,14 +8,14 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, roc_auc_sc
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
-from ieeg.decoding import PcaLdaClassification
+import ieeg.decoding as eegdec
 from ieeg.calc.mat import LabeledArray
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.oversample import oversample_nan, normnd as norm, mixupnd as mixup, TwoSplitNaN
 from joblib import Parallel, delayed
 
 
-class Decoder(PcaLdaClassification):
+class Decoder(eegdec.PcaLdaClassification):
 
     def __init__(self, *args,
                  cv=TwoSplitNaN,
@@ -139,8 +139,10 @@ def classes_from_labels(labels: np.ndarray, delim: str = '-', which: int = 0,
     return classes, np.array([classes[k] for k in class_ids])
 
 
-def extract(sub: GroupData, conds: list[str], idx: list[int], common: int = 5,
+def extract(sub: GroupData, conds: list[str], idx: list[int] = slice(None), common: int = 5,
             datatype: str = 'zscore', crop_nan: bool = False) -> LabeledArray:
+    # if isinstance(idx[0], list):
+
     reduced = sub[:, conds][:, :, :, idx]
     reduced.array = reduced.array.dropna()
     # also sorts the trials by nan or not
@@ -154,32 +156,49 @@ def scale(X, xmax: float, xmin: float):
 # %% Imports
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_old')
-sub['power'].array = scale(sub['power'].array, np.max(sub['zscore'].array), np.min(sub['zscore'].array))
+# sub['power'].array = scale(sub['power'].array, np.max(sub['zscore'].array), np.min(sub['zscore'].array))
 all_scores = {}
 all_data = []
 
 # %% Time Sliding decoding
 
-conds = ['aud_ls', 'resp']
+conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm']]
 # idx = sub.AUD
-colors = ['g', 'r', 'b']
+colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1]]
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
-names = list(scores.keys())
 idxs = [sub.AUD, sub.SM, sub.PROD]
+# colors = ['c', 'm', 'k', 'orange']
+# scores = {'Instructional': None, 'Motor': None, 'Feedback': None, 'Working Memory': None}
+# W = np.load('weights.npy')
+# groups = [[sub.SM[i] for i in np.where(np.argmax(W, axis=1) == j)[0]]
+#               for j in range(W.shape[1])]
+# idxs = groups
+# idxs = [sub.SM] * 4
+idxs = [list(idx & sub.grey_matter) for idx in idxs]
+names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
 fig2, axs2 = plt.subplots(1, len(idxs))
 decoder = Decoder(0.8, n_splits=5, n_repeats=5, oversample=True,
                   DA_kwargs={'solver': 'svd', 'store_covariance': True}
-                  , max_features=170*20)
+                  , max_features=50*30)
 scorer = 'acc'
+# temp = sub.array['zscore'][..., idxs[0], :, :]
 if len(conds) == 1:
     axs = [axs]
-    axs2 = [axs2, axs2, axs2]
+    axs2 = [axs2] * len(idxs)
 for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
-    x_data = extract(sub, conds, idx, 5, 'zscore', False)
+    # sub.array['zscore', :, :, idx] = (temp * W[:, i, None, None]).swapaxes(2, 1).swapaxes(1, 0)
+    all_conds = [c for subconds in conds for c in subconds]
+    x_data = extract(sub, all_conds, idx, 5, 'zscore', False)
     ax2.set_title(names[i])
     for cond, ax in zip(conds, axs):
-        X = x_data[:, cond]
+        if isinstance(cond, list):
+            X = x_data[:, cond[0]]
+            for c in cond[1:]:
+                X.concatenate(x_data[:, c], axis=1)
+            cond = "-".join(cond)
+        else:
+            X = x_data[:, cond]
         all_data.append(X)
 
         cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
@@ -187,7 +206,7 @@ for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
 
         # Decoding
         mats, auc = decoder.sliding_window(X.__array__(), labels, 30, -1, 1,
-                                      'true', 7)
+                                           'true', 6)
         if scorer == 'acc':
             score = mats.T[np.eye(4).astype(bool)].T# [acc_idx] / np.sum(mats, axis=-1)
         else:

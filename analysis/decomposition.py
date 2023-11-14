@@ -16,6 +16,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
 from joblib import Parallel, delayed, Memory
+import tslearn.clustering as tsc
 
 sys._excepthook = sys.excepthook
 def exception_hook(exctype, value, traceback):
@@ -82,8 +83,8 @@ def explained_variance(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
 
 
 def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
-          metric: callable = explained_variance, n_jobs: int = -3
-          ) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
+          metric: callable = explained_variance, n_jobs: int = -3,
+          measure: np.ndarray = None) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
     """Estimate the number of components to use for NMF
 
     Parameters
@@ -103,11 +104,16 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
         The figure containing the plot
     """
 
-    def _repeated_estim(k: int, reps: int = 20, estimator=estimator
+    def _repeated_estim(k: int, reps: int = 10, estimator=estimator
                         ) -> np.ndarray[float]:
         est = np.zeros(reps)
         for i in range(reps):
-            Y = estimator.set_params(n_components=k).fit_transform(X)
+            estimator.set_params(n_clusters=k)
+            if measure is not None:
+                estimator.fit(X)
+                Y = estimator.predict(measure)
+            else:
+                Y = estimator.fit_predict(X)
             est[i] = metric(X, Y, estimator.components_)
         return est
 
@@ -159,14 +165,21 @@ if __name__ == "__main__":
     combinedp = scale(trainp * stitched - np.min(trainp * stitched), np.max(combinedz), 0)
     combined = np.hstack([combinedz, combinedp])
     # raw = train - np.min(train)
-    sparse_matrix = csr_matrix((combinedz[stitched == 1], stitched.nonzero()))
+    sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
+    sparse_matrix.data -= np.min(sparse_matrix.data)
 
     ## try clustering
 
-    options = dict(init="random", max_iter=10000, solver='mu',
+    options = dict(init="random", max_iter=100000, solver='cd', shuffle=True,
                    # beta_loss='kullback-leibler',
-                   tol=1e-8)
-    model = skd.NMF(**options)
+                   tol=1e-16, l1_ratio=1)
+    # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
+    # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
+    #                            svd_method='lapack', rotation='varimax')
+    # model = skd.NMF(**options)
+    # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
+    model = tsc.TimeSeriesKMeans(n_clusters=4,
+                                 n_jobs=4, metric="softdtw", verbose=True)
     pipe = Pipeline([
         # ('noise removal', skd.PCA(0.99)),
         ('scale', MinMaxScaler((0, 1)))])
@@ -181,14 +194,16 @@ if __name__ == "__main__":
     # x_nmf = nmf()
     # H = np.array(x_nmf.fit.H)
     # W = np.array(x_nmf.fit.W)
-    # met_func = lambda X, W, H: calinski_harabasz(X, W)
-    # # met_func = lambda X, W, H: calinski_harabasz(X, W) / davies_bouldin(X, W)
-    # for idx in [sub.AUD, sub.SM, sub.PROD]:
-    #     ax, data = get_k(stitched[idx],
+    # met_func = lambda X, W, H: calinski_harabasz(X, W) / davies_bouldin(X, W)
+    idxs = [list(idx & sub.grey_matter) for idx in [sub.AUD, sub.SM, sub.PROD]]
+    met_func = lambda X, W, H: calinski_harabasz(X, W)
+    # for idx in idxs:
+    #     ax, data = get_k(trainz[idx],
     #                      model,
     #                      range(2, 10),
     #                      met_func,
     #                      n_jobs=6)
+    pred = model.fit_predict(trainz[idxs[1]])
     ##
     # from MEPONMF.MEP_ONMF import ONMF_DA
     #
@@ -202,25 +217,26 @@ if __name__ == "__main__":
 
 
     ##
-    idx = sub.SM
-    W, H, n = skd.non_negative_factorization(stitched[idx], n_components=4,
+    idx = list(sub.SM & sub.grey_matter)
+    W, H, n = skd.non_negative_factorization(sparse_matrix[idx].T, n_components=4,
                                              **options)
+    W = H.T
     # W *= np.mean(zscores) / np.mean(powers) / 1000
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
     ##
-    metric = powers
-    labeled = [['Instructional', 'c', 2],
-               ['Motor', 'm', 0],
-               ['Feedback', 'k', 1],
+    metric = zscores
+    labeled = [['Instructional', 'c', 1],
+               ['Motor', 'm', 2],
+               ['Feedback', 'k', 0],
                ['Working Memory', 'orange', 3],]
                # ['Auditory', 'g', 4]]
-    pred = np.argmax(W, axis=1)
+    # pred = np.argmax(W, axis=1)
     groups = [[idx[i] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
     colors, labels = zip(*((c[1], c[0]) for c in sorted(labeled, key=lambda x: x[2])))
     for i, g in enumerate(groups):
         labeled[i][2] = groups[labeled[i][2]]
-    cond = 'aud_ls'
+    cond = 'resp'
     if cond.startswith("aud"):
         title = "Stimulus Onset"
         times = slice(None)
@@ -280,7 +296,6 @@ if __name__ == "__main__":
     groups = [[sub.keys['channel'][idx[i]] for i in np.where(pred == j)[0]]
                 for j in range(W.shape[1])]
     fig = sub.plot_groups_on_average(groups, colors, hemi='lh',
-                                     rm_wm=False,
                                      size=0.4)
     fig.save_image('SM_decomp.eps')
 
