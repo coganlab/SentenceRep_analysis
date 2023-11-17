@@ -192,9 +192,11 @@ idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
 fig2, axs2 = plt.subplots(1, len(idxs))
-decoder = Decoder(0.8, n_splits=5, n_repeats=10, oversample=True,
-                  DA_kwargs={'solver': 'eigen',
-                             'covariance_estimator': skcov.OAS()})
+decoder = Decoder(0.8, 'qda', n_splits=5, n_repeats=10, oversample=True,
+                  DA_kwargs={
+                             'store_covariance': True,
+                             'tol': 1e-10})
+                             # 'covariance_estimator': skcov.OAS()})
                   # , max_features=50*30)
 scorer = 'acc'
 if len(conds) == 1:
@@ -237,12 +239,12 @@ for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
 
         if i == len(conds) - 1:
             ax.axhline(1/len(set(labels)), color='k', linestyle='--')
-            # ax.legend()
+            ax.legend()
             ax.set_title(cond)
-            # ax.set_ylim(0.1, 0.8)
-    # if i == 0:
-    #     ax2.legend()
-    # ax2.set_ylim(0.1, 0.8)
+            ax.set_ylim(0.1, 0.8)
+    if i == 0:
+        ax2.legend()
+    ax2.set_ylim(0.1, 0.8)
     ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
 
 # %% plot the auditory and response aligned decoding
