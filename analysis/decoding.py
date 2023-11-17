@@ -5,20 +5,21 @@ import numpy as np
 import os
 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, roc_auc_score
+import sklearn.covariance as skcov
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
 import ieeg.decoding as eegdec
 from ieeg.calc.mat import LabeledArray
 from ieeg.viz.utils import plot_dist
-from ieeg.calc.oversample import oversample_nan, normnd as norm, mixupnd as mixup, TwoSplitNaN
+from ieeg.calc.oversample import MinimumNaNSplit
 from joblib import Parallel, delayed
 
 
 class Decoder(eegdec.PcaLdaClassification):
 
     def __init__(self, *args,
-                 cv=TwoSplitNaN,
+                 cv=MinimumNaNSplit,
                  categories: dict = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                  n_splits: int = 5,
                  n_repeats: int = 10,
@@ -31,9 +32,9 @@ class Decoder(eegdec.PcaLdaClassification):
         self.max_features = max_features
 
         if not oversample:
-            self.oversample = lambda x, func, ax: x
+            self.oversample = lambda x, func, axis: x
         else:
-            self.oversample = lambda x, func, ax: oversample_nan(x, func, ax, False)
+            self.oversample = cv.oversample
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2):
@@ -53,18 +54,20 @@ class Decoder(eegdec.PcaLdaClassification):
                 # fill in train data nans with random combinations of
                 # existing train data trials (mixup)
                 idx[obs_axs] = y_train == i
-                x_train[tuple(idx)] = self.oversample(
-                    x_train[tuple(idx)], mixup, obs_axs)
+                x_train[tuple(idx)] = self.oversample(x_train[tuple(idx)],
+                                                      axis=obs_axs)
 
                 # fill in test data nans with noise from distribution
                 # of existing test data
-                idx[obs_axs] = y_test == i
-                x_test[tuple(idx)] = self.oversample(
-                    x_test[tuple(idx)], norm, obs_axs)
+                # idx[obs_axs] = y_test == i
+                # x_test[tuple(idx)] = self.oversample(
+                #     x_test[tuple(idx)], norm, obs_axs)
 
-            # x_test[np.isnan(x_test)] = np.random.normal(
-            #     np.nanmean(x_test), np.nanstd(x_test),
-            #     np.sum(np.isnan(x_test)))
+            # fill in test data nans with noise from distribution
+            # TODO: extract distribution from channel baseline
+            x_test[np.isnan(x_test)] = np.random.normal(
+                0, 1, np.sum(np.isnan(x_test)))
+
             train_in = flatten_features(x_train, obs_axs)
             test_in = flatten_features(x_test, obs_axs)
             if train_in.shape[1] > self.max_features:
@@ -150,8 +153,19 @@ def extract(sub: GroupData, conds: list[str], idx: list[int] = slice(None), comm
     comb = reduced.combine(('epoch', 'trial'))[datatype]
     return (comb.array.dropna()).combine((0, 2))
 
+
 def scale(X, xmax: float, xmin: float):
     return (X - xmin) / (xmax - xmin)
+
+
+def flatten_list(nested_list: list[list[str] | str]) -> list[str]:
+    flat_list = []
+    for element in nested_list:
+        if isinstance(element, list):
+            flat_list.extend(element)
+        else:
+            flat_list.append(element)
+    return flat_list
 
 # %% Imports
 fpath = os.path.expanduser("~/Box/CoganLab")
@@ -162,7 +176,7 @@ all_data = []
 
 # %% Time Sliding decoding
 
-conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm']]
+conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 # idx = sub.AUD
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1]]
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None}
@@ -178,17 +192,16 @@ idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
 fig, axs = plt.subplots(1, len(conds))
 fig2, axs2 = plt.subplots(1, len(idxs))
-decoder = Decoder(0.8, n_splits=5, n_repeats=5, oversample=True,
-                  DA_kwargs={'solver': 'svd', 'store_covariance': True}
-                  , max_features=50*30)
+decoder = Decoder(0.8, n_splits=5, n_repeats=10, oversample=True,
+                  DA_kwargs={'solver': 'eigen',
+                             'covariance_estimator': skcov.OAS()})
+                  # , max_features=50*30)
 scorer = 'acc'
-# temp = sub.array['zscore'][..., idxs[0], :, :]
 if len(conds) == 1:
     axs = [axs]
     axs2 = [axs2] * len(idxs)
 for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
-    # sub.array['zscore', :, :, idx] = (temp * W[:, i, None, None]).swapaxes(2, 1).swapaxes(1, 0)
-    all_conds = [c for subconds in conds for c in subconds]
+    all_conds = flatten_list(conds)
     x_data = extract(sub, all_conds, idx, 5, 'zscore', False)
     ax2.set_title(names[i])
     for cond, ax in zip(conds, axs):
@@ -205,7 +218,7 @@ for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
         # np.random.shuffle(labels)
 
         # Decoding
-        mats, auc = decoder.sliding_window(X.__array__(), labels, 30, -1, 1,
+        mats, auc = decoder.sliding_window(X.__array__(), labels, 20, -1, 1,
                                            'true', 6)
         if scorer == 'acc':
             score = mats.T[np.eye(4).astype(bool)].T# [acc_idx] / np.sum(mats, axis=-1)
