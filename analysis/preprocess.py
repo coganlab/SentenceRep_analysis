@@ -76,6 +76,7 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
+    sig2 = base.get_data()
     for epoch, name, window in zip(
             (out[0][e] for e in ["Response"] + list(
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
@@ -83,7 +84,6 @@ for subj in subjects:
             # ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
             ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
-        sig2 = base.get_data()
 
         # time-perm
         # mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
@@ -106,6 +106,7 @@ for subj in subjects:
         z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                      fmt='double')
         epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
+    base.save(save_dir + f"/{subj}_base-epo.fif", overwrite=True)
     del data
 
     ## Plot
