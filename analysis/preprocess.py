@@ -71,7 +71,7 @@ for subj in subjects:
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "stats")
+    save_dir = op.join(layout.root, "derivatives", "no_cluster")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
@@ -80,21 +80,21 @@ for subj in subjects:
             (out[0][e] for e in ["Response"] + list(
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
             ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
-            ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
-            # ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
+            # ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
+            ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
         sig2 = base.get_data()
 
         # time-perm
-        mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=2000, n_jobs=-2,
-                                             ignore_adjacency=1)
-        epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
-                                     tmax=window[1], tmin=window[0])
+        # mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
+        #                                      n_perm=2000, n_jobs=-2,
+        #                                      ignore_adjacency=1)
+        # epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
+        #                              tmax=window[1], tmin=window[0])
 
         # ave
-        # mask[name] = stats.window_averaged_shuffle(sig1, sig2, 0.01, 2000)
-        # epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
+        mask[name] = stats.window_averaged_shuffle(sig1, sig2, 2000)
+        epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
 
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
