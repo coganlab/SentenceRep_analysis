@@ -1,7 +1,7 @@
 ## Preprocess
 import ieeg.viz.utils
 from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg, channel_outlier_marker
+from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq import gamma, utils
 from ieeg.calc import stats, scaling
 import os.path as op
@@ -57,7 +57,7 @@ for subj in subjects:
         trials = trial_ieeg(good, epoch, times, preload=True
                             , reject_by_annotation=False)
         outliers_to_nan(trials, outliers=10)
-        gamma.extract(trials, copy=False, n_jobs=-1)
+        gamma.extract(trials, copy=False, n_jobs=-3)
         utils.crop_pad(trials, "0.5s")
         trials.resample(100)
         trials.filenames = good.filenames
@@ -71,30 +71,30 @@ for subj in subjects:
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "no_cluster")
+    save_dir = op.join(layout.root, "derivatives", "stats")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    sig2 = base.get_data()
+    sig2 = base.get_data(copy=True)
     for epoch, name, window in zip(
             (out[0][e] for e in ["Response"] + list(
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
             ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
-            # ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
-            ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
-        sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
+            ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
+            # ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
+        sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
         # time-perm
-        # mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-        #                                      n_perm=2000, n_jobs=-2,
-        #                                      ignore_adjacency=1)
-        # epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
-        #                              tmax=window[1], tmin=window[0])
+        mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
+                                             n_perm=10000, n_jobs=-3,
+                                             ignore_adjacency=1)
+        epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
+                                     tmin=window[0])
 
         # ave
-        mask[name] = stats.window_averaged_shuffle(sig1, sig2, 2000)
-        epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
+        # mask[name] = stats.window_averaged_shuffle(sig1, sig2, 10000)
+        # epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
 
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
