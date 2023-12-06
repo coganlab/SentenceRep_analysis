@@ -10,11 +10,15 @@ import mne
 from itertools import product
 
 
+n_jobs = -2
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     LAB_root = os.path.join(HOME, "workspace", "CoganLab")
-    subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
+    sid = int(os.environ['SLURM_ARRAY_TASK_ID'])
+    subjects = [f"D{sid:04}"]
+    layout = get_data("SentenceRep", root=LAB_root)
+    print(f"Running subject {subjects[0]}")
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
@@ -26,7 +30,6 @@ for subj in subjects:
     # Load the data
     TASK = "SentenceRep"
     # subj = "D" + str(sub).zfill(4)
-    layout = get_data("SentenceRep", root=LAB_root)
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                            extension='.edf', desc='clean', preload=False)
 
@@ -57,7 +60,7 @@ for subj in subjects:
         trials = trial_ieeg(good, epoch, times, preload=True
                             , reject_by_annotation=False)
         outliers_to_nan(trials, outliers=10)
-        gamma.extract(trials, copy=False, n_jobs=-3)
+        gamma.extract(trials, copy=False, n_jobs=n_jobs)
         utils.crop_pad(trials, "0.5s")
         trials.resample(100)
         trials.filenames = good.filenames
@@ -87,7 +90,7 @@ for subj in subjects:
 
         # time-perm
         mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=10000, n_jobs=-3,
+                                             n_perm=10000, n_jobs=n_jobs,
                                              ignore_adjacency=1)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
                                      tmin=window[0])
