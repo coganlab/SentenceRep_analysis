@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
 import ieeg.decoding as eegdec
-from ieeg.calc.mat import LabeledArray
+from ieeg.calc.mat import LabeledArray, Labels, combine
+from ieeg.calc.reshape import concatenate_arrays
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.oversample import MinimumNaNSplit
 from joblib import Parallel, delayed
@@ -75,8 +76,6 @@ class Decoder(eegdec.PcaLdaClassification):
                                        replace=False)
                 train_in = train_in[:, tidx]
                 test_in = test_in[:, tidx]
-            else:
-                tidx = slice(None)
             self.fit(train_in, y_train)
             pred = self.predict(test_in)
             rep, fold = divmod(f, cv.n_splits)
@@ -252,19 +251,25 @@ for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
 
 conds_aud = ['aud_ls', 'aud_lm', 'aud_jl']
 conds_go = ['go_ls', 'go_lm', 'go_jl']
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(1, 2)
 for i, idx in enumerate(idxs):
 
     # organize data
     all_data = extract(sub, conds_aud + conds_go, idx, 5, 'zscore', False)
     aud_data = concatenate_conditions(all_data, conds_aud)
+    aud_data.labels[1] = Labels([l.replace('aud_', '') for l in aud_data.labels[1]])
     go_data = concatenate_conditions(all_data, conds_go)
-    x_data = aud_data.concatenate(go_data, axis=2)
+    go_data.labels[1] = Labels([l.replace('go_', '') for l in go_data.labels[1]])
+    common = np.array([l for l in aud_data.labels[1] if l in go_data.labels[1]])
+    x_data = aud_data.concatenate(go_data[:, common], axis=2)
     cats, labels = classes_from_labels(x_data.labels[1], crop=slice(-2, None), which=1)
     decoder.categories = cats
 
     # Decoding
     score = decode_and_score(decoder, x_data, labels, scorer, **window_kwargs)
     scores[names[i]] = score.copy()
-    pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
-    plot_dist(pl_sc, times=(-0.4, 1.4), color=colors[i], label=list(scores.keys())[i], ax=ax)
+    pl_sc = np.reshape(scores[names[i]], (scores[names[i]].shape[0], -1)).T
+
+    plot_dist(pl_sc[:, :190], times=(-0.4, 1.5), color=colors[i], label=list(scores.keys())[i], ax=ax[0])
+    plot_dist(pl_sc[:, 191:], times=(-0.5, 1.4), color=colors[i],
+              label=list(scores.keys())[i], ax=ax[1])

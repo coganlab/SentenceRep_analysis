@@ -373,6 +373,7 @@ class GroupData:
         if groups is None:
             assert hasattr(self, 'SM')
             groups = [self.SM, self.AUD, self.PROD]
+            groups = list(map(list, groups))
 
         if isinstance(groups[0][0], int):
             groups = [[self.keys['channel'][idx] for idx in g] for g in groups]
@@ -500,16 +501,18 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 break
 
         if np.squeeze(all_sig).ndim >= 3:
-            aud_slice = slice(50, 175)
+            aud_slice = slice(50, 100)
+            go_slice = slice(75, 125)
         else:
             aud_slice = None
+            go_slice = None
 
         audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
         audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
         audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
-        mime_is = np.any(all_sig['go_lm', idx] == 1)
-        resp_is = np.any(all_sig['resp', idx] == 1)
-        speak_is = np.any(all_sig['go_ls', idx] == 1)
+        mime_is = np.any(all_sig['go_lm', idx, go_slice] == 1)
+        resp_is = np.any(all_sig['resp', idx, go_slice] == 1)
+        speak_is = np.any(all_sig['go_ls', idx, go_slice] == 1)
 
         if audls_is and audlm_is and mime_is and (speak_is or resp_is):
             SM |= {i}
