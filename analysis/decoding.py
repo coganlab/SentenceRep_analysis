@@ -81,9 +81,9 @@ class Decoder(eegdec.PcaLdaClassification):
             rep, fold = divmod(f, cv.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
             bin_y_test = np.array([y_test == i for i in range(n_cats)]).T
-            auc[rep, fold] = roc_auc_score(
-                bin_y_test, self.model.decision_function(test_in),
-                multi_class='ovr', average=None)
+            # auc[rep, fold] = roc_auc_score(
+            #     bin_y_test, self.model.decision_function(test_in),
+            #     multi_class='ovr', average=None)
 
         # average the repetitions, sum the folds
         matk = np.sum(mats, axis=1)
@@ -202,67 +202,70 @@ window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'normalize': 'true
 
 # %% Time Sliding decoding for word tokens
 
-conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-fig, axs = plt.subplots(1, len(conds))
-fig2, axs2 = plt.subplots(1, len(idxs))
-if len(conds) == 1:
-    axs = [axs]
-    axs2 = [axs2] * len(idxs)
-for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
-    all_conds = flatten_list(conds)
-    x_data = extract(sub, all_conds, idx, 5, 'zscore', False)
-    ax2.set_title(names[i])
-    for cond, ax in zip(conds, axs):
-        if isinstance(cond, list):
-            X = concatenate_conditions(x_data, cond)
-            cond = "-".join(cond)
-        else:
-            X = x_data[:, cond]
-        all_data.append(X)
-
-        cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
-        # np.random.shuffle(labels)
-
-        # Decoding
-        score = decode_and_score(decoder, X, labels, scorer, **window_kwargs)
-        scores[names[i]] = score.copy()
-        if cond == 'resp':
-            times = (-0.9, 0.9)
-        else:
-            times = (-0.4, 1.4)
-        pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
-        plot_dist(pl_sc, times=times,
-                    color=colors[i], label=list(scores.keys())[i], ax=ax)
-        plot_dist(pl_sc, times=times, label=cond, ax=ax2)
-        all_scores["-".join([names[i], cond])] = score.copy()
-
-        if i == len(conds) - 1:
-            ax.axhline(1/len(set(labels)), color='k', linestyle='--')
-            ax.legend()
-            ax.set_title(cond)
-            ax.set_ylim(0.1, 0.8)
-    if i == 0:
-        ax2.legend()
-    ax2.set_ylim(0.1, 0.8)
-    ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
+# conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+# fig, axs = plt.subplots(1, len(conds))
+# fig2, axs2 = plt.subplots(1, len(idxs))
+# if len(conds) == 1:
+#     axs = [axs]
+#     axs2 = [axs2] * len(idxs)
+# for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
+#     all_conds = flatten_list(conds)
+#     x_data = extract(sub, all_conds, idx, 5, 'zscore', False)
+#     ax2.set_title(names[i])
+#     for cond, ax in zip(conds, axs):
+#         if isinstance(cond, list):
+#             X = concatenate_conditions(x_data, cond)
+#             cond = "-".join(cond)
+#         else:
+#             X = x_data[:, cond]
+#         all_data.append(X)
+#
+#         cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+#         # np.random.shuffle(labels)
+#
+#         # Decoding
+#         score = decode_and_score(decoder, X, labels, scorer, **window_kwargs)
+#         scores[names[i]] = score.copy()
+#         if cond == 'resp':
+#             times = (-0.9, 0.9)
+#         else:
+#             times = (-0.4, 1.4)
+#         pl_sc = np.reshape(score.copy(), (score.shape[0], -1)).T
+#         plot_dist(pl_sc, times=times,
+#                     color=colors[i], label=list(scores.keys())[i], ax=ax)
+#         plot_dist(pl_sc, times=times, label=cond, ax=ax2)
+#         all_scores["-".join([names[i], cond])] = score.copy()
+#
+#         if i == len(conds) - 1:
+#             ax.axhline(1/len(set(labels)), color='k', linestyle='--')
+#             ax.legend()
+#             ax.set_title(cond)
+#             ax.set_ylim(0.1, 0.8)
+#     if i == 0:
+#         ax2.legend()
+#     ax2.set_ylim(0.1, 0.8)
+#     ax2.axhline(1/len(set(labels)), color='k', linestyle='--')
 
 
 # %% Time Sliding decoding for conditions
-
-conds_aud = ['aud_ls', 'aud_lm', 'aud_jl']
-conds_go = ['go_ls', 'go_lm', 'go_jl']
-fig, ax = plt.subplots(1, 2)
+# conds_aud = ['aud_ls', 'aud_lm', 'aud_jl']
+# conds_go = ['go_ls', 'go_lm', 'go_jl']
+conds_aud = ['aud_ls', 'aud_lm']
+conds_go = ['go_ls', 'go_lm']
+fig2, ax = plt.subplots(1, 2)
 for i, idx in enumerate(idxs):
 
     # organize data
     all_data = extract(sub, conds_aud + conds_go, idx, 5, 'zscore', False)
-    aud_data = concatenate_conditions(all_data, conds_aud)
+    aud_data = concatenate_conditions(all_data, conds_aud, 1)
     aud_data.labels[1] = Labels([l.replace('aud_', '') for l in aud_data.labels[1]])
     go_data = concatenate_conditions(all_data, conds_go)
     go_data.labels[1] = Labels([l.replace('go_', '') for l in go_data.labels[1]])
     common = np.array([l for l in aud_data.labels[1] if l in go_data.labels[1]])
-    x_data = aud_data.concatenate(go_data[:, common], axis=2)
+    x_data = aud_data[..., :175].concatenate(go_data[:, common], axis=2)
     cats, labels = classes_from_labels(x_data.labels[1], crop=slice(-2, None), which=1)
+    # cats, labels = classes_from_labels(x_data.labels[1], crop=slice(-2, -1), which=1)
+    # cats['ls'] = cats['lm'] # if you want to combine ls and lm
     decoder.categories = cats
 
     # Decoding
@@ -270,6 +273,14 @@ for i, idx in enumerate(idxs):
     scores[names[i]] = score.copy()
     pl_sc = np.reshape(scores[names[i]], (scores[names[i]].shape[0], -1)).T
 
-    plot_dist(pl_sc[:, :190], times=(-0.4, 1.5), color=colors[i], label=list(scores.keys())[i], ax=ax[0])
-    plot_dist(pl_sc[:, 191:], times=(-0.5, 1.4), color=colors[i],
+    plot_dist(pl_sc[:, :165], times=(-0.4, 1.25), color=colors[i], label=list(scores.keys())[i], ax=ax[0])
+    plot_dist(pl_sc[:, 166:], times=(-0.5, 1.4), color=colors[i],
               label=list(scores.keys())[i], ax=ax[1])
+ax[0].set_xlabel("Time from stim (s)")
+ax[1].set_xlabel("Time from go (s)")
+ax[0].set_ylabel("Accuracy (%)")
+fig2.suptitle("Condition Decoding (LS/LM vs JL)")
+
+# draw horizontal dotted lines at chance
+ax[0].axhline(1/2, color='k', linestyle='--')
+ax[1].axhline(1/2, color='k', linestyle='--')
