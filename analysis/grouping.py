@@ -25,8 +25,7 @@ class GroupData:
     @classmethod
     def from_intermediates(cls, task: str, root: PathLike,
                            conds: dict[str, Doubles] = None,
-                           folder: str = 'stats', fdr=False,
-                           pval: float = 0.05):
+                           folder: str = 'stats', **kwargs):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
         sig = load_dict(layout, conds, "significance", True, folder)
@@ -35,7 +34,7 @@ class GroupData:
                     zscore=load_dict(layout, conds, "zscore", False, folder))
         data = combine(data, (1, 4))
         # subjects = tuple(data['power'].keys())
-        out = cls(data, sig, fdr=fdr, pval=pval)
+        out = cls(data, sig, **kwargs)
         # out.subjects = subjects
         out.task = task
         out._root = root
@@ -45,7 +44,7 @@ class GroupData:
                  mask: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
-                 fdr: bool = False, pval: float = 0.05):
+                 fdr: bool = False, pval: float = 0.05, wide_window: bool = False):
         self._set_data(data, 'array')
         self._categories = categories
         if mask is not None:
@@ -53,23 +52,29 @@ class GroupData:
             if not ((self.signif == 0) | (self.signif == 1)).all():
                 if 'epoch' in categories:
                     for i, arr in enumerate(self.signif):
-                        self.signif[i] = self.correction(arr, fdr, pval)
+                        self.signif[i] = self.correction(arr, fdr, pval, wide_window)
                 else:
-                    self.signif = self.correction(self.signif, fdr, pval)
+                    self.signif = self.correction(self.signif, fdr, pval, wide_window)
             keys = self.signif.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    self.signif, keys[1], keys[0])
+                    self.signif, keys[1], keys[0], wide=True)
             else:
                 self.sig_chans = self._find_sig_chans(self.signif)
 
-    @staticmethod
-    def correction(p_vals, fdr: bool, thresh: float):
-        if fdr:
-            p_vals = mne.stats.fdr_correction(p_vals)[1]
-        return p_vals < thresh
+    def correction(self, p_vals, fdr: bool, thresh: float,
+                   per_subject: bool = False):
+        if per_subject:
+            for sub in self.subjects:
+                idx = np.where(self.keys['channel'][:5] == sub)[0]
+                p_vals[idx] = mne.stats.fdr_correction(p_vals[idx], thresh)[
+                    0] if fdr else p_vals[idx] < thresh
+        else:
+            p_vals = mne.stats.fdr_correction(p_vals.T, thresh)[
+                0].T if fdr else p_vals < thresh
+        return p_vals
 
     def _set_data(self, data: dict | LabeledArray, attr: str):
         if isinstance(data, dict):
@@ -487,7 +492,7 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 
 def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
-                conds: tuple[str]
+                conds: tuple[str], wide: bool = False
                 ) -> (set[int], set[int], set[int], set[int]):
     sig_chans = set()
     AUD = set()
@@ -500,7 +505,10 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 sig_chans |= {i}
                 break
 
-        if np.squeeze(all_sig).ndim >= 3:
+        if wide:
+            aud_slice = slice(0, 175)
+            go_slice = slice(None)
+        elif np.squeeze(all_sig).ndim >= 3:
             aud_slice = slice(50, 100)
             go_slice = slice(75, 125)
         else:
