@@ -1,6 +1,7 @@
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_channels
 import os
+from ieeg.viz.mri import gen_labels
 
 # %% Imports
 

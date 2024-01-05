@@ -179,7 +179,7 @@ if __name__ == "__main__":
     # model = skd.NMF(**options)
     # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
     model = tsc.TimeSeriesKMeans(n_clusters=4,
-                                 n_jobs=4, metric="softdtw", verbose=True)
+                                 n_jobs=4, metric="dtw", verbose=True)
     pipe = Pipeline([
         # ('noise removal', skd.PCA(0.99)),
         ('scale', MinMaxScaler((0, 1)))])
