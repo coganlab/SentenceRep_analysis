@@ -5,19 +5,16 @@ import numpy as np
 import os
 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, roc_auc_score
-import sklearn.covariance as skcov
 import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
-import ieeg.decoding as eegdec
-from ieeg.calc.mat import LabeledArray, Labels, combine
-from ieeg.calc.reshape import concatenate_arrays
+import ieeg.decoding.decoders as eegdec
+from ieeg.calc.mat import LabeledArray, Labels
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.oversample import MinimumNaNSplit
-from joblib import Parallel, delayed
 
 
-class Decoder(eegdec.PcaLdaClassification):
+class Decoder(eegdec.PcaLdaClassification, eegdec.SlidingWindowMixIn):
 
     def __init__(self, *args,
                  cv=MinimumNaNSplit,
@@ -42,7 +39,6 @@ class Decoder(eegdec.PcaLdaClassification):
         cv = self.cv
         n_cats = len(set(labels))
         mats = np.zeros((cv.n_repeats, cv.n_splits, n_cats, n_cats))
-        auc = np.zeros((cv.n_repeats, cv.n_splits, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
         for f, (train_idx, test_idx) in enumerate(cv.split(x_data.swapaxes(
@@ -80,49 +76,18 @@ class Decoder(eegdec.PcaLdaClassification):
             pred = self.predict(test_in)
             rep, fold = divmod(f, cv.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
-            bin_y_test = np.array([y_test == i for i in range(n_cats)]).T
-            # auc[rep, fold] = roc_auc_score(
-            #     bin_y_test, self.model.decision_function(test_in),
-            #     multi_class='ovr', average=None)
 
         # average the repetitions, sum the folds
         matk = np.sum(mats, axis=1)
-        auck = np.mean(auc, axis=1)
         if normalize == 'true':
             divisor = np.sum(matk, axis=-1, keepdims=True)
         elif normalize == 'pred':
             divisor = np.sum(matk, axis=-2, keepdims=True)
         elif normalize == 'all':
-            divisor = cv.n_repeats #np.sum(matk, keepdims=True)
+            divisor = cv.n_repeats
         else:
             divisor = 1
-        return matk / divisor, auck
-
-    def sliding_window(self, x_data: np.ndarray, labels: np.ndarray,
-                       window_size: int = 20, axis: int = -1,
-                       obs_axs: int = -2, normalize: str = 'true',
-                       n_jobs: int = -3) -> np.ndarray:
-
-        # make windowing generator
-        axis = x_data.ndim + axis if axis < 0 else axis
-        slices = (slice(start, start + window_size)
-                  for start in range(0, x_data.shape[axis] - window_size))
-        idxs = (tuple(slice(None) if i != axis else sl for i in
-                      range(x_data.ndim)) for sl in slices)
-
-        # initialize output array
-        n_cats = len(self.categories)
-        out = np.zeros((x_data.shape[axis] - window_size, self.cv.n_repeats, n_cats, n_cats))
-        out_auc = np.zeros((x_data.shape[axis] - window_size, self.cv.n_repeats, n_cats))
-
-        # Use joblib to parallelize the computation
-        gen = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
-            delayed(self.cv_cm)(x_data[idx], labels, normalize, obs_axs
-                                ) for idx in idxs)
-        for i, mat in enumerate(gen):
-            out[i], out_auc[i] = mat
-
-        return out, out_auc
+        return matk / divisor
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
@@ -175,13 +140,13 @@ def concatenate_conditions(data, conditions, axis=1):
     return concatenated_data
 
 
-def decode_and_score(decoder, data, labels, scorer, **decoder_kwargs):
+def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     """Perform decoding and scoring"""
-    mats, auc = decoder.sliding_window(data.__array__(), labels, **decoder_kwargs)
+    mats = decoder.sliding_window(data.__array__(), labels, decoder.cv_cm, **decoder_kwargs)
     if scorer == 'acc':
         score = mats.T[np.eye(len(decoder.categories)).astype(bool)].T
     else:
-        score = auc
+        raise NotImplementedError("Only accuracy is implemented")
     return score
 
 
@@ -196,9 +161,9 @@ scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': No
 idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
 idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
-decoder = Decoder(0.8, 'lda', n_splits=5, n_repeats=10, oversample=True,)
+decoder = Decoder(0.8, 'lda', n_splits=5, n_repeats=3, oversample=True,)
 scorer = 'acc'
-window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3}
+window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -1}
 
 # %% Time Sliding decoding for word tokens
 
@@ -264,6 +229,7 @@ for i, idx in enumerate(idxs):
     common = np.array([l for l in aud_data.labels[1] if l in go_data.labels[1]])
     x_data = aud_data[..., :175].concatenate(go_data[:, common], axis=2)
     cats, labels = classes_from_labels(x_data.labels[1], crop=slice(-2, None), which=1)
+    np.random.shuffle(labels)
     # cats, labels = classes_from_labels(x_data.labels[1], crop=slice(-2, -1), which=1)
     # cats['ls'] = cats['lm'] # if you want to combine ls and lm
     decoder.categories = cats
@@ -279,7 +245,7 @@ for i, idx in enumerate(idxs):
 ax[0].set_xlabel("Time from stim (s)")
 ax[1].set_xlabel("Time from go (s)")
 ax[0].set_ylabel("Accuracy (%)")
-fig2.suptitle("Condition Decoding (LS/LM vs JL)")
+fig2.suptitle("Condition Decoding (LS vs LM)")
 
 # draw horizontal dotted lines at chance
 ax[0].axhline(1/2, color='k', linestyle='--')
