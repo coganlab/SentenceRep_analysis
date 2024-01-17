@@ -35,4 +35,4 @@ shuffle_score = get_scores(sub, decoder, idxs, conds, True, **window_kwargs)
 
 # %% Time perm cluster stats
 cond = 'Sensory-Motor-resp'
-signif = np.mean(true_score[cond] < shuffle_score[cond], axis=1) > 0.05
+signif = np.mean(true_score[cond] < shuffle_score[cond], axis=1) < 0.05
