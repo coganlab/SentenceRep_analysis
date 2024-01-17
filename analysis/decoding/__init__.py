@@ -156,7 +156,7 @@ def shuffle_labels(X, labels, n_splits):
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
                shuffle: bool = False, **decoder_kwargs
-               ) -> dict[str, dict[str, np.ndarray]]:
+               ) -> dict[str, np.ndarray]:
     all_scores = {}
     scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None,
               'All': None}

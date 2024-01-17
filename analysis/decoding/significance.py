@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 from analysis.grouping import GroupData
 from analysis.decoding import Decoder, get_scores
+from ieeg.calc.stats import time_perm_cluster
 
 
 # %% Imports
@@ -29,5 +30,9 @@ decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
 true_score = get_scores(sub, decoder, idxs, conds, False, **window_kwargs)
 
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
-                  n_splits=5, n_repeats=5, oversample=True)
+                  n_splits=5, n_repeats=250, oversample=True)
 shuffle_score = get_scores(sub, decoder, idxs, conds, True, **window_kwargs)
+
+# %% Time perm cluster stats
+cond = 'Sensory-Motor-resp'
+signif = np.mean(true_score[cond] > shuffle_score[cond], axis=1) > 0.95
