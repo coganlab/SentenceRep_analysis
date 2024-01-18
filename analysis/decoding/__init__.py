@@ -25,13 +25,19 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2,
-              average_repetitions: bool = True):
+              average_repetitions: bool = True, shuffle: bool = False):
         n_cats = len(set(labels))
         mats = np.zeros((self.n_repeats, self.n_splits, n_cats, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
+        old_rep = -1
         for f, (train_idx, test_idx) in enumerate(self.split(x_data.swapaxes(
                 0, obs_axs), labels)):
+            rep, fold = divmod(f, self.n_splits)
+            if rep != old_rep:
+                old_rep = rep
+                if shuffle:
+                    self.shuffle_labels(x_data, labels)
             x_train = np.take(x_data, train_idx, obs_axs)
             x_test = np.take(x_data, test_idx, obs_axs)
             y_train = labels[train_idx]
@@ -66,7 +72,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             # fit model and score results
             self.fit(train_in, y_train)
             pred = self.predict(test_in)
-            rep, fold = divmod(f, self.n_splits)
             mats[rep, fold] = confusion_matrix(y_test, pred)
 
         # average the repetitions
@@ -145,19 +150,8 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     return score
 
 
-def shuffle_labels(X, labels, n_splits):
-    cats = np.unique(labels)
-    gt_labels = [0] * cats.shape[0]
-    while not all(g >= n_splits for g in gt_labels):
-        np.random.shuffle(labels)
-        for j, l in enumerate(cats):
-            gt_labels[j] = np.min(
-                np.sum(np.all(~np.isnan(X[:, labels == l]), axis=2), axis=1))
-
-
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
-               shuffle: bool = False, **decoder_kwargs
-               ) -> dict[str, np.ndarray]:
+               **decoder_kwargs) -> dict[str, np.ndarray]:
     all_scores = {}
     scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None,
               'All': None}
@@ -174,10 +168,6 @@ def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
                 X = x_data[:, cond]
 
             cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
-            # check that each label has at least n_splits non nan trials
-            # if not, reshuffle
-            if shuffle:
-                shuffle_labels(X, labels, decoder.n_splits)
 
             # Decoding
             score = sliding_window(X.__array__(), labels, decoder.cv_cm,
