@@ -72,6 +72,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # average the repetitions
         if average_repetitions:
             mats = np.mean(mats, axis=0)
+        mats = np.sum(mats, axis=-3)
 
         # normalize, sum the folds
         if normalize == 'true':
