@@ -281,6 +281,42 @@ def plot_channels(arr: LabeledArray, n_cols: int = 10, n_rows: int = 6,
     return figs
 
 
+def plot_horizontal_bars(ax: plt.Axes,
+                         where: list[np.ndarray[bool], ...],
+                         bar_height=0.2, location='below'):
+    """Plot horizontal bars on an axis according to a boolean array
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        The axis to plot on
+    where : list[np.ndarray[bool], ...]
+        A list of boolean arrays, where each array is the same length as the
+        number of bars on the axis. The bars will be plotted where the array
+        is True.
+    bar_height : float, optional
+        The height of the bars, by default 0.2
+    location : str, optional
+        Where to plot the bars, by default 'below'
+    """
+
+    lines = ax.get_lines()
+    for i, line in enumerate(lines):
+        x = line.get_xdata()
+        width = x[1] - x[0]
+        color = line.get_color()
+        ylims = ax.get_ylim()
+        if location == 'below':
+            y0 = ylims[0] + (i + 1) * width
+            y0 -= width / 2
+        else:
+            y0 = ylims[1] - (i + 1) * width
+            y0 += width / 2
+        for j in range(len(x)):
+            if where[i][j]:
+                ax.barh(y0, width=bar_height, left=x[j], height=width,
+                        color=color)
+
 
 if __name__ == "__main__":
     import matplotlib as mpl

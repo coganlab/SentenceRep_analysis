@@ -30,7 +30,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         mats = np.zeros((self.n_repeats, self.n_splits, n_cats, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
-        old_rep = -1
         for f, (train_idx, test_idx) in enumerate(self.split(x_data.swapaxes(
                 0, obs_axs), labels)):
             rep, fold = divmod(f, self.n_splits)
@@ -39,11 +38,10 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             x_test = np.take(x_data, test_idx, obs_axs)
             y_train = labels[train_idx]
             y_test = labels[test_idx]
-            if rep != old_rep:
-                old_rep = rep
-                if shuffle:
-                    self.shuffle_labels(x_train, y_train, min=2)
-                    self.shuffle_labels(x_test, y_test, min=1)
+            if shuffle:
+                self.shuffle_labels(x_train, y_train, min=2)
+                np.random.shuffle(y_test)
+                # self.shuffle_labels(x_test, y_test, min=1)
 
             for i in set(labels):
                 # fill in train data nans with random combinations of
