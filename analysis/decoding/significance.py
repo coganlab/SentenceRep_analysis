@@ -4,11 +4,8 @@
 import numpy as np
 import os
 
-import matplotlib.pyplot as plt
-
 from analysis.grouping import GroupData
 from analysis.decoding import Decoder, get_scores
-from ieeg.calc.stats import time_perm_cluster
 
 
 # %% Imports
@@ -23,15 +20,14 @@ window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'n_jobs': -2,
                  'normalize': 'true', 'average_repetitions': False}
 
 # %% Time Sliding decoding for word tokens
-# conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-conds = ['resp']
+conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
                   n_splits=5, n_repeats=1, oversample=True)
-true_score = get_scores(sub, decoder, idxs, conds, False, **window_kwargs)
+true_score = get_scores(sub, decoder, idxs, conds, shuffle=False, **window_kwargs)
 
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
                   n_splits=5, n_repeats=250, oversample=True)
-shuffle_score = get_scores(sub, decoder, idxs, conds, True, **window_kwargs)
+shuffle_score = get_scores(sub, decoder, idxs, conds, shuffle=True, **window_kwargs)
 
 # %% Time perm cluster stats
 cond = 'Sensory-Motor-resp'

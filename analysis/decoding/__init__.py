@@ -34,14 +34,17 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         for f, (train_idx, test_idx) in enumerate(self.split(x_data.swapaxes(
                 0, obs_axs), labels)):
             rep, fold = divmod(f, self.n_splits)
-            if rep != old_rep:
-                old_rep = rep
-                if shuffle:
-                    self.shuffle_labels(x_data, labels)
+
             x_train = np.take(x_data, train_idx, obs_axs)
             x_test = np.take(x_data, test_idx, obs_axs)
             y_train = labels[train_idx]
             y_test = labels[test_idx]
+            if rep != old_rep:
+                old_rep = rep
+                if shuffle:
+                    self.shuffle_labels(x_train, y_train, min=2)
+                    self.shuffle_labels(x_test, y_test, min=1)
+
             for i in set(labels):
                 # fill in train data nans with random combinations of
                 # existing train data trials (mixup)
