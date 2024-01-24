@@ -6,6 +6,8 @@ from ieeg.calc.mat import LabeledArray
 from ieeg.calc.oversample import MinimumNaNSplit
 from ieeg.process import sliding_window
 import numpy as np
+import matplotlib.pyplot as plt
+from ieeg.viz.utils import plot_dist
 
 
 class Decoder(PcaLdaClassification, MinimumNaNSplit):
@@ -176,3 +178,40 @@ def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
             scores[names[i]] = score.copy()
             all_scores["-".join([names[i], cond])] = score.copy()
     return all_scores
+
+
+def plot_all_scores(all_scores: dict[str, np.ndarray],
+                    conds: list[str], idxs: dict[str, list[int]],
+                    colors: list[list[float]],
+                    fig: plt.Figure = None, axs: plt.Axes = None,
+                    **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
+    names = list(idxs.keys())
+    if fig is None:
+        fig, axs = plt.subplots(1, len(conds))
+    if len(conds) == 1:
+        axs = [axs]
+    for color, name, idx in zip(colors, names, idxs.values()):
+        for cond, ax in zip(conds, axs):
+            if isinstance(cond, list):
+                cond = "-".join(cond)
+            ax.set_title(cond)
+            if cond == 'resp':
+                times = (-0.9, 0.9)
+            else:
+                times = (-0.4, 1.4)
+            pl_sc = np.reshape(all_scores["-".join([name, cond])],
+                               (all_scores["-".join([name, cond])].shape[0],
+                                -1)).T
+            plot_dist(pl_sc, mode='std', times=times,
+                      color=color, label=name, ax=ax,
+                      **plot_kwargs)
+            if name is names[-1]:
+                ax.legend()
+                ax.set_title(cond)
+                ax.set_ylim(0.1, 0.7)
+    axs[0].set_xlabel("Time from stim (s)")
+    axs[1].set_xlabel("Time from go (s)")
+    axs[2].set_xlabel("Time from response (s)")
+    axs[0].set_ylabel("Accuracy (%)")
+    fig.suptitle("Word Decoding")
+    return fig, axs

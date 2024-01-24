@@ -12,7 +12,7 @@ from analysis.utils.plotting import plot_horizontal_bars
 from ieeg.viz.utils import plot_dist
 from ieeg.calc.stats import time_perm_cluster
 from analysis.decoding import (Decoder, extract, concatenate_conditions, classes_from_labels, decode_and_score,
-                               flatten_list, get_scores)
+                               flatten_list, get_scores, plot_all_scores)
 
 
 # %% Imports
@@ -85,8 +85,8 @@ decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
 shuffle_score = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
 signif = {}
 for cond, score in true_scores.items():
-    true = np.mean(score[..., np.eye(len(decoder.categories)).astype(bool)], axis=2)
-    shuffle = np.mean(shuffle_score[cond][..., np.eye(len(decoder.categories)).astype(bool)], axis=2)
+    true = np.mean(score, axis=2)
+    shuffle = np.mean(shuffle_score[cond].T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
     signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.05, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
 # %% Plot significance
