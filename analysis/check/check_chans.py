@@ -18,9 +18,10 @@ else:  # if not then set box directory
 TASK = "SentenceRep"
 subj = "D" + str(subject).zfill(4)
 layout = get_data("SentenceRep", root=LAB_root)
-cond = 'resp'
+cond = 'go_ls'
+spec_type = 'multitaper'
 filename = os.path.join(layout.root, 'derivatives',
-                        'spec', 'wavelet', subj, f'{cond}-tfr.h5')
+                        'spec', spec_type, subj, f'{cond}-tfr.h5')
 spec = mne.time_frequency.read_tfrs(filename)[0]
 info_file = os.path.join(layout.root, spec.info['subject_info']['files'][0])
 all_bad = get_bad_chans(info_file)
@@ -30,9 +31,9 @@ spec.info.update(bads=[b for b in all_bad if b in spec.ch_names])
 import matplotlib as mpl
 figs = chan_grid(spec, size=(20, 10), vmin=-2, vmax=2,
                  cmap=parula_map, show=False)
-fig_path = os.path.join(layout.root, 'derivatives', 'figs', 'wavelet')
+fig_path = os.path.join(layout.root, 'derivatives', 'figs', spec_type)
 for i, f in enumerate(figs):
     f.savefig(os.path.join(fig_path, f'{subj}_{cond}_{i + 1}.jpg'), bbox_inches='tight')
 
 ## save bad channels
-update(spec, layout, "muscle")
+# update(spec, layout, "muscle")

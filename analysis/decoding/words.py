@@ -53,7 +53,7 @@ for i, (idx, ax2) in enumerate(zip(idxs, axs2)):
         cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
 
         # Decoding
-        score = decode_and_score(decoder, X, labels, scorer, shuffle=False, **window_kwargs)
+        score = decode_and_score(decoder, X, labels, scorer, **window_kwargs)
         scores[names[i]] = np.mean(score.copy(), axis=1)
         if cond == 'resp':
             times = (-0.9, 0.9)
@@ -81,7 +81,7 @@ fig.suptitle("Word Decoding")
 
 # %% Time Sliding decoding significance
 decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
-                  n_splits=5, n_repeats=250, oversample=True)
+                        n_splits=5, n_repeats=250, oversample=True)
 shuffle_score = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
 signif = {}
 for cond, score in true_scores.items():

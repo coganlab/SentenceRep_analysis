@@ -14,7 +14,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
     def __init__(self, categories: dict, *args,
                  n_splits: int = 5,
-                 n_repeats: int = 10,
+                 n_repeats: int = 1,
                  oversample: bool = True,
                  max_features: int = float("inf"),
                  **kwargs):
@@ -27,7 +27,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2,
-              average_repetitions: bool = True, shuffle: bool = False):
+              average_repetitions: bool = True):
         n_cats = len(set(labels))
         mats = np.zeros((self.n_repeats, self.n_splits, n_cats, n_cats))
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
@@ -40,10 +40,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             x_test = np.take(x_data, test_idx, obs_axs)
             y_train = labels[train_idx]
             y_test = labels[test_idx]
-            if shuffle:
-                self.shuffle_labels(x_train, y_train, min=2)
-                np.random.shuffle(y_test)
-                # self.shuffle_labels(x_test, y_test, min=1)
 
             for i in set(labels):
                 # fill in train data nans with random combinations of
@@ -154,30 +150,42 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
 
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
-               **decoder_kwargs) -> dict[str, np.ndarray]:
-    all_scores = {}
-    scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None,
-              'All': None}
-    names = list(scores.keys())
-    for i, idx in enumerate(idxs):
-        all_conds = flatten_list(conds)
-        x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
-                         False)
-        for cond in conds:
-            if isinstance(cond, list):
-                X = concatenate_conditions(x_data, cond)
-                cond = "-".join(cond)
-            else:
-                X = x_data[:, cond]
+               shuffle: bool = False, **decoder_kwargs) -> dict[str, np.ndarray]:
+    all_scores = [{}]
+    names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
+    if shuffle:
+        repeats = decoder.n_repeats
+        decoder.n_repeats = 1
+        all_scores *= repeats
+    else:
+        repeats = 1
+    for j in range(repeats):
+        for i, idx in enumerate(idxs):
+            all_conds = flatten_list(conds)
+            x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
+                             False)
+            for cond in conds:
+                if isinstance(cond, list):
+                    X = concatenate_conditions(x_data, cond)
+                    cond = "-".join(cond)
+                else:
+                    X = x_data[:, cond]
 
-            cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+                cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+                if shuffle:
+                    decoder.shuffle_labels(X.__array__(), labels)
 
-            # Decoding
-            score = sliding_window(X.__array__(), labels, decoder.cv_cm,
-                                   **decoder_kwargs)
-            scores[names[i]] = score.copy()
-            all_scores["-".join([names[i], cond])] = score.copy()
-    return all_scores
+                # Decoding
+                score = sliding_window(X.__array__(), labels, decoder.cv_cm,
+                                       **decoder_kwargs)
+                all_scores[j]["-".join([names[i], cond])] = score.copy()
+    if not shuffle:
+        return all_scores[0]
+    else:
+        temp = {}
+        for key in all_scores[0].keys():
+            temp[key] = np.stack([all_scores[i][key] for i in range(repeats)], axis=1)
+        return temp
 
 
 def plot_all_scores(all_scores: dict[str, np.ndarray],
