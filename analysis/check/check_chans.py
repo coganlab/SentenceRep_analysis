@@ -36,4 +36,4 @@ for i, f in enumerate(figs):
     f.savefig(os.path.join(fig_path, f'{subj}_{cond}_{i + 1}.jpg'), bbox_inches='tight')
 
 ## save bad channels
-# update(spec, layout, "muscle")
+update(spec, layout, "muscle")

@@ -101,3 +101,13 @@ for cond, ax in zip(conds, axs):
 # %% horizontal lines
 for ax in chain(axs, axs2):
     ax.axhline(1 / len(set(labels)), color='k', linestyle='--')
+
+# %% plot the histograms of the shuffle scores in separate subplots
+
+fig3, axs3 = plt.subplots(1, len(shuffle_score.keys()))
+
+for i, (cond, score) in enumerate(shuffle_score.items()):
+    this_score = np.histogram(np.mean(score, axis=0), bins=20)
+    axs3[i].bar(this_score[1][:-1], this_score[0], width=np.diff(this_score[1]))
+    axs3[i].set_title(cond)
+
