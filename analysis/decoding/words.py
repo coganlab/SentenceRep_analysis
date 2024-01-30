@@ -13,6 +13,7 @@ from ieeg.viz.utils import plot_dist
 from ieeg.calc.stats import time_perm_cluster
 from analysis.decoding import (Decoder, extract, concatenate_conditions, classes_from_labels, decode_and_score,
                                flatten_list, get_scores, plot_all_scores)
+from scipy.stats import norm
 
 
 # %% Imports
@@ -28,7 +29,7 @@ idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10, oversample=True)
 scorer = 'acc'
-window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
+window_kwargs = {'window_size': 20, 'axis': -1, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 6,
                  'average_repetitions': False}
 
 # %% Time Sliding decoding for word tokens
@@ -106,8 +107,15 @@ for ax in chain(axs, axs2):
 
 fig3, axs3 = plt.subplots(1, len(shuffle_score.keys()))
 
-for i, (cond, score) in enumerate(shuffle_score.items()):
-    this_score = np.histogram(np.mean(score, axis=0), bins=20)
-    axs3[i].bar(this_score[1][:-1], this_score[0], width=np.diff(this_score[1]))
-    axs3[i].set_title(cond)
+for i, ((cond, score), idx) in enumerate(zip(shuffle_score.items(), idxs)):
+    # resample the second axis as the mean of 10 random repetitions
 
+    resamp = np.zeros_like(score)
+    for j in range(score.shape[1]):
+        resamp[:, j] = np.mean(score[:, np.random.choice(score.shape[1], 10, replace=False)], axis=1)
+    axs3[i].hist(np.mean(resamp.T[np.eye(4).astype(bool)], axis=0).flat, 16, (0, 1), True)
+    axs3[i].set_title(cond + f" ({len(idx)})")
+    # plot a gaussian fit
+    x = np.linspace(0, 1, 100)
+    y = norm.pdf(x, np.mean(resamp), np.std(resamp))
+    axs3[i].plot(x, y, 'r--', linewidth=2)

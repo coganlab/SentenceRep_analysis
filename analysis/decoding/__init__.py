@@ -27,14 +27,21 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2,
-              average_repetitions: bool = True):
+              average_repetitions: bool = True, window: int = None, shuffle: bool = False):
+        """Cross-validated confusion matrix"""
         n_cats = len(set(labels))
-        mats = np.zeros((self.n_repeats, self.n_splits, n_cats, n_cats))
+        out_shape = (self.n_repeats, self.n_splits, n_cats, n_cats)
+        if window is not None:
+            out_shape = (x_data.shape[-1] - window,) + out_shape
+        mats = np.zeros(out_shape)
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
         idx = [slice(None) for _ in range(x_data.ndim)]
         for f, (train_idx, test_idx) in enumerate(self.split(x_data.swapaxes(
-                0, obs_axs), labels)):
+                0, obs_axs), labels.copy())):
             rep, fold = divmod(f, self.n_splits)
+
+            if shuffle and fold == 0:
+                self.shuffle_labels(x_data, labels)
 
             x_train = np.take(x_data, train_idx, obs_axs)
             x_test = np.take(x_data, test_idx, obs_axs)
@@ -59,23 +66,15 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             is_nan = np.isnan(x_test)
             x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
 
-            # feature selection
-            train_in = flatten_features(x_train, obs_axs)
-            test_in = flatten_features(x_test, obs_axs)
-            if train_in.shape[1] > self.max_features:
-                tidx = np.random.choice(train_in.shape[1], self.max_features,
-                                        replace=False)
-                train_in = train_in[:, tidx]
-                test_in = test_in[:, tidx]
+            x_stacked = np.concatenate((x_train, x_test), axis=obs_axs)
+            y_stacked = np.concatenate((y_train, y_test))
 
-            # fit model and score results
-            self.fit(train_in, y_train)
-            pred = self.predict(test_in)
-            mats[rep, fold] = confusion_matrix(y_test, pred)
+            mats[:, rep, fold] = sliding_window(x_stacked, y_stacked, self.fp_unstack, window_size=window,
+                                                sep_idx=x_train.shape[obs_axs], obs_axs=obs_axs)
 
         # average the repetitions
         if average_repetitions:
-            mats = np.mean(mats, axis=0)
+            mats = np.mean(mats, axis=1)
         mats = np.sum(mats, axis=-3)
 
         # normalize, sum the folds
@@ -88,6 +87,32 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         else:
             divisor = 1
         return mats / divisor
+
+    def fp_unstack(self, x_data: np.ndarray, labels: np.ndarray,
+                   sep_idx: int, obs_axs: int = -2):
+        obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
+        train_idx = slice(0, sep_idx)
+        test_idx = slice(sep_idx, None)
+        x_train = np.take(x_data, train_idx, obs_axs)
+        x_test = np.take(x_data, test_idx, obs_axs)
+        y_train = labels[train_idx]
+        y_test = labels[test_idx]
+        return self.fit_predict(x_train, y_train, x_test, y_test, obs_axs)
+
+    def fit_predict(self, x_train, y_train, x_test, y_test, obs_axs: int = -2):
+        # feature selection
+        train_in = flatten_features(x_train, obs_axs)
+        test_in = flatten_features(x_test, obs_axs)
+        if train_in.shape[1] > self.max_features:
+            tidx = np.random.choice(train_in.shape[1], self.max_features,
+                                    replace=False)
+            train_in = train_in[:, tidx]
+            test_in = test_in[:, tidx]
+
+        # fit model and score results
+        self.fit(train_in, y_train)
+        pred = self.predict(test_in)
+        return confusion_matrix(y_test, pred)
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
@@ -150,42 +175,27 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
 
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
-               shuffle: bool = False, **decoder_kwargs) -> dict[str, np.ndarray]:
-    all_scores = [{}]
+               **decoder_kwargs) -> dict[str, np.ndarray]:
+    all_scores = {}
     names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
-    if shuffle:
-        repeats = decoder.n_repeats
-        decoder.n_repeats = 1
-        all_scores *= repeats
-    else:
-        repeats = 1
-    for j in range(repeats):
-        for i, idx in enumerate(idxs):
-            all_conds = flatten_list(conds)
-            x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
-                             False)
-            for cond in conds:
-                if isinstance(cond, list):
-                    X = concatenate_conditions(x_data, cond)
-                    cond = "-".join(cond)
-                else:
-                    X = x_data[:, cond]
+    for i, idx in enumerate(idxs):
+        all_conds = flatten_list(conds)
+        x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
+                         False)
+        for cond in conds:
+            if isinstance(cond, list):
+                X = concatenate_conditions(x_data, cond)
+                cond = "-".join(cond)
+            else:
+                X = x_data[:, cond]
 
-                cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
-                if shuffle:
-                    decoder.shuffle_labels(X.__array__(), labels)
+            cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
 
-                # Decoding
-                score = sliding_window(X.__array__(), labels, decoder.cv_cm,
-                                       **decoder_kwargs)
-                all_scores[j]["-".join([names[i], cond])] = score.copy()
-    if not shuffle:
-        return all_scores[0]
-    else:
-        temp = {}
-        for key in all_scores[0].keys():
-            temp[key] = np.stack([all_scores[i][key] for i in range(repeats)], axis=1)
-        return temp
+            # Decoding
+            score = decoder.cv_cm(X.__array__(), labels, **decoder_kwargs)
+            all_scores["-".join([names[i], cond])] = score.copy()
+
+    return all_scores
 
 
 def plot_all_scores(all_scores: dict[str, np.ndarray],
