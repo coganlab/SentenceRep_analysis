@@ -19,9 +19,12 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
                  n_repeats: int = 1,
                  oversample: bool = True,
                  max_features: int = float("inf"),
+                 min_samples: int = 1,
+                 which: str = 'test',
                  **kwargs):
         PcaLdaClassification.__init__(self, *args, **kwargs)
-        MinimumNaNSplit.__init__(self, n_splits, n_repeats)
+        MinimumNaNSplit.__init__(self, n_splits, n_repeats,
+                                 None, min_samples, which)
         if not oversample:
             self.oversample = lambda x, axis: x
         self.categories = categories
