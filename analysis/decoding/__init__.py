@@ -25,6 +25,8 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             self.oversample = lambda x, axis: x
         self.categories = categories
         self.max_features = max_features
+        self.obs_axs = None
+        self.fit_predict = None
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2, n_jobs: int = 1,
@@ -36,7 +38,11 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         if window is not None:
             out_shape = (x_data.shape[-1] - window + 1,) + out_shape
         mats = np.zeros(out_shape)
-        obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
+        self.obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
+        # self.fit_predict = self.fit_predict_maker(
+        #     (x_data.shape[self.obs_axs] // self.n_splits) * (self.n_splits - 1),
+        #     self.obs_axs,
+        #     self.max_features)
 
         # shuffled label pool
         label_stack = np.stack([labels.copy() for _ in range(self.n_repeats)])
@@ -47,7 +53,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
             delayed(self.process_fold)(train_idx, test_idx, x_data.copy(),
-                                       label_stack[f // self.n_splits], obs_axs, window)
+                                       label_stack[f // self.n_splits], window)
             for f, (train_idx, test_idx) in
             enumerate(self.split(x_data.swapaxes(0, obs_axs), labels)))
 
@@ -74,43 +80,44 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
     def process_fold(self, train_idx: np.ndarray, test_idx: np.ndarray,
                      x_data: np.ndarray, labels: np.ndarray,
-                     obs_axs: int, window: int | None):
+                     window: int | None):
 
         # make first and only copy of x_data
         idx_stacked = np.concatenate((train_idx, test_idx))
-        x_stacked = np.take(x_data, idx_stacked, obs_axs)
+        x_stacked = np.take(x_data, idx_stacked, self.obs_axs)
         y_stacked = labels[idx_stacked]
 
         # define train and test as views of x_stacked
         sep = train_idx.shape[0]
-        x_train, x_test = np.split(x_stacked, [sep], axis=obs_axs)
+        x_train, x_test = np.split(x_stacked, [sep], axis=self.obs_axs)
         y_train, y_test = np.split(y_stacked, [sep])
 
         idx = [slice(None) for _ in range(x_data.ndim)]
         for i in np.unique(labels):
             # fill in train data nans with random combinations of
             # existing train data trials (mixup)
-            idx[obs_axs] = y_train == i
+            idx[self.obs_axs] = y_train == i
             x_train[tuple(idx)] = self.oversample(x_train[tuple(idx)],
-                                                  axis=obs_axs)
+                                                  axis=self.obs_axs)
 
         # fill in test data nans with noise from distribution
         is_nan = np.isnan(x_test)
         x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
 
-        return sliding_window(x_stacked, y_stacked, self.fp_unstack,
-                              window_size=window, sep_idx=sep, obs_axs=obs_axs)
+        windowed = windower(x_stacked, window, axis=-1)
+        out = np.zeros((windowed.shape[0], len(self.categories),
+                        len(self.categories)), dtype=np.uintp)
+        for i, x_window in enumerate(windowed):
+            out[i] = self.fp(x_window, y_stacked, sep)
+        return out
 
-    def fp_unstack(self, x_data: np.ndarray, labels: np.ndarray,
-                   sep_idx: int, obs_axs: int = -2):
-        x_train, x_test = np.split(x_data, [sep_idx], axis=obs_axs)
+    def fp(self, x_data, labels, sep_idx):
+        x_train, x_test = np.split(x_data, [sep_idx], axis=self.obs_axs)
         y_train, y_test = np.split(labels, [sep_idx])
-        return self.fit_predict(x_train, y_train, x_test, y_test, obs_axs)
 
-    def fit_predict(self, x_train, y_train, x_test, y_test, obs_axs: int = -2):
         # feature selection
-        train_in = flatten_features(x_train, obs_axs)
-        test_in = flatten_features(x_test, obs_axs)
+        train_in = flatten_features(x_train, self.obs_axs)
+        test_in = flatten_features(x_test, self.obs_axs)
         if train_in.shape[1] > self.max_features:
             tidx = np.random.choice(train_in.shape[1], self.max_features,
                                     replace=False)
@@ -121,6 +128,30 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         self.fit(train_in, y_train)
         pred = self.predict(test_in)
         return confusion_matrix(y_test, pred)
+
+    def fit_predict_maker(self, sep_idx: int, obs_axs: int, max_features: int):
+
+        @np.vectorize(otypes=[int],
+                      signature=f"(n,m,l),({['n','m','l'][obs_axs]})->(k,k)")
+        def fit_predict(x_data, labels):
+            x_train, x_test = np.split(x_data, [sep_idx], axis=obs_axs)
+            y_train, y_test = np.split(labels, [sep_idx])
+
+            # feature selection
+            train_in = flatten_features(x_train, obs_axs)
+            test_in = flatten_features(x_test, obs_axs)
+            if train_in.shape[1] > max_features:
+                tidx = np.random.choice(train_in.shape[1], max_features,
+                                        replace=False)
+                train_in = train_in[:, tidx]
+                test_in = test_in[:, tidx]
+
+            # fit model and score results
+            self.fit(train_in, y_train)
+            pred = self.predict(test_in)
+            return confusion_matrix(y_test, pred,
+                                    labels=list(self.categories.values()))
+        return fit_predict
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
@@ -134,12 +165,12 @@ def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
 
 def sliding_window(x_data: np.ndarray, labels: np.ndarray, scorer: callable,
                    window_size, **kwargs):
-    func = np.vectorize(scorer,
-                        signature='(n,m,l),(m)->(k,k)',
-                        otypes=[int],
-                        excluded=set(kwargs.keys()))
+    # func = np.vectorize(scorer,
+    #                     signature='(n,m,l),(m)->(k,k)',
+    #                     otypes=[int],
+    #                     excluded=set(kwargs.keys()))
     windowed = windower(x_data, window_size, axis=-1)
-    return func(windowed, labels, **kwargs)
+    return scorer(windowed, labels, **kwargs)
 
 
 def windower(x_data: np.ndarray, window_size: int, axis: int = -1, insert_at: int = 0):
