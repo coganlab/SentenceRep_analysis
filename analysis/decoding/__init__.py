@@ -50,16 +50,22 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
                 self.shuffle_labels(x_data, label_stack[i])
 
             # build the test/train indices from the shuffled labels for each repetition, then chain together the repetitions
-            idxs = (self.split(x_data.swapaxes(0, obs_axs), label) for label in label_stack)
             # splits = (train, test)
-            idxs = ((f, splits, label_stack[f // self.n_splits]) for f, splits in enumerate(itertools.chain(*idxs)))
+            idxs = ((self.split(x_data.swapaxes(0, obs_axs), label), label) for
+                    label in label_stack)
+            idxs = ((splits, itertools.repeat(label, self.n_splits)) for splits, label in idxs)
+            splits, label = zip(*idxs)
+            splits = itertools.chain.from_iterable(splits)
+            label = itertools.chain.from_iterable(label)
+            idxs = zip(splits, label)
+
         else:
-            idxs = ((f, splits, labels) for f, splits in enumerate(self.split(x_data.swapaxes(0, obs_axs), labels)))
+            idxs = ((splits, labels) for splits in self.split(x_data.swapaxes(0, obs_axs), labels))
 
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
             delayed(self.process_fold)(train_idx, test_idx, x_data, l, window)
-            for f, (train_idx, test_idx), l in idxs)
+            for f, ((train_idx, test_idx), l) in enumerate(idxs))
 
         # Collect the results
         for i, result in enumerate(results):
