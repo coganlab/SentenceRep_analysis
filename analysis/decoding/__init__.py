@@ -4,10 +4,11 @@ from analysis.grouping import GroupData
 from ieeg.decoding.decoders import PcaLdaClassification
 from ieeg.calc.mat import LabeledArray
 from ieeg.calc.oversample import MinimumNaNSplit
-from ieeg.process import sliding_window
+from numpy.lib.stride_tricks import as_strided
 import numpy as np
 import matplotlib.pyplot as plt
 from ieeg.viz.utils import plot_dist
+from joblib import Parallel, delayed
 
 
 class Decoder(PcaLdaClassification, MinimumNaNSplit):
@@ -26,51 +27,34 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         self.max_features = max_features
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
-              normalize: str = None, obs_axs: int = -2,
-              average_repetitions: bool = True, window: int = None, shuffle: bool = False):
+              normalize: str = None, obs_axs: int = -2, n_jobs: int = 1,
+              average_repetitions: bool = True, window: int = None,
+              shuffle: bool = False):
         """Cross-validated confusion matrix"""
         n_cats = len(set(labels))
         out_shape = (self.n_repeats, self.n_splits, n_cats, n_cats)
         if window is not None:
-            out_shape = (x_data.shape[-1] - window,) + out_shape
+            out_shape = (x_data.shape[-1] - window + 1,) + out_shape
         mats = np.zeros(out_shape)
         obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
-        idx = [slice(None) for _ in range(x_data.ndim)]
-        for f, (train_idx, test_idx) in enumerate(self.split(x_data.swapaxes(
-                0, obs_axs), labels.copy())):
-            rep, fold = divmod(f, self.n_splits)
 
-            if shuffle and fold == 0:
-                self.shuffle_labels(x_data, labels)
+        # shuffled label pool
+        label_stack = np.stack([labels.copy() for _ in range(self.n_repeats)])
+        if shuffle:
+            for i in range(self.n_repeats):
+                self.shuffle_labels(x_data, label_stack[i])
 
-            x_train = np.take(x_data, train_idx, obs_axs)
-            x_test = np.take(x_data, test_idx, obs_axs)
-            y_train = labels[train_idx]
-            y_test = labels[test_idx]
+        # loop over folds and repetitions
+        results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
+            delayed(self.process_fold)(train_idx, test_idx, x_data.copy(),
+                                       label_stack[f // self.n_splits], obs_axs, window)
+            for f, (train_idx, test_idx) in
+            enumerate(self.split(x_data.swapaxes(0, obs_axs), labels)))
 
-            for i in set(labels):
-                # fill in train data nans with random combinations of
-                # existing train data trials (mixup)
-                idx[obs_axs] = y_train == i
-                x_train[tuple(idx)] = self.oversample(x_train[tuple(idx)],
-                                                      axis=obs_axs)
-
-                # fill in test data nans with noise from distribution
-                # of existing test data
-                # idx[obs_axs] = y_test == i
-                # x_test[tuple(idx)] = self.oversample(
-                #     x_test[tuple(idx)], norm, obs_axs)
-
-            # fill in test data nans with noise from distribution
-            # TODO: extract distribution from channel baseline
-            is_nan = np.isnan(x_test)
-            x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
-
-            x_stacked = np.concatenate((x_train, x_test), axis=obs_axs)
-            y_stacked = np.concatenate((y_train, y_test))
-
-            mats[:, rep, fold] = sliding_window(x_stacked, y_stacked, self.fp_unstack, window_size=window,
-                                                sep_idx=x_train.shape[obs_axs], obs_axs=obs_axs)
+        # Collect the results
+        for i, result in enumerate(results):
+            rep, fold = divmod(i, self.n_splits)
+            mats[:, rep, fold] = result
 
         # average the repetitions
         if average_repetitions:
@@ -88,15 +72,39 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             divisor = 1
         return mats / divisor
 
+    def process_fold(self, train_idx: np.ndarray, test_idx: np.ndarray,
+                     x_data: np.ndarray, labels: np.ndarray,
+                     obs_axs: int, window: int | None):
+
+        # make first and only copy of x_data
+        idx_stacked = np.concatenate((train_idx, test_idx))
+        x_stacked = np.take(x_data, idx_stacked, obs_axs)
+        y_stacked = labels[idx_stacked]
+
+        # define train and test as views of x_stacked
+        sep = train_idx.shape[0]
+        x_train, x_test = np.split(x_stacked, [sep], axis=obs_axs)
+        y_train, y_test = np.split(y_stacked, [sep])
+
+        idx = [slice(None) for _ in range(x_data.ndim)]
+        for i in np.unique(labels):
+            # fill in train data nans with random combinations of
+            # existing train data trials (mixup)
+            idx[obs_axs] = y_train == i
+            x_train[tuple(idx)] = self.oversample(x_train[tuple(idx)],
+                                                  axis=obs_axs)
+
+        # fill in test data nans with noise from distribution
+        is_nan = np.isnan(x_test)
+        np.random.normal(0, 1, np.sum(is_nan), out=x_test[is_nan])
+
+        return sliding_window(x_stacked, y_stacked, self.fp_unstack,
+                              window_size=window, sep_idx=sep, obs_axs=obs_axs)
+
     def fp_unstack(self, x_data: np.ndarray, labels: np.ndarray,
                    sep_idx: int, obs_axs: int = -2):
-        obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
-        train_idx = slice(0, sep_idx)
-        test_idx = slice(sep_idx, None)
-        x_train = np.take(x_data, train_idx, obs_axs)
-        x_test = np.take(x_data, test_idx, obs_axs)
-        y_train = labels[train_idx]
-        y_test = labels[test_idx]
+        x_train, x_test = np.split(x_data, [sep_idx], axis=obs_axs)
+        y_train, y_test = np.split(labels, [sep_idx])
         return self.fit_predict(x_train, y_train, x_test, y_test, obs_axs)
 
     def fit_predict(self, x_train, y_train, x_test, y_test, obs_axs: int = -2):
@@ -120,8 +128,36 @@ def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
     if obs_axs != 0:
         out = arr.swapaxes(0, obs_axs)
     else:
-        out = arr.copy()
+        out = arr.view()
     return out.reshape(out.shape[0], -1)
+
+
+def sliding_window(x_data: np.ndarray, labels: np.ndarray, scorer: callable,
+                   window_size, **kwargs):
+    func = np.vectorize(scorer,
+                        signature='(n,m,l),(m)->(k,k)',
+                        otypes=[int],
+                        excluded=set(kwargs.keys()))
+    windowed = windower(x_data, window_size, axis=-1)
+    return func(windowed, labels, **kwargs)
+
+
+def windower(x_data: np.ndarray, window_size: int, axis: int = -1, insert_at: int = 0):
+    """Create a sliding window view of the array with the given window size."""
+    # Compute the shape and strides for the sliding window view
+    shape = list(x_data.shape)
+    shape[axis] = x_data.shape[axis] - window_size + 1
+    shape.insert(axis, window_size)
+    strides = list(x_data.strides)
+    strides.insert(axis, x_data.strides[axis])
+
+    # Create the sliding window view
+    out = as_strided(x_data, shape=shape, strides=strides)
+
+    # Move the window size dimension to the front
+    out = np.moveaxis(out, axis, insert_at)
+
+    return out
 
 
 def classes_from_labels(labels: np.ndarray, delim: str = '-', which: int = 0,
@@ -166,7 +202,7 @@ def concatenate_conditions(data, conditions, axis=1):
 
 def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     """Perform decoding and scoring"""
-    mats = sliding_window(data.__array__(), labels, decoder.cv_cm, **decoder_kwargs)
+    mats = decoder.cv_cm(data.__array__(), labels, **decoder_kwargs)
     if scorer == 'acc':
         score = mats.T[np.eye(len(decoder.categories)).astype(bool)].T
     else:
