@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from ieeg.viz.utils import plot_dist
 from joblib import Parallel, delayed
+import itertools
 
 
 class Decoder(PcaLdaClassification, MinimumNaNSplit):
@@ -26,7 +27,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         self.categories = categories
         self.max_features = max_features
         self.obs_axs = None
-        self.fit_predict = None
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2, n_jobs: int = 1,
@@ -39,23 +39,24 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             out_shape = (x_data.shape[-1] - window + 1,) + out_shape
         mats = np.zeros(out_shape)
         self.obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
-        # self.fit_predict = self.fit_predict_maker(
-        #     (x_data.shape[self.obs_axs] // self.n_splits) * (self.n_splits - 1),
-        #     self.obs_axs,
-        #     self.max_features)
 
-        # shuffled label pool
-        label_stack = np.stack([labels.copy() for _ in range(self.n_repeats)])
         if shuffle:
+            # shuffled label pool
+            label_stack = [labels.copy() for _ in range(self.n_repeats)]
             for i in range(self.n_repeats):
                 self.shuffle_labels(x_data, label_stack[i])
 
+            # build the test/train indices from the shuffled labels for each repetition, then chain together the repetitions
+            idxs = (self.split(x_data.swapaxes(0, obs_axs), label) for label in label_stack)
+            # splits = (train, test)
+            idxs = ((f, splits, label_stack[f // self.n_splits]) for f, splits in enumerate(itertools.chain(*idxs)))
+        else:
+            idxs = ((f, splits, labels) for f, splits in enumerate(self.split(x_data.swapaxes(0, obs_axs), labels)))
+
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
-            delayed(self.process_fold)(train_idx, test_idx, x_data.copy(),
-                                       label_stack[f // self.n_splits], window)
-            for f, (train_idx, test_idx) in
-            enumerate(self.split(x_data.swapaxes(0, obs_axs), labels)))
+            delayed(self.process_fold)(train_idx, test_idx, x_data, l, window)
+            for f, (train_idx, test_idx), l in idxs)
 
         # Collect the results
         for i, result in enumerate(results):
@@ -128,30 +129,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         self.fit(train_in, y_train)
         pred = self.predict(test_in)
         return confusion_matrix(y_test, pred)
-
-    def fit_predict_maker(self, sep_idx: int, obs_axs: int, max_features: int):
-
-        @np.vectorize(otypes=[int],
-                      signature=f"(n,m,l),({['n','m','l'][obs_axs]})->(k,k)")
-        def fit_predict(x_data, labels):
-            x_train, x_test = np.split(x_data, [sep_idx], axis=obs_axs)
-            y_train, y_test = np.split(labels, [sep_idx])
-
-            # feature selection
-            train_in = flatten_features(x_train, obs_axs)
-            test_in = flatten_features(x_test, obs_axs)
-            if train_in.shape[1] > max_features:
-                tidx = np.random.choice(train_in.shape[1], max_features,
-                                        replace=False)
-                train_in = train_in[:, tidx]
-                test_in = test_in[:, tidx]
-
-            # fit model and score results
-            self.fit(train_in, y_train)
-            pred = self.predict(test_in)
-            return confusion_matrix(y_test, pred,
-                                    labels=list(self.categories.values()))
-        return fit_predict
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
