@@ -96,7 +96,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
         # fill in test data nans with noise from distribution
         is_nan = np.isnan(x_test)
-        np.random.normal(0, 1, np.sum(is_nan), out=x_test[is_nan])
+        x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
 
         return sliding_window(x_stacked, y_stacked, self.fp_unstack,
                               window_size=window, sep_idx=sep, obs_axs=obs_axs)
