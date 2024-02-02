@@ -8,8 +8,9 @@ from numpy.lib.stride_tricks import as_strided
 import numpy as np
 import matplotlib.pyplot as plt
 from ieeg.viz.utils import plot_dist
-from joblib import Parallel, delayed, wrap_non_picklable_objects
+from joblib import Parallel, delayed
 import itertools
+from tqdm import tqdm
 
 
 class Decoder(PcaLdaClassification, MinimumNaNSplit):
@@ -17,63 +18,65 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
     def __init__(self, categories: dict, *args,
                  n_splits: int = 5,
                  n_repeats: int = 1,
-                 oversample: bool = True,
                  min_samples: int = 1,
                  which: str = 'test',
                  **kwargs):
         PcaLdaClassification.__init__(self, *args, **kwargs)
         MinimumNaNSplit.__init__(self, n_splits, n_repeats,
                                  None, min_samples, which)
-        if not oversample:
-            self.oversample = lambda x, axis: x
         self.categories = categories
-        self.obs_axs = None
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2, n_jobs: int = 1,
               average_repetitions: bool = True, window: int = None,
-              shuffle: bool = False):
+              shuffle: bool = False, oversample: bool = True) -> np.ndarray:
         """Cross-validated confusion matrix"""
         n_cats = len(set(labels))
         out_shape = (self.n_repeats, self.n_splits, n_cats, n_cats)
         if window is not None:
             out_shape = (x_data.shape[-1] - window + 1,) + out_shape
-        mats = np.zeros(out_shape)
-        self.obs_axs = x_data.ndim + obs_axs if obs_axs < 0 else obs_axs
+        mats = np.zeros(out_shape, dtype=np.uint8)
+        data = x_data.swapaxes(0, obs_axs)
 
         if shuffle:
             # shuffled label pool
             label_stack = [labels.copy() for _ in range(self.n_repeats)]
             for i in range(self.n_repeats):
-                self.shuffle_labels(x_data, label_stack[i])
+                self.shuffle_labels(data, label_stack[i], 0)
 
             # build the test/train indices from the shuffled labels for each
             # repetition, then chain together the repetitions
             # splits = (train, test)
-            idxs = ((self.split(x_data.swapaxes(0, obs_axs), label), label) for
-                    label in label_stack)
-            idxs = ((splits, itertools.repeat(label, self.n_splits)) for splits, label in idxs)
+            idxs = ((self.split(data, l), l) for l in label_stack)
+            idxs = ((itertools.islice(s, self.n_splits),
+                     itertools.repeat(l, self.n_splits))
+                    for s, l in idxs)
             splits, label = zip(*idxs)
             splits = itertools.chain.from_iterable(splits)
             label = itertools.chain.from_iterable(label)
             idxs = zip(splits, label)
 
         else:
-            idxs = ((splits, labels) for splits in self.split(x_data.swapaxes(0, obs_axs), labels))
+            idxs = ((splits, labels) for splits in self.split(data, labels))
 
         def proc(train_idx, test_idx, l):
-            x_stacked, y_train, y_test = process_fold(train_idx, test_idx, x_data, l, self.obs_axs)
+            x_stacked, y_train, y_test = sample_fold(train_idx, test_idx, data, l, 0, oversample)
             windowed = windower(x_stacked, window, axis=-1)
-            out = np.zeros((windowed.shape[0], len(self.categories), len(self.categories)), dtype=np.uintp)
+            out = np.zeros((windowed.shape[0], n_cats, n_cats), dtype=np.uint8)
             for i, x_window in enumerate(windowed):
-                win_train, win_test = np.split(x_window, [train_idx.shape[0]], axis=self.obs_axs)
-                out[i] = fp(win_train, win_test, y_train, y_test, self.model, self.obs_axs)
+                x_flat = x_window.reshape(x_window.shape[0], -1)
+                x_train, x_test = np.split(x_flat, [train_idx.shape[0]], 0)
+                out[i] = self.fit_predict(x_train, x_test, y_train, y_test)
             return out
 
         # loop over folds and repetitions
-        results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
-            delayed(proc)(train_idx, test_idx, l)
-            for (train_idx, test_idx), l in idxs)
+        if n_jobs == 1:
+            idxs = tqdm(idxs, total=self.n_splits * self.n_repeats)
+            results = (proc(train_idx, test_idx, l) for (train_idx, test_idx), l in idxs)
+        else:
+            results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
+                delayed(proc)(train_idx, test_idx, l)
+                for (train_idx, test_idx), l in idxs)
 
         # Collect the results
         for i, result in enumerate(results):
@@ -96,9 +99,17 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             divisor = 1
         return mats / divisor
 
+    def fit_predict(self, x_train, x_test, y_train, y_test):
 
-def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
-                 x_data: np.ndarray, labels: np.ndarray, axis: int):
+        # fit model and score results
+        self.model.fit(x_train, y_train)
+        pred = self.model.predict(x_test)
+        return confusion_matrix(y_test, pred)
+
+
+def sample_fold(train_idx: np.ndarray, test_idx: np.ndarray,
+                x_data: np.ndarray, labels: np.ndarray,
+                axis: int, oversample: bool = True):
 
     # make first and only copy of x_data
     idx_stacked = np.concatenate((train_idx, test_idx))
@@ -107,9 +118,12 @@ def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
 
     # define train and test as views of x_stacked
     sep = train_idx.shape[0]
-    x_train, x_test = np.split(x_stacked, [sep], axis=axis)
     y_train, y_test = np.split(y_stacked, [sep])
 
+    if not oversample:
+        return x_stacked, y_train, y_test
+
+    x_train, x_test = np.split(x_stacked, [sep], axis=axis)
     idx = [slice(None) for _ in range(x_data.ndim)]
     unique = np.unique(labels)
     for i in unique:
@@ -127,24 +141,8 @@ def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
     return x_stacked, y_train, y_test
 
 
-def fp(x_train, x_test, y_train, y_test, decoder, axis):
-
-    # feature selection
-    train_in = flatten_features(x_train, axis)
-    test_in = flatten_features(x_test, axis)
-
-    # fit model and score results
-    decoder.fit(train_in, y_train)
-    pred = decoder.predict(test_in)
-    return confusion_matrix(y_test, pred)
-
-
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
-    obs_axs = arr.ndim + obs_axs if obs_axs < 0 else obs_axs
-    if obs_axs != 0:
-        out = arr.swapaxes(0, obs_axs)
-    else:
-        out = arr.view()
+    out = arr.swapaxes(0, obs_axs)
     return out.reshape(out.shape[0], -1)
 
 
@@ -254,8 +252,15 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
             ax.set_title(cond)
             if cond == 'resp':
                 times = (-0.9, 0.9)
+                ax.set_xlabel("Time from response (s)")
             else:
                 times = (-0.4, 1.4)
+                if 'aud' in cond:
+                    ax.set_xlabel("Time from stim (s)")
+                elif 'go' in cond:
+                    ax.set_xlabel("Time from go (s)")
+                else:
+                    raise ValueError("Condition not recognized")
             pl_sc = np.reshape(all_scores["-".join([name, cond])],
                                (all_scores["-".join([name, cond])].shape[0],
                                 -1)).T
@@ -266,9 +271,7 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
                 ax.legend()
                 ax.set_title(cond)
                 ax.set_ylim(0.1, 0.7)
-    axs[0].set_xlabel("Time from stim (s)")
-    axs[1].set_xlabel("Time from go (s)")
-    axs[2].set_xlabel("Time from response (s)")
+
     axs[0].set_ylabel("Accuracy (%)")
     fig.suptitle("Word Decoding")
     return fig, axs

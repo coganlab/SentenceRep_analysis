@@ -25,7 +25,7 @@ window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
 
 # %% Time Sliding decoding for word tokens
 
-decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10, oversample=True)
+decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10)
 true_scores = {}
 plots = {}
 scores = get_scores(sub, decoder, idxs, conds, **window_kwargs)
@@ -37,7 +37,7 @@ fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, co
 
 # %% Time Sliding decoding significance
 decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
-                        n_splits=5, n_repeats=250, oversample=True)
+                        n_splits=5, n_repeats=250)
 shuffle_score = {}
 scores = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
 for cond, score in scores:
