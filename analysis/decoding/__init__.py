@@ -3,7 +3,7 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from analysis.grouping import GroupData
 from ieeg.decoding.decoders import PcaLdaClassification
 from ieeg.calc.mat import LabeledArray
-from ieeg.calc.oversample import MinimumNaNSplit
+from ieeg.calc.oversample import MinimumNaNSplit, mixupnd
 from numpy.lib.stride_tricks import as_strided
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,7 +18,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
                  n_splits: int = 5,
                  n_repeats: int = 1,
                  oversample: bool = True,
-                 max_features: int = float("inf"),
                  min_samples: int = 1,
                  which: str = 'test',
                  **kwargs):
@@ -28,7 +27,6 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         if not oversample:
             self.oversample = lambda x, axis: x
         self.categories = categories
-        self.max_features = max_features
         self.obs_axs = None
 
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
@@ -65,7 +63,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
-            delayed(self.process_fold)(train_idx, test_idx, x_data, l, window)
+            delayed(process_fold)(train_idx, test_idx, x_data, l, window, self.obs_axs)
             for (train_idx, test_idx), l in idxs)
 
         # Collect the results
@@ -89,59 +87,55 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             divisor = 1
         return mats / divisor
 
-    def process_fold(self, train_idx: np.ndarray, test_idx: np.ndarray,
-                     x_data: np.ndarray, labels: np.ndarray,
-                     window: int | None):
 
-        # make first and only copy of x_data
-        idx_stacked = np.concatenate((train_idx, test_idx))
-        x_stacked = np.take(x_data, idx_stacked, self.obs_axs)
-        y_stacked = labels[idx_stacked]
+def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
+                 x_data: np.ndarray, labels: np.ndarray,
+                 window: int | None, axis: int, decoder: Decoder = None):
 
-        # define train and test as views of x_stacked
-        sep = train_idx.shape[0]
-        x_train, x_test = np.split(x_stacked, [sep], axis=self.obs_axs)
-        y_train, y_test = np.split(y_stacked, [sep])
+    if decoder is None:
+        decoder = PcaLdaClassification()
 
-        if np.unique(y_train).shape[0] < len(self.categories):
-            print("Not enough classes in train data")
+    # make first and only copy of x_data
+    idx_stacked = np.concatenate((train_idx, test_idx))
+    x_stacked = np.take(x_data, idx_stacked, axis)
+    y_stacked = labels[idx_stacked]
 
-        idx = [slice(None) for _ in range(x_data.ndim)]
-        for i in np.unique(labels):
-            # fill in train data nans with random combinations of
-            # existing train data trials (mixup)
-            idx[self.obs_axs] = y_train == i
-            x_train[tuple(idx)] = self.oversample(x_train[tuple(idx)],
-                                                  axis=self.obs_axs)
+    # define train and test as views of x_stacked
+    sep = train_idx.shape[0]
+    x_train, x_test = np.split(x_stacked, [sep], axis=axis)
+    y_train, y_test = np.split(y_stacked, [sep])
 
-        # fill in test data nans with noise from distribution
-        is_nan = np.isnan(x_test)
-        x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
+    idx = [slice(None) for _ in range(x_data.ndim)]
+    unique = np.unique(labels)
+    for i in unique:
+        # fill in train data nans with random combinations of
+        # existing train data trials (mixup)
+        idx[axis] = y_train == i
+        mixupnd(x_train[tuple(idx)], axis=axis)
 
-        windowed = windower(x_stacked, window, axis=-1)
-        out = np.zeros((windowed.shape[0], len(self.categories),
-                        len(self.categories)), dtype=np.uintp)
-        for i, x_window in enumerate(windowed):
-            win_train, win_test = np.split(x_window, [sep], axis=self.obs_axs)
-            out[i] = self.fp(win_train, win_test, y_train, y_test)
-        return out
+    # fill in test data nans with noise from distribution
+    is_nan = np.isnan(x_test)
+    x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
 
-    def fp(self, x_train, x_test, y_train, y_test):
+    windowed = windower(x_stacked, window, axis=-1)
+    out = np.zeros((windowed.shape[0], unique.shape[0],
+                    unique.shape[0]), dtype=np.uintp)
+    for i, x_window in enumerate(windowed):
+        win_train, win_test = np.split(x_window, [sep], axis=axis)
+        out[i] = fp(win_train, win_test, y_train, y_test, decoder, axis)
+    return out
 
-        # feature selection
-        train_in = flatten_features(x_train, self.obs_axs)
-        test_in = flatten_features(x_test, self.obs_axs)
-        if train_in.shape[1] > self.max_features:
-            tidx = np.random.choice(train_in.shape[1], self.max_features,
-                                    replace=False)
-            train_in = train_in[:, tidx]
-            test_in = test_in[:, tidx]
 
-        # fit model and score results
-        self.fit(train_in, y_train)
-        pred = self.predict(test_in)
-        return confusion_matrix(y_test, pred,
-                                labels=list(self.categories.values()))
+def fp(x_train, x_test, y_train, y_test, decoder, axis):
+
+    # feature selection
+    train_in = flatten_features(x_train, axis)
+    test_in = flatten_features(x_test, axis)
+
+    # fit model and score results
+    decoder.fit(train_in, y_train)
+    pred = decoder.predict(test_in)
+    return confusion_matrix(y_test, pred)
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
