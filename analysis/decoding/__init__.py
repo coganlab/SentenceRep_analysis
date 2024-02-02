@@ -49,7 +49,8 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
             for i in range(self.n_repeats):
                 self.shuffle_labels(x_data, label_stack[i])
 
-            # build the test/train indices from the shuffled labels for each repetition, then chain together the repetitions
+            # build the test/train indices from the shuffled labels for each
+            # repetition, then chain together the repetitions
             # splits = (train, test)
             idxs = ((self.split(x_data.swapaxes(0, obs_axs), label), label) for
                     label in label_stack)
@@ -65,7 +66,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
             delayed(self.process_fold)(train_idx, test_idx, x_data, l, window)
-            for f, ((train_idx, test_idx), l) in enumerate(idxs))
+            for (train_idx, test_idx), l in idxs)
 
         # Collect the results
         for i, result in enumerate(results):
@@ -75,9 +76,9 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # average the repetitions
         if average_repetitions:
             mats = np.mean(mats, axis=1)
-        mats = np.sum(mats, axis=-3)
 
         # normalize, sum the folds
+        mats = np.sum(mats, axis=-3)
         if normalize == 'true':
             divisor = np.sum(mats, axis=-1, keepdims=True)
         elif normalize == 'pred':
@@ -118,12 +119,11 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         out = np.zeros((windowed.shape[0], len(self.categories),
                         len(self.categories)), dtype=np.uintp)
         for i, x_window in enumerate(windowed):
-            out[i] = self.fp(x_window, y_stacked, sep)
+            win_train, win_test = np.split(x_window, [sep], axis=self.obs_axs)
+            out[i] = self.fp(win_train, win_test, y_train, y_test)
         return out
 
-    def fp(self, x_data, labels, sep_idx):
-        x_train, x_test = np.split(x_data, [sep_idx], axis=self.obs_axs)
-        y_train, y_test = np.split(labels, [sep_idx])
+    def fp(self, x_train, x_test, y_train, y_test):
 
         # feature selection
         train_in = flatten_features(x_train, self.obs_axs)
@@ -147,16 +147,6 @@ def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
     else:
         out = arr.view()
     return out.reshape(out.shape[0], -1)
-
-
-def sliding_window(x_data: np.ndarray, labels: np.ndarray, scorer: callable,
-                   window_size, **kwargs):
-    # func = np.vectorize(scorer,
-    #                     signature='(n,m,l),(m)->(k,k)',
-    #                     otypes=[int],
-    #                     excluded=set(kwargs.keys()))
-    windowed = windower(x_data, window_size, axis=-1)
-    return scorer(windowed, labels, **kwargs)
 
 
 def windower(x_data: np.ndarray, window_size: int, axis: int = -1, insert_at: int = 0):
