@@ -103,6 +103,9 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         x_train, x_test = np.split(x_stacked, [sep], axis=self.obs_axs)
         y_train, y_test = np.split(y_stacked, [sep])
 
+        if np.unique(y_train).shape[0] < len(self.categories):
+            print("Not enough classes in train data")
+
         idx = [slice(None) for _ in range(x_data.ndim)]
         for i in np.unique(labels):
             # fill in train data nans with random combinations of
@@ -212,7 +215,7 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     """Perform decoding and scoring"""
     mats = decoder.cv_cm(data.__array__(), labels, **decoder_kwargs)
     if scorer == 'acc':
-        score = mats.T[np.eye(len(decoder.categories)).astype(bool)].T
+        score = np.mean(mats.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=-1)
     else:
         raise NotImplementedError("Only accuracy is implemented")
     return score
@@ -220,7 +223,6 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
                **decoder_kwargs) -> dict[str, np.ndarray]:
-    all_scores = {}
     names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
@@ -237,9 +239,7 @@ def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
 
             # Decoding
             score = decoder.cv_cm(X.__array__(), labels, **decoder_kwargs)
-            all_scores["-".join([names[i], cond])] = score.copy()
-
-    return all_scores
+            yield "-".join([names[i], cond]), score
 
 
 def plot_all_scores(all_scores: dict[str, np.ndarray],
