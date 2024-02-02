@@ -13,10 +13,9 @@ from analysis.decoding import (Decoder, get_scores, plot_all_scores)
 # %% Imports
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_opt')
-true_scores = {}
 all_data = []
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
-scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
+scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None} # , 'All': None}
 idxs = [sub.AUD, sub.SM, sub.PROD] #, sub.sig_chans]
 idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
@@ -31,6 +30,7 @@ true_scores = {}
 plots = {}
 scores = get_scores(sub, decoder, idxs, conds, **window_kwargs)
 for cond, score in scores:
+    print(cond)
     true_scores[cond] = score
     plots[cond] = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
 fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
@@ -41,6 +41,7 @@ decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
 shuffle_score = {}
 scores = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
 for cond, score in scores:
+    print(cond)
     shuffle_score[cond] = score
 signif = {}
 for cond, score in true_scores.items():
