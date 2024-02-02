@@ -17,27 +17,27 @@ true_scores = {}
 all_data = []
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
-idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
+idxs = [sub.AUD, sub.SM, sub.PROD] #, sub.sig_chans]
 idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
+window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
                  'average_repetitions': False}
 
 # %% Time Sliding decoding for word tokens
 
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10, oversample=True)
-true_score = {}
+true_scores = {}
 plots = {}
 scores = get_scores(sub, decoder, idxs, conds, **window_kwargs)
 for cond, score in scores:
-    true_score[cond] = score
+    true_scores[cond] = score
     plots[cond] = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
 fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
 
 # %% Time Sliding decoding significance
 decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
-                        n_splits=5, n_repeats=5, oversample=True)
+                        n_splits=5, n_repeats=250, oversample=True)
 shuffle_score = {}
 scores = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
 for cond, score in scores:
