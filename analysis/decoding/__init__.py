@@ -137,7 +137,8 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # fit model and score results
         self.fit(train_in, y_train)
         pred = self.predict(test_in)
-        return confusion_matrix(y_test, pred)
+        return confusion_matrix(y_test, pred,
+                                labels=list(self.categories.values()))
 
 
 def flatten_features(arr: np.ndarray, obs_axs: int = -2) -> np.ndarray:
