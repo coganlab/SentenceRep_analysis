@@ -8,7 +8,7 @@ from numpy.lib.stride_tricks import as_strided
 import numpy as np
 import matplotlib.pyplot as plt
 from ieeg.viz.utils import plot_dist
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, wrap_non_picklable_objects
 import itertools
 
 
@@ -61,9 +61,18 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         else:
             idxs = ((splits, labels) for splits in self.split(x_data.swapaxes(0, obs_axs), labels))
 
+        def proc(train_idx, test_idx, l):
+            x_stacked, y_train, y_test = process_fold(train_idx, test_idx, x_data, l, self.obs_axs)
+            windowed = windower(x_stacked, window, axis=-1)
+            out = np.zeros((windowed.shape[0], len(self.categories), len(self.categories)), dtype=np.uintp)
+            for i, x_window in enumerate(windowed):
+                win_train, win_test = np.split(x_window, [train_idx.shape[0]], axis=self.obs_axs)
+                out[i] = fp(win_train, win_test, y_train, y_test, self.model, self.obs_axs)
+            return out
+
         # loop over folds and repetitions
         results = Parallel(n_jobs=n_jobs, return_as='generator', verbose=40)(
-            delayed(process_fold)(train_idx, test_idx, x_data, l, window, self.obs_axs)
+            delayed(proc)(train_idx, test_idx, l)
             for (train_idx, test_idx), l in idxs)
 
         # Collect the results
@@ -89,11 +98,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
 
 def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
-                 x_data: np.ndarray, labels: np.ndarray,
-                 window: int | None, axis: int, decoder: Decoder = None):
-
-    if decoder is None:
-        decoder = PcaLdaClassification()
+                 x_data: np.ndarray, labels: np.ndarray, axis: int):
 
     # make first and only copy of x_data
     idx_stacked = np.concatenate((train_idx, test_idx))
@@ -111,19 +116,15 @@ def process_fold(train_idx: np.ndarray, test_idx: np.ndarray,
         # fill in train data nans with random combinations of
         # existing train data trials (mixup)
         idx[axis] = y_train == i
-        mixupnd(x_train[tuple(idx)], axis=axis)
+        out = x_train[tuple(idx)]
+        mixupnd(out, axis)
+        x_train[tuple(idx)] = out
 
     # fill in test data nans with noise from distribution
     is_nan = np.isnan(x_test)
     x_test[is_nan] = np.random.normal(0, 1, np.sum(is_nan))
 
-    windowed = windower(x_stacked, window, axis=-1)
-    out = np.zeros((windowed.shape[0], unique.shape[0],
-                    unique.shape[0]), dtype=np.uintp)
-    for i, x_window in enumerate(windowed):
-        win_train, win_test = np.split(x_window, [sep], axis=axis)
-        out[i] = fp(win_train, win_test, y_train, y_test, decoder, axis)
-    return out
+    return x_stacked, y_train, y_test
 
 
 def fp(x_train, x_test, y_train, y_test, decoder, axis):
