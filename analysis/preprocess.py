@@ -52,8 +52,8 @@ for subj in subjects:
     ## High Gamma Filter and epoching
     out = []
 
-    for epoch, t in zip(("Start", "Word"),
-                        ((-0.5, 0), (-1, 1.5))):
+    for epoch, t in zip(("Start", "Start", "Word"),
+                        ((-0.5, 0), (-0.5, 0.5), (-1, 1.5))):
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
@@ -74,17 +74,17 @@ for subj in subjects:
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "stats")
+    save_dir = op.join(layout.root, "derivatives", "stats_opt")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
     sig2 = base.get_data(copy=True)
-    for epoch, name, window in zip(
-            (out[0][e] for e in ["Response"] + list(
+    for epoch, name, window in zip((out[0]["Start"],) +
+            tuple(out[1][e] for e in ["Response"] + list(
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
-            ("resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
-            ((-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
+            ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
+            ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
             # ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
