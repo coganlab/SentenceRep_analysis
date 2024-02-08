@@ -241,8 +241,10 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
                     fig: plt.Figure = None, axs: plt.Axes = None,
                     **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
     names = list(idxs.keys())
-    if fig is None:
+    if fig is None and axs is None:
         fig, axs = plt.subplots(1, len(conds))
+    elif axs is None:
+        axs = fig.get_axes()
     if len(conds) == 1:
         axs = [axs]
     for color, name, idx in zip(colors, names, idxs.values()):

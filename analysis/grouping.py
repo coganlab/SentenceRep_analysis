@@ -30,9 +30,9 @@ class GroupData:
         conds = cls._set_conditions(conds)
         sig = load_dict(layout, conds, "significance", True, folder)
         sig = combine(sig, (0, 2))
-        data = dict(power=load_dict(layout, conds, "power", False, folder),
-                    zscore=load_dict(layout, conds, "zscore", False, folder))
-        data = combine(data, (1, 4))
+        pwr = load_dict(layout, conds, "power", False, folder)
+        zscore = load_dict(layout, conds, "zscore", False, folder)
+        data = combine(dict(power=pwr, zscore=zscore), (1, 4))
         # subjects = tuple(data['power'].keys())
         out = cls(data, sig, **kwargs)
         # out.subjects = subjects
@@ -373,7 +373,7 @@ class GroupData:
         return self.array.__iter__()
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
-                               colors: list[str] = ('red', 'green', 'blue'),
+                               colors: list[str] = ([1,0,0], [0,1,0], [0,0,1]),
                                **kwargs) -> mne.viz.Brain:
         if groups is None:
             assert hasattr(self, 'SM')
@@ -507,7 +507,7 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
 
         if wide:
             aud_slice = slice(0, 175)
-            go_slice = slice(None)
+            go_slice = slice(50, None)
         elif np.squeeze(all_sig).ndim >= 3:
             aud_slice = slice(50, 100)
             go_slice = slice(75, 125)
@@ -553,7 +553,7 @@ if __name__ == "__main__":
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='stats_old')
+                                           folder='stats_opt')
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
