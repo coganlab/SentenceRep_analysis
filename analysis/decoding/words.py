@@ -29,8 +29,11 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
     np.save(filename, structured_array)
 
 # %% Imports
-fpath = os.path.expanduser("~/Box/CoganLab")
-sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
+box = os.path.expanduser("~/Box")
+fpath = os.path.join(box, "CoganLab")
+subjects_dir = os.path.join(fpath, "ECoG_Recon")
+sub = GroupData.from_intermediates(
+    "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
 all_data = []
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None , 'All': None}

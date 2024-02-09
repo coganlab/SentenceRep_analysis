@@ -44,9 +44,11 @@ class GroupData:
                  mask: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
-                 fdr: bool = False, pval: float = 0.05, wide_window: bool = False):
+                 fdr: bool = False, pval: float = 0.05,
+                 wide_window: bool = False, subjects_dir: PathLike = None):
         self._set_data(data, 'array')
         self._categories = categories
+        self.subjects_dir = subjects_dir
         if mask is not None:
             self._set_data(mask, 'signif')
             if not ((self.signif == 0) | (self.signif == 1)).all():
@@ -100,7 +102,7 @@ class GroupData:
 
     @property
     def grey_matter(self):
-        wm = get_grey_matter(self.subjects)
+        wm = get_grey_matter(self.subjects, self.subjects_dir)
         return {i for i, ch in enumerate(self.keys['channel']) if ch in wm}
 
     @staticmethod
@@ -532,10 +534,10 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
     return AUD, SM, PROD, sig_chans
 
 
-def get_grey_matter(subjects: Sequence[str]) -> set[str]:
+def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None) -> set[str]:
     grey_matter = set()
     for i, subj in enumerate(subjects):
-        info = subject_to_info(get_sub(subj))
+        info = subject_to_info(get_sub(subj), subjects_dir=subjects_dir)
         parcel_label = gen_labels(info, get_sub(subj))
         subj_grey_matter = pick_no_wm(info.ch_names, parcel_label)
 
