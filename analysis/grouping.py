@@ -375,7 +375,7 @@ class GroupData:
         return self.array.__iter__()
 
     def plot_groups_on_average(self, groups: list[list[int]] = None,
-                               colors: list[str] = ([1,0,0], [0,1,0], [0,0,1]),
+                               colors: list[str] = ('red', 'green', 'blue'),
                                **kwargs) -> mne.viz.Brain:
         if groups is None:
             assert hasattr(self, 'SM')
@@ -507,15 +507,18 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 sig_chans |= {i}
                 break
 
-        if wide:
-            aud_slice = slice(0, 175)
-            go_slice = slice(50, None)
-        elif np.squeeze(all_sig).ndim >= 3:
-            aud_slice = slice(50, 100)
-            go_slice = slice(75, 125)
-        else:
+        if all_sig.ndim == 2:
             aud_slice = None
             go_slice = None
+        elif all_sig.shape[2] == 1:
+            aud_slice = slice(None)
+            go_slice = slice(None)
+        elif wide:
+            aud_slice = slice(50, 175)
+            go_slice = slice(50, None)
+        else:
+            aud_slice = slice(50, 100)
+            go_slice = slice(75, 125)
 
         audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
         audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
@@ -555,7 +558,7 @@ if __name__ == "__main__":
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='stats_opt')
+                                           folder='ave')
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -598,8 +601,5 @@ if __name__ == "__main__":
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##
-    fig = sub.plot_groups_on_average([list(sub.SM)], hemi='lh')
-    # fig.save_image('SM.eps')
-
-
-
+    fig = sub.plot_groups_on_average(rm_wm=False)
+    fig.save_image('ALL.png')
