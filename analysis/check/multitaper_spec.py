@@ -13,8 +13,10 @@ HOME = os.path.expanduser("~")
 
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     LAB_root = os.path.join(HOME, "workspace", "CoganLab")
+    sid = int(os.environ['SLURM_ARRAY_TASK_ID'])
+    subjects = [f"D{sid:04}"]
     layout = get_data("SentenceRep", root=LAB_root)
-    subjects = list(int(os.environ['SLURM_ARRAY_TASK_ID']))
+    print(f"Running subject {subjects[0]}")
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
@@ -57,18 +59,20 @@ for sub in subjects:
         outliers_to_nan(trials, outliers=10)
         freq = np.arange(10, 200., 2.)
         kwargs = dict(average=False, n_jobs=-1, freqs=freq, return_itc=False,
-                      n_cycles=freq / 2, time_bandwidth=20)
+                      n_cycles=freq / 2, time_bandwidth=10)
         if name == "base":
             base = mne.time_frequency.tfr_multitaper(trials, **kwargs)
             crop_pad(base, "0.5s")
+            base = base.average(lambda x: np.nanmean(x, axis=0), copy=True)
             continue
 
         spectra = mne.time_frequency.tfr_multitaper(trials,  **kwargs)
         crop_pad(spectra, "0.5s")
-        spec_a = rescale(spectra, base, copy=True, mode='ratio'
-                         ).average(lambda x: np.nanmean(x, axis=0), copy=True)
+        del trials
+        spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+        rescale(spectra._data, base._data, mode='ratio', axis=-1)
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        spec_a.info['subject_info']['files'] = tuple(fnames)
-        spec_a.info['bads'] = good.info['bads']
+        spectra.info['subject_info']['files'] = tuple(fnames)
+        spectra.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
+        mne.time_frequency.write_tfrs(filename, spectra, overwrite=True)
