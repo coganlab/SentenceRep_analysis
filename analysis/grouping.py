@@ -45,7 +45,7 @@ class GroupData:
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
                  fdr: bool = False, pval: float = 0.05,
-                 wide_window: bool = False, subjects_dir: PathLike = None
+                 wide: bool = False, subjects_dir: PathLike = None
                  , per_subject: bool = False):
         self._set_data(data, 'array')
         self._categories = categories
@@ -64,7 +64,7 @@ class GroupData:
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    self.signif, keys[1], keys[0], wide=wide_window)
+                    self.signif, keys[1], keys[0], wide=wide)
             else:
                 self.sig_chans = self._find_sig_chans(self.signif)
 
@@ -517,7 +517,14 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
     for i, name in enumerate(names):
         for cond in conds:
             idx = i
-            if np.any(all_sig[cond, idx] == 1):
+            if wide:
+                t_idx = slice(None)
+            elif cond in ["aud_ls", "aud_lm", "aud_jl"]:
+                t_idx = slice(50, 100)
+            else:
+                t_idx = slice(75, 125)
+
+            if np.any(all_sig[cond, idx, t_idx] == 1):
                 sig_chans |= {i}
                 break
 
@@ -572,7 +579,7 @@ if __name__ == "__main__":
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='ave', fdr=True)
+                                           folder='stats_opt', fdr=True)
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
