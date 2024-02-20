@@ -45,38 +45,52 @@ class GroupData:
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
                  fdr: bool = False, pval: float = 0.05,
-                 wide_window: bool = False, subjects_dir: PathLike = None):
+                 wide_window: bool = False, subjects_dir: PathLike = None
+                 , per_subject: bool = False):
         self._set_data(data, 'array')
         self._categories = categories
         self.subjects_dir = subjects_dir
         if mask is not None:
             self._set_data(mask, 'signif')
             if not ((self.signif == 0) | (self.signif == 1)).all():
+                self.p_vals = self.signif.copy()
                 if 'epoch' in categories:
                     for i, arr in enumerate(self.signif):
-                        self.signif[i] = self.correction(arr, fdr, pval, wide_window)
+                        self.signif[i] = self.correction(arr, fdr, pval, per_subject)
                 else:
-                    self.signif = self.correction(self.signif, fdr, pval, wide_window)
+                    self.signif = self.correction(self.signif, fdr, pval, per_subject)
             keys = self.signif.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
-                    self.signif, keys[1], keys[0], wide=True)
+                    self.signif, keys[1], keys[0], wide=wide_window)
             else:
                 self.sig_chans = self._find_sig_chans(self.signif)
 
     def correction(self, p_vals, fdr: bool, thresh: float,
                    per_subject: bool = False):
+
         if per_subject:
+            sig = np.zeros_like(p_vals, dtype=bool)
             for sub in self.subjects:
-                idx = np.where(self.keys['channel'][:5] == sub)[0]
-                p_vals[idx] = mne.stats.fdr_correction(p_vals[idx], thresh)[
-                    0] if fdr else p_vals[idx] < thresh
+                idx = self.keys['channel'].astype('U5') == sub
+                if fdr:
+                    temp = p_vals[idx]
+                    sig[idx] = mne.stats.fdr_correction(temp, thresh)[0]
+                    passed = np.logical_and(sig[:, 0], idx)
+                    new_thsh = np.max(p_vals[passed]) if np.any(passed) else 0
+                    print(f"FDR correction applied, new threshold: {new_thsh}")
+                else:
+                    sig[idx] = p_vals[idx] < thresh
+        elif fdr:
+            sig = mne.stats.fdr_correction(p_vals, thresh)[0]
+            new_thresh = np.max(p_vals[sig[:, 0]])
+            print(f"FDR correction applied, new threshold: {new_thresh}")
         else:
-            p_vals = mne.stats.fdr_correction(p_vals.T, thresh)[
-                0].T if fdr else p_vals < thresh
-        return p_vals
+            sig = p_vals < thresh
+
+        return sig
 
     def _set_data(self, data: dict | LabeledArray, attr: str):
         if isinstance(data, dict):
@@ -558,7 +572,7 @@ if __name__ == "__main__":
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='ave')
+                                           folder='ave', fdr=True)
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -581,7 +595,7 @@ if __name__ == "__main__":
     #     plot_dist(arr[SUB], times=conds[cond], label=subj)
     # plt.legend()
     ##
-    cond = 'go_lm'
+    cond = 'go_ls'
     # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
     # arr = sub.signif[cond].__array__()
     arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
