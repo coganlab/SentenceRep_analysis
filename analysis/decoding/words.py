@@ -7,7 +7,7 @@ import os
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_horizontal_bars
 from ieeg.calc.stats import time_perm_cluster
-from analysis.decoding import (Decoder, get_scores, plot_all_scores)
+from analysis.decoding import (Decoder, get_scores, plot_all_scores, plot_dist_bound)
 
 
 def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
@@ -29,14 +29,14 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
     np.save(filename, structured_array)
 
 # %% Imports
-box = os.path.expanduser("~/Box")
+box = os.path.expanduser(os.path.join("~","Box"))
 fpath = os.path.join(box, "CoganLab")
-subjects_dir = os.path.join(fpath, "ECoG_Recon")
+subjects_dir = os.path.join(box, "ECoG_Recon")
 sub = GroupData.from_intermediates(
     "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
 all_data = []
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
-scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None , 'All': None}
+scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
 idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
 idxs = [list(idx & sub.grey_matter) for idx in idxs]
 names = list(scores.keys())
@@ -47,15 +47,15 @@ window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
 # %% Time Sliding decoding for word tokens
 
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10)
-true_scores = {}
+# true_scores = {}
 plots = {}
 scores = get_scores(sub, decoder, idxs, conds, **window_kwargs)
-for cond, score in scores:
+for cond, score in true_scores.items():
     print(cond)
     true_scores[cond] = score
     plots[cond] = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
 fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
-dict_to_structured_array(true_scores, 'true_scores.npy')
+dict_to_structured_array(true_scores, '../../true_scores.npy')
 
 # %% Time Sliding decoding significance
 decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
@@ -65,9 +65,13 @@ scores = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwar
 for cond, score in scores:
     print(cond)
     shuffle_score[cond] = score
-dict_to_structured_array(shuffle_score, 'shuffle_score.npy')
+dict_to_structured_array(shuffle_score, '../../shuffle_score.npy')
 
 # %% Time Sliding decoding significance
+true_scores = np.load('true_scores.npy', allow_pickle=True)[0]
+true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
+shuffle_score = np.load('shuffle_score.npy', allow_pickle=True)[0]
+shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
 signif = {}
 for cond, score in true_scores.items():
     true = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
@@ -80,9 +84,11 @@ for cond, ax in zip(conds, axs):
     if isinstance(cond, list):
         cond = "-".join(cond)
     for i, idx in enumerate(idxs):
-        bars.append(signif["-".join([names[i], cond])])
+        name = "-".join([names[i], cond])
+        if name.endswith('resp'):
+            times = (-1, 1)
+        else:
+            times = (-0.5, 1.5)
+        plot_dist_bound(shuffle_score[name], 'std', 'upper', times, 0, ax=ax, color=colors[i])
+        bars.append(signif[name])
     plot_horizontal_bars(ax, bars, 0.05, 'below')
-
-# %% horizontal lines
-for ax in axs:
-    ax.axhline(1 / len(decoder.categories), color='k', linestyle='--')
