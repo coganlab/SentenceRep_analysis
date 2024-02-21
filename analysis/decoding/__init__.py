@@ -5,6 +5,7 @@ from ieeg.decoding.decoders import PcaLdaClassification
 from ieeg.calc.mat import LabeledArray
 from ieeg.calc.oversample import MinimumNaNSplit, mixupnd
 from numpy.lib.stride_tricks import as_strided
+from ieeg.calc import stats
 import numpy as np
 import matplotlib.pyplot as plt
 from ieeg.viz.utils import plot_dist
@@ -277,3 +278,26 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
     axs[0].set_ylabel("Accuracy (%)")
     fig.suptitle("Word Decoding")
     return fig, axs
+
+
+def plot_dist_bound(data: np.ndarray, mode: str = 'sem', which: str = 'both',
+                    times: tuple[float, float] = None, axis: int = None,
+                    color: list[list[float]] = None,
+                    ax: plt.Axes = None, **plot_kwargs) -> plt.Axes:
+    assert which in ['both', 'upper', 'lower']
+    mean, std = stats.dist(data, axis=axis, mode=mode)
+    if times is None:
+        tscale = range(len(mean))
+    else:
+        tscale = np.linspace(times[0], times[1], len(mean))
+    if ax is None:
+        plt.figure()
+        ax = plt.gca()
+    if color is None:
+        color = ax.get_color()
+    if which in ['both', 'upper']:
+        ax.plot(tscale, mean + std, color=color, **plot_kwargs)
+    if which in ['both', 'lower']:
+        ax.plot(tscale, mean - std, color=color, **plot_kwargs)
+    return ax
+
