@@ -69,7 +69,7 @@ class GroupData:
                 self.sig_chans = self._find_sig_chans(self.signif)
 
     def correction(self, p_vals, fdr: bool, thresh: float,
-                   per_subject: bool = False):
+                   per_subject: bool = False, verbose=False):
 
         if per_subject:
             sig = np.zeros_like(p_vals, dtype=bool)
@@ -78,15 +78,17 @@ class GroupData:
                 if fdr:
                     temp = p_vals[idx]
                     sig[idx] = mne.stats.fdr_correction(temp, thresh)[0]
-                    passed = np.logical_and(sig[:, 0], idx)
-                    new_thsh = np.max(p_vals[passed]) if np.any(passed) else 0
-                    print(f"FDR correction applied, new threshold: {new_thsh}")
+                    if verbose:
+                        passed = np.logical_and(sig[:, 0], idx)
+                        new_thsh = np.max(p_vals[(passed,)]) if np.any(passed) else 0
+                        print(f"FDR correction applied, new threshold: {new_thsh}")
                 else:
                     sig[idx] = p_vals[idx] < thresh
         elif fdr:
             sig = mne.stats.fdr_correction(p_vals, thresh)[0]
-            new_thresh = np.max(p_vals[sig[:, 0]])
-            print(f"FDR correction applied, new threshold: {new_thresh}")
+            if verbose:
+                new_thresh = np.max(p_vals[(sig[:, 0],)])
+                print(f"FDR correction applied, new threshold: {new_thresh}")
         else:
             sig = p_vals < thresh
 
@@ -171,25 +173,6 @@ class GroupData:
 
         return type(self)(self.array[item], sig, cats)
 
-    def smotify_trials(self):
-        trials_idx = self._categories.index('trial')
-        time_idx = self._categories.index('time')
-        nan = np.isnan(self.array)
-        bad = np.any(nan, time_idx)
-        for idx in np.ndindex(self.shape[:trials_idx]):
-            goods = np.where(bad[idx]==False)[0]
-            assert goods.tolist(),\
-                f"Completely empty data at {[self.array.labels[i][x] for i, x in enumerate(idx)]}"
-
-            for i in range(self.shape[trials_idx]):
-                idxi = idx + (i,)
-                if not bad[idxi]:
-                    continue
-                nn = [idx + (n,) for n in np.random.choice(
-                    goods, (2,), replace=False)]
-                narr = np.random.random(self.shape[time_idx])
-                diff = self.array[nn[0]] - self.array[nn[1]]
-                self.array[idxi] = self.array[nn[0]] + diff * narr
 
     def nan_common_denom(self, sort: bool = True, min_trials: int = 0,
                          crop_trials: bool = True, verbose: bool = False):
@@ -579,7 +562,7 @@ if __name__ == "__main__":
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='stats_opt', fdr=True)
+                                           folder='stats_opt', wide=True)
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -622,5 +605,5 @@ if __name__ == "__main__":
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##
-    fig = sub.plot_groups_on_average(rm_wm=False)
-    fig.save_image('ALL.png')
+    # fig = sub.plot_groups_on_average(rm_wm=False)
+    # fig.save_image('ALL.png')
