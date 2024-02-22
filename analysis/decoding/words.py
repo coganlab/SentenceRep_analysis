@@ -33,7 +33,7 @@ box = os.path.expanduser(os.path.join("~","Box"))
 fpath = os.path.join(box, "CoganLab")
 subjects_dir = os.path.join(box, "ECoG_Recon")
 sub = GroupData.from_intermediates(
-    "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
+    "SentenceRep", fpath, folder='ave', fdr=True, subjects_dir=subjects_dir)
 all_data = []
 colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
 scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
@@ -47,13 +47,12 @@ window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
 # %% Time Sliding decoding for word tokens
 
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10)
-# true_scores = {}
+true_scores = {}
 plots = {}
-scores = get_scores(sub, decoder, idxs, conds, **window_kwargs)
-for cond, score in true_scores.items():
-    print(cond)
-    true_scores[cond] = score
-    plots[cond] = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
+for key, values in get_scores(sub, decoder, idxs, conds, **window_kwargs):
+    print(key)
+    true_scores[key] = values
+    plots[key] = np.mean(values.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
 fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
 dict_to_structured_array(true_scores, '../../true_scores.npy')
 
