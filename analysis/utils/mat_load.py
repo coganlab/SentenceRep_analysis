@@ -5,7 +5,7 @@ from ieeg import Doubles, PathLike
 import mne
 from tqdm import tqdm
 from ieeg.calc.mat import LabeledArray
-from ieeg.calc.reshape import concatenate_arrays
+from ieeg.calc.concat import concatenate_arrays
 from collections import OrderedDict
 
 
