@@ -502,6 +502,8 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
             idx = i
             if wide:
                 t_idx = slice(None)
+            elif np.squeeze(all_sig).ndim == 2:
+                t_idx = None
             elif cond in ["aud_ls", "aud_lm", "aud_jl"]:
                 t_idx = slice(50, 100)
             else:
