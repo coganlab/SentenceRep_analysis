@@ -547,7 +547,7 @@ def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None) -> set[st
     grey_matter = set()
     for i, subj in enumerate(subjects):
         info = subject_to_info(get_sub(subj), subjects_dir=subjects_dir)
-        parcel_label = gen_labels(info, get_sub(subj))
+        parcel_label = gen_labels(info, get_sub(subj), subjects_dir)
         subj_grey_matter = pick_no_wm(info.ch_names, parcel_label)
 
         # get the indices of channels in info that are not in grey_matter
