@@ -28,6 +28,15 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
     # Save the structured array to a file
     np.save(filename, structured_array)
 
+
+def score(categories, test_size, method, n_splits, n_repeats, sub, idxs, conds, window_kwargs, output_file, shuffle=False):
+    decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
+    scores_dict = {}
+    for key, values in get_scores(sub, decoder, idxs, conds, shuffle=shuffle, **window_kwargs):
+        print(key)
+        scores_dict[key] = values
+    dict_to_structured_array(scores_dict, output_file)
+
 # %% Imports
 box = os.path.expanduser(os.path.join("~","Box"))
 fpath = os.path.join(box, "CoganLab")
@@ -46,35 +55,30 @@ window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
 
 # %% Time Sliding decoding for word tokens
 
-decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10)
-true_scores = {}
-plots = {}
-for key, values in get_scores(sub, decoder, idxs, conds, **window_kwargs):
-    print(key)
-    true_scores[key] = values
-    plots[key] = np.mean(values.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
-fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
-dict_to_structured_array(true_scores, '../../true_scores.npy')
+score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
+                               window_kwargs, '../../true_scores.npy',
+                               shuffle=False)
+score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+                                  0.8, 'lda', 5, 250, sub, idxs, conds,
+                                  window_kwargs, '../../shuffle_score.npy',
+                                  shuffle=True)
 
-# %% Time Sliding decoding significance
-decoder_shuff = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda',
-                        n_splits=5, n_repeats=250)
-shuffle_score = {}
-scores = get_scores(sub, decoder_shuff, idxs, conds, shuffle=True, **window_kwargs)
-for cond, score in scores:
-    print(cond)
-    shuffle_score[cond] = score
-dict_to_structured_array(shuffle_score, '../../shuffle_score.npy')
-
-# %% Time Sliding decoding significance
 true_scores = np.load('true_scores.npy', allow_pickle=True)[0]
 true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
+
+plots = {}
+for key, values in true_scores.items():
+    plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
+fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
+
+# %% Time Sliding decoding significance
+
 shuffle_score = np.load('shuffle_score.npy', allow_pickle=True)[0]
 shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
 signif = {}
 for cond, score in true_scores.items():
-    true = np.mean(score.T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
-    shuffle = np.mean(shuffle_score[cond].T[np.eye(len(decoder.categories)).astype(bool)].T, axis=2)
+    true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
+    shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
     signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
 # %% Plot significance
