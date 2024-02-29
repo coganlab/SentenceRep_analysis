@@ -37,61 +37,62 @@ def score(categories, test_size, method, n_splits, n_repeats, sub, idxs, conds, 
         scores_dict[key] = values
     dict_to_structured_array(scores_dict, output_file)
 
-# %% Imports
-box = os.path.expanduser(os.path.join("~","Box"))
-fpath = os.path.join(box, "CoganLab")
-subjects_dir = os.path.join(box, "ECoG_Recon")
-sub = GroupData.from_intermediates(
-    "SentenceRep", fpath, folder='ave', fdr=True, subjects_dir=subjects_dir)
-all_data = []
-colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
-scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
-idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
-idxs = [list(idx & sub.grey_matter) for idx in idxs]
-names = list(scores.keys())
-conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
-                 'average_repetitions': False}
+if __name__ == '__main__':
+    # %% Imports
+    box = os.path.expanduser(os.path.join("~","Box"))
+    fpath = os.path.join(box, "CoganLab")
+    subjects_dir = os.path.join(box, "ECoG_Recon")
+    sub = GroupData.from_intermediates(
+        "SentenceRep", fpath, folder='ave', fdr=True, subjects_dir=subjects_dir)
+    all_data = []
+    colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
+    scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
+    idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
+    idxs = [list(idx & sub.grey_matter) for idx in idxs]
+    names = list(scores.keys())
+    conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+    window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
+                    'average_repetitions': False}
 
-# %% Time Sliding decoding for word tokens
+    # %% Time Sliding decoding for word tokens
 
-score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
-                               window_kwargs, '../../true_scores.npy',
-                               shuffle=False)
-score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-                                  0.8, 'lda', 5, 250, sub, idxs, conds,
-                                  window_kwargs, '../../shuffle_score.npy',
-                                  shuffle=True)
+    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
+                                window_kwargs, '../../true_scores.npy',
+                                shuffle=False)
+    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+                                    0.8, 'lda', 5, 250, sub, idxs, conds,
+                                    window_kwargs, '../../shuffle_score.npy',
+                                    shuffle=True)
 
-true_scores = np.load('true_scores.npy', allow_pickle=True)[0]
-true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
+    true_scores = np.load('true_scores.npy', allow_pickle=True)[0]
+    true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
 
-plots = {}
-for key, values in true_scores.items():
-    plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
+    plots = {}
+    for key, values in true_scores.items():
+        plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
+    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
 
-# %% Time Sliding decoding significance
+    # %% Time Sliding decoding significance
 
-shuffle_score = np.load('shuffle_score.npy', allow_pickle=True)[0]
-shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
-signif = {}
-for cond, score in true_scores.items():
-    true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
-    shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
-    signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+    shuffle_score = np.load('shuffle_score.npy', allow_pickle=True)[0]
+    shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
+    signif = {}
+    for cond, score in true_scores.items():
+        true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
+        shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
+        signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
-# %% Plot significance
-for cond, ax in zip(conds, axs):
-    bars = []
-    if isinstance(cond, list):
-        cond = "-".join(cond)
-    for i, idx in enumerate(idxs):
-        name = "-".join([names[i], cond])
-        if name.endswith('resp'):
-            times = (-1, 1)
-        else:
-            times = (-0.5, 1.5)
-        plot_dist_bound(shuffle_score[name], 'std', 'upper', times, 0, ax=ax, color=colors[i])
-        bars.append(signif[name])
-    plot_horizontal_bars(ax, bars, 0.05, 'below')
+    # %% Plot significance
+    for cond, ax in zip(conds, axs):
+        bars = []
+        if isinstance(cond, list):
+            cond = "-".join(cond)
+        for i, idx in enumerate(idxs):
+            name = "-".join([names[i], cond])
+            if name.endswith('resp'):
+                times = (-1, 1)
+            else:
+                times = (-0.5, 1.5)
+            plot_dist_bound(shuffle_score[name], 'std', 'upper', times, 0, ax=ax, color=colors[i])
+            bars.append(signif[name])
+        plot_horizontal_bars(ax, bars, 0.05, 'below')
