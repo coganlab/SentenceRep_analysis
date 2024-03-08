@@ -10,13 +10,14 @@ from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_weight_dist, plot_dist, boxplot_2d
 import sklearn.decomposition as skd
 import sys
-from scipy.sparse import csr_matrix, issparse
+from scipy.sparse import csr_matrix, issparse, linalg as splinalg
 from numba import njit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from joblib import Parallel, delayed, Memory
 import tslearn.clustering as tsc
+import nimfa as nf
 
 sys._excepthook = sys.excepthook
 def exception_hook(exctype, value, traceback):
@@ -66,6 +67,8 @@ def calinski_harabasz(X: np.ndarray, W: np.ndarray):
     squared distances between each data point and its assigned cluster
     centroid, weighted by the assignment weights in W.
     """
+    if W.shape[1] == 1:
+        return 0
     labels = np.argmax(W, axis=1)
     legal_arr = _check_array(X)
     return calinski_harabasz_score(legal_arr, labels)
@@ -77,14 +80,31 @@ def davies_bouldin(X: np.ndarray, W: np.ndarray):
     return davies_bouldin_score(legal_arr, labels)
 
 
-@njit("f8(f8[:,::1], f8[:,::1], f8[:,::1])", nogil=True)
+def silhouette(X: np.ndarray, W: np.ndarray):
+    if W.shape[1] == 1:
+        return 0
+    labels = np.argmax(W, axis=1)
+    legal_arr = _check_array(X)
+    return silhouette_score(legal_arr, labels)
+
+
 def explained_variance(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
+    if not issparse(orig):
+        return evar(orig, W, H)
+    else:
+        diff = orig - csr_matrix(W @ H)
+        # sparse_diff = csr_matrix((diff[orig.A.nonzero()], orig.A.nonzero()))
+        return 1 - splinalg.norm(diff) ** 2 / splinalg.norm(orig) ** 2
+
+
+@njit("f8(f8[:,::1], f8[:,::1], f8[::1,:])", nogil=True)
+def evar(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
     return 1 - np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
 
 
 def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
           metric: callable = explained_variance, n_jobs: int = -3,
-          measure: np.ndarray = None) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
+          measure: np.ndarray = None, reps: int = 10) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
     """Estimate the number of components to use for NMF
 
     Parameters
@@ -104,32 +124,43 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
         The figure containing the plot
     """
 
-    def _repeated_estim(k: int, reps: int = 10, estimator=estimator
+    def _repeated_estim(k: int, estimator=estimator
                         ) -> np.ndarray[float]:
-        est = np.zeros(reps)
+        est = []
         for i in range(reps):
-            estimator.set_params(n_clusters=k)
-            if measure is not None:
+            if type(estimator) == skd.NMF:
+                estimator.set_params(n_components=k)
+                estimator.fit(X)
+                Y = estimator.transform(X)
+                H = estimator.components_
+            elif estimator == 'Psmf':
+                estim = nf.Psmf(X, rank=k, n_runs=6, max_iter=1000)
+                estim.rank = k
+                e = estim()
+                Y = e.fit.W.toarray()
+                H = e.fit.H.toarray()
+            elif measure is not None:
                 estimator.fit(X)
                 Y = estimator.predict(measure)
+                H = estimator.components_
             else:
                 Y = estimator.fit_predict(X)
-            est[i] = metric(X, Y, estimator.components_)
-        return est
+                H = estimator.components_
+            est.append(metric(X, Y, H))
+        return np.array(est)
 
-    reps = 20
     par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
-        delayed(_repeated_estim)(k, reps) for k in k_test)
-    est = np.zeros((reps, len(k_test)))
+        delayed(_repeated_estim)(k) for k in k_test)
+    est = np.zeros((reps, len(k_test), 4))
     for i, o in enumerate(par_gen):
-        est[:, i] = o[...]
+        est[:, i, :] = o[...]
 
-    ax = plot_dist(est, mode='std', times=(k_test[0], k_test[-1]))
+    return est
 
-    return ax, est
 
-def scale(X, xmax: float, xmin: float):
-    return (X - xmin) / (xmax - xmin)
+def scale(X, xmax: float = 1, xmin: float = 0):
+    return (X - np.min(X)) / (np.max(X) - np.min(X)) * (xmax - xmin) + xmin
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -137,7 +168,7 @@ if __name__ == "__main__":
     ## Load the data
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats_old')
+                                       folder='stats_opt', wide=True)
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -148,19 +179,22 @@ if __name__ == "__main__":
     ## setup training data
     aud_slice = slice(0, 175)
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
-                          sub.signif['aud_lm', :, aud_slice],
-                          sub.signif['go_ls', :],
+                          # sub.signif['aud_lm', :, aud_slice],
                           sub.signif['resp', :]])
+                          # sub.signif['resp', :]])
+
     zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     powers = np.nanmean(sub['power'].array, axis=(-4, -2))
     sig = sub.signif
 
     trainz = np.hstack([zscores['aud_ls', :, aud_slice],
-                       zscores['aud_lm', :, aud_slice],
-                       zscores['go_ls'], zscores['resp']])
+                       # zscores['aud_lm', :, aud_slice],
+                       zscores['resp']])
+                        # zscores['resp']])
     trainp = np.hstack([powers['aud_ls', :, aud_slice],
-                       powers['aud_lm', :, aud_slice],
-                       powers['go_ls'], powers['resp']])
+                       # powers['aud_lm', :, aud_slice],
+                       powers['resp']])
+                        # powers['resp']])
     combinedz = trainz * stitched - np.min(trainz * stitched)
     combinedp = scale(trainp * stitched - np.min(trainp * stitched), np.max(combinedz), 0)
     combined = np.hstack([combinedz, combinedp])
@@ -169,41 +203,58 @@ if __name__ == "__main__":
     sparse_matrix.data -= np.min(sparse_matrix.data)
 
     ## try clustering
-
-    options = dict(init="random", max_iter=100000, solver='cd', shuffle=True,
+    #
+    options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
                    # beta_loss='kullback-leibler',
-                   tol=1e-16, l1_ratio=1)
+                   tol=1e-13, l1_ratio=1)
     # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
     # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
     #                            svd_method='lapack', rotation='varimax')
-    # model = skd.NMF(**options)
+    model = skd.NMF(**options)
     # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
-    model = tsc.TimeSeriesKMeans(n_clusters=4,
-                                 n_jobs=4, metric="dtw", verbose=True)
-    pipe = Pipeline([
-        # ('noise removal', skd.PCA(0.99)),
-        ('scale', MinMaxScaler((0, 1)))])
-    # import nimfa as nf
+    # model = tsc.TimeSeriesKMeans(n_clusters=4,
+    #                              n_jobs=4, metric="dtw", verbose=True)
+    # pipe = Pipeline([
+    #     # ('noise removal', skd.PCA(0.99)),
+    #     ('scale', MinMaxScaler((0, 1)))])
     # options2 = dict(seed="nndsvd", rank=4, max_iter=10000,
     #                  # callback=scorer,
     #                  update='divergence',
     #                  objective='div',
     #                  options=dict(flag=0)
     #                  )
-    # nmf = nf.Nmf(combinedp[sub.SM], **options2)
-    # x_nmf = nmf()
-    # H = np.array(x_nmf.fit.H)
-    # W = np.array(x_nmf.fit.W)
+    # idx = list(sub.SM & sub.grey_matter)
+
+    # pred = np.argmax(W, axis=1)
     # met_func = lambda X, W, H: calinski_harabasz(X, W) / davies_bouldin(X, W)
-    idxs = [list(idx & sub.grey_matter) for idx in [sub.AUD, sub.SM, sub.PROD]]
-    met_func = lambda X, W, H: calinski_harabasz(X, W)
-    # for idx in idxs:
-    #     ax, data = get_k(trainz[idx],
-    #                      model,
-    #                      range(2, 10),
-    #                      met_func,
-    #                      n_jobs=6)
-    pred = model.fit_predict(trainz[idxs[1]])
+    idxs = [list(idx & sub.grey_matter) for idx in [sub.SM]]
+    met_func = lambda X, W, H: (calinski_harabasz(X, W),
+                                explained_variance(X, W, H),
+                                silhouette(X, W),
+                                davies_bouldin(X, W))
+    for idx in idxs:
+        data = get_k(scale(trainz[idx], 1, 0),
+                     model,
+                     range(2, 10),
+                     met_func,
+                     n_jobs=6,
+                     reps=10)
+
+    minvar = np.min(data[..., 1])
+    ax2 = plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), label='Calinski')
+    plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
+    plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
+    # plot_dist(scale(-est[..., 3], xmin=minvar), mode='std', times=(k_test[0], k_test[-1]), ax=ax, label='Davies-Bouldin')
+    ax2.legend()
+    plt.xlabel("K")
+    plt.ylabel("Score (A.U. except Explained Variance)")
+
+    nmf = nf.Psmf(scale(trainz[idx], 1, 0), rank=3, n_runs=6, max_iter=1000)
+    # x_nmf = nmf()
+    # H = np.array(x_nmf.fit.H.toarray())
+    # W = np.array(x_nmf.fit.W.toarray())
+    # model.fit(scale(trainz[idx], 1, 0))
+    # pred = model.transform(trainz[idx])
     ##
     # from MEPONMF.MEP_ONMF import ONMF_DA
     #
@@ -217,26 +268,28 @@ if __name__ == "__main__":
 
 
     ##
-    idx = list(sub.SM & sub.grey_matter)
-    W, H, n = skd.non_negative_factorization(sparse_matrix[idx].T, n_components=4,
+    # idx = list(sub.SM & sub.grey_matter)
+    W, H, n = skd.non_negative_factorization(scale(trainz[idx], 1, 0),
+                                             n_components=2,
                                              **options)
-    W = H.T
+    # W = H.T
     # W *= np.mean(zscores) / np.mean(powers) / 1000
     # this_plot = np.hstack([sub['aud_ls'].sig[aud_slice], sub['go_ls'].sig])
+
     ##
     metric = zscores
     labeled = [['Instructional', 'c', 1],
-               ['Motor', 'm', 2],
-               ['Feedback', 'k', 0],
-               ['Working Memory', 'orange', 3],]
+               # ['Motor', 'm', 2],
+               ['Feedback', 'k', 0]]
+               # ['Working Memory', 'orange', 3]]
                # ['Auditory', 'g', 4]]
-    # pred = np.argmax(W, axis=1)
+    pred = np.argmax(W, axis=1)
     groups = [[idx[i] for i in np.where(pred == j)[0]]
               for j in range(W.shape[1])]
     colors, labels = zip(*((c[1], c[0]) for c in sorted(labeled, key=lambda x: x[2])))
     for i, g in enumerate(groups):
         labeled[i][2] = groups[labeled[i][2]]
-    cond = 'resp'
+    cond = 'aud_ls'
     if cond.startswith("aud"):
         title = "Stimulus Onset"
         times = slice(None)
@@ -290,45 +343,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     # plt.axhline(linestyle='--', color='k')
     # plt.axvline(linestyle='--', color='k')
-    plt.savefig(cond+'_decomp_ord.svg', dpi=300,)
-
-    ## plot on brain
-    groups = [[sub.keys['channel'][idx[i]] for i in np.where(pred == j)[0]]
-                for j in range(W.shape[1])]
-    fig = sub.plot_groups_on_average(groups, colors, hemi='lh',
-                                     size=0.4)
-    fig.save_image('SM_decomp.eps')
-
-    ## Find and plot the peaks of each electrode group as a scatter plot / horizontal box plot
-    groups_idx = [[idx[i] for i in np.where(pred == j)[0]]
-                for j in range(W.shape[1])]
-    fig, ax = plt.subplots(1, 1)
-    # ax.set_ylim([np.min(zscores[cond, sub.SM].__array__()),
-    #              np.max(zscores[cond, sub.SM].__array__())])
-    plt.ylim(0.25, 4)
-    plt.xlim(*conds[cond])
-    ylim = ax.get_ylim()
-    for i, group in enumerate(groups):
-        peaks = np.max(zscores[cond, group].__array__(), axis=1)
-        peak_locs = np.argmax(zscores[cond, group].__array__(), axis=1)
-        tscale = np.linspace(conds[cond][0], conds[cond][1], 200)
-        ax.scatter(tscale[peak_locs], peaks, color=colors[i], label=labels[i])
-        # plot horizontal box plot of peak locations
-        spread = (ylim[1] - ylim[0])
-        width = spread / 16
-        pos = [spread / 2 + i * width + 1.5 * width]
-        bplot = ax.boxplot(tscale[peak_locs], manage_ticks=False, widths=width,
-                           positions=pos, boxprops=dict(facecolor=colors[i],
-                                                        fill=True, alpha=0.5),
-                           vert=False, showfliers=False, whis=[15, 85],
-                           patch_artist=True)
-
-    # plt.title(title)
-    plt.ylabel("Z-score")
-    plt.xlabel(title + " Latency Time (s)")
-    plt.axhline(linestyle='--', color='k')
-    plt.axvline(linestyle='--', color='k')
-    plt.savefig(cond+'_peaks.svg', dpi=300)
+    # plt.savefig(cond+'_peaks.svg', dpi=300)
 
     ## run the decomposition
     # ch = [[] for _ in range(9)]
@@ -351,14 +366,14 @@ if __name__ == "__main__":
     # # W = np.array(bmf.W)
     # this_plot = np.hstack([sub[:,'aud_ls'].signif[aud_slice], sub[:,'go_ls'].signif])
 
-    # ## plot on brain
-    # pred = np.argmax(W, axis=1)
-    # groups = [[sub.keys['channel'][sub.SM[i]] for i in np.where(pred == j)[0]]
-    #           for j in range(W.shape[1])]
-    # fig1 = sub.plot_groups_on_average(groups,
-    #                                   ['blue', 'orange', 'green', 'red'],
-    #                                   hemi='lh',
-    #                                   rm_wm=False)
+    ## plot on brain
+    pred = np.argmax(W, axis=1)
+    groups = [[sub.keys['channel'][sorted(list(sub.SM))[i]] for i in np.where(pred == j)[0]]
+              for j in range(W.shape[1])]
+    fig1 = sub.plot_groups_on_average(groups,
+                                      ['blue', 'orange', 'green', 'red'],
+                                      hemi='lh',
+                                      rm_wm=False)
 
     ### plot the weights
     # fig, ax = plt.subplots(1, 1)
