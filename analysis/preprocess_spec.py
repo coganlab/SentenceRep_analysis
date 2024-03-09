@@ -87,7 +87,8 @@ for subj in subjects:
         base_fixed = stats.make_data_same(base._data, spec._data.shape)
         mask = spec.average(lambda x: np.nanmean(x, axis=0), copy=True)
 
-        mask._data = np.mean(stats.shuffle_test(spec._data, base_fixed, 1000), axis=0)
+        temp = np.mean(stats.shuffle_test(spec._data, base_fixed, 1000), axis=0)
+        mask._data = temp
         # mask = stats.time_perm_cluster(spec._data, base._data,
         #                                p_thresh=0.05,
         #                                ignore_adjacency=1,
@@ -99,5 +100,5 @@ for subj in subjects:
 
         # Plot the Time-Frequency Clusters
         # --------------------------------
-        figs = chan_grid(spec, size=(20, 10), vmin=0, vmax=1,
+        figs = chan_grid(mask, size=(20, 10), vmin=0, vmax=1,
                          cmap=parula_map, show=False)
