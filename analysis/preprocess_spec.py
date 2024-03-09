@@ -1,9 +1,16 @@
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
-from ieeg.calc import stats, scaling
+from ieeg.calc import stats
+from ieeg.viz.utils import chan_grid
+from ieeg.viz.parula import parula_map
+from joblib import Parallel, delayed
 import os
 from itertools import product
+from tqdm import tqdm
+import numpy as np
+
+
 n_jobs = 6
 
 # %% check if currently running a slurm job
@@ -61,14 +68,15 @@ for subj in subjects:
     # %%
     masks = []
     out2 = []
-    for epoch, name, t in zip((out[0]["Start"],) +
-                              tuple(out[1][e] for e in ["Response"] + list(
-                                  map("/".join, product(["Audio", "Go"],
-                                                        ["LS", "LM", "JL"])))),
-                              ("start", "resp", "aud_ls", "aud_lm", "aud_jl",
-                               "go_ls", "go_lm", "go_jl"),
-                              ((-0.5, 0.5), (-1, 1),
-                               *((-0.5, 1.5),) * 6)):  # time-perm
+    labels = (out[0]["Start"],) + tuple(out[1][e] for e in ["Response"] + list(
+                map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"]))))
+    names = ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
+             "go_jl"),
+    for epoch, name, t in tqdm(zip(
+            labels, names, ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)),
+            total=len(labels)):
+        # if name != 'resp':
+        #     continue
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
@@ -76,12 +84,20 @@ for subj in subjects:
         spec = wavelet_scaleogram(epoch, n_jobs=n_jobs, decim=int(
             good.info['sfreq'] / 100))
         crop_pad(spec, "0.5s")
-        mask = stats.time_perm_cluster(spec._data, base._data,
-                                       p_thresh=0.05,
-                                       ignore_adjacency=1,
-                                       n_jobs=n_jobs,
-                                       # ignore channel adjacency
-                                       n_perm=2000)
+        base_fixed = stats.make_data_same(base._data, spec._data.shape)
+        mask = spec.average(lambda x: np.nanmean(x, axis=0), copy=True)
+
+        mask._data = np.mean(stats.shuffle_test(spec._data, base_fixed, 1000), axis=0)
+        # mask = stats.time_perm_cluster(spec._data, base._data,
+        #                                p_thresh=0.05,
+        #                                ignore_adjacency=1,
+        #                                n_jobs=n_jobs,
+        #                                # ignore channel adjacency
+        #                                n_perm=2000)
         out2.append(spec)
         masks.append(mask)
 
+        # Plot the Time-Frequency Clusters
+        # --------------------------------
+        figs = chan_grid(spec, size=(20, 10), vmin=0, vmax=1,
+                         cmap=parula_map, show=False)
