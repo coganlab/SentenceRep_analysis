@@ -71,8 +71,8 @@ for subj in subjects:
     labels = (out[0]["Start"],) + tuple(out[1][e] for e in ["Response"] + list(
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"]))))
     names = ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
-             "go_jl"),
-    for epoch, name, t in tqdm(zip(
+             "go_jl")
+    for (epoch, name, t) in tqdm(zip(
             labels, names, ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)),
             total=len(labels)):
         # if name != 'resp':
@@ -87,8 +87,9 @@ for subj in subjects:
         base_fixed = stats.make_data_same(base._data, spec._data.shape)
         mask = spec.average(lambda x: np.nanmean(x, axis=0), copy=True)
 
-        temp = np.mean(stats.shuffle_test(spec._data, base_fixed, 1000), axis=0)
-        mask._data = temp
+        diff = stats.shuffle_test(spec._data, base_fixed, 1000)
+        obs = stats.mean_diff(spec._data, base_fixed, axis=0)
+        mask._data = np.mean(diff < obs, axis=0)
         # mask = stats.time_perm_cluster(spec._data, base._data,
         #                                p_thresh=0.05,
         #                                ignore_adjacency=1,
