@@ -29,21 +29,23 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
     np.save(filename, structured_array)
 
 
-def score(categories, test_size, method, n_splits, n_repeats, sub, idxs, conds, window_kwargs, output_file, shuffle=False):
+def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
+          conds, window_kwargs, output_file, scores_dict, shuffle=False):
     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-    scores_dict = {}
-    for key, values in get_scores(sub, decoder, idxs, conds, shuffle=shuffle, **window_kwargs):
+    for key, values in get_scores(sub, decoder, idxs, conds, scores_dict, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
     dict_to_structured_array(scores_dict, output_file)
 
+
 if __name__ == '__main__':
+
     # %% Imports
     box = os.path.expanduser(os.path.join("~","Box"))
     fpath = os.path.join(box, "CoganLab")
     subjects_dir = os.path.join(box, "ECoG_Recon")
     sub = GroupData.from_intermediates(
-        "SentenceRep", fpath, folder='ave', fdr=True, subjects_dir=subjects_dir)
+        "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
     all_data = []
     colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
     scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
@@ -56,25 +58,27 @@ if __name__ == '__main__':
 
     # %% Time Sliding decoding for word tokens
 
-    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
-                                window_kwargs, '../../true_scores.npy',
-                                shuffle=False)
-    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-                                    0.8, 'lda', 5, 250, sub, idxs, conds,
-                                    window_kwargs, '../../shuffle_score.npy',
-                                    shuffle=True)
+    # score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
+    #                             window_kwargs, '../../true_scores.npy',
+    #                             shuffle=False)
+    # score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+    #                                 0.8, 'lda', 5, 250, sub, idxs, conds,
+    #                                 window_kwargs, '../../shuffle_score.npy',
+    #                                 shuffle=True)
 
-    true_scores = np.load('true_scores.npy', allow_pickle=True)[0]
+    # %% Plotting
+    data_dir = '../../data/'
+    true_scores = np.load(data_dir + 'true_scores_short.npy', allow_pickle=True)[0]
     true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
 
     plots = {}
     for key, values in true_scores.items():
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors)
+    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors, "Word Decoding")
 
     # %% Time Sliding decoding significance
 
-    shuffle_score = np.load('shuffle_score.npy', allow_pickle=True)[0]
+    shuffle_score = np.load(data_dir + 'shuffle_score_short.npy', allow_pickle=True)[0]
     shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
     signif = {}
     for cond, score in true_scores.items():
@@ -93,6 +97,10 @@ if __name__ == '__main__':
                 times = (-1, 1)
             else:
                 times = (-0.5, 1.5)
-            plot_dist_bound(shuffle_score[name], 'std', 'upper', times, 0, ax=ax, color=colors[i])
+            shuffle = np.mean(shuffle_score[name].T[np.eye(4).astype(bool)].T, axis=2)
+            # smooth the shuffle using a window
+            window = np.lib.stride_tricks.sliding_window_view(shuffle, 20, 0)
+            shuffle = np.mean(window, axis=-1)
+            plot_dist_bound(shuffle, 'std', 'both', times, 0, ax=ax, color=colors[i], alpha=0.3)
             bars.append(signif[name])
         plot_horizontal_bars(ax, bars, 0.05, 'below')

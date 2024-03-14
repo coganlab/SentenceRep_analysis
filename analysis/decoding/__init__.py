@@ -216,8 +216,8 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
 
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
-               **decoder_kwargs) -> dict[str, np.ndarray]:
-    names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
+               scores: dict, **decoder_kwargs) -> dict[str, np.ndarray]:
+    names = list(scores.keys())
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
         x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
@@ -238,7 +238,7 @@ def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
 
 def plot_all_scores(all_scores: dict[str, np.ndarray],
                     conds: list[str], idxs: dict[str, list[int]],
-                    colors: list[list[float]],
+                    colors: list[list[float]], suptitle: str = None,
                     fig: plt.Figure = None, axs: plt.Axes = None,
                     **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
     names = list(idxs.keys())
@@ -276,7 +276,8 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
                 ax.set_ylim(0.1, 0.7)
 
     axs[0].set_ylabel("Accuracy (%)")
-    fig.suptitle("Word Decoding")
+    if suptitle is not None:
+        fig.suptitle(suptitle)
     return fig, axs
 
 
@@ -295,9 +296,11 @@ def plot_dist_bound(data: np.ndarray, mode: str = 'sem', which: str = 'both',
         ax = plt.gca()
     if color is None:
         color = ax.get_color()
-    if which in ['both', 'upper']:
+    if which == 'upper':
         ax.plot(tscale, mean + std, color=color, **plot_kwargs)
-    if which in ['both', 'lower']:
+    elif which == 'lower':
         ax.plot(tscale, mean - std, color=color, **plot_kwargs)
+    elif which == 'both':
+        ax.fill_between(tscale, mean - std, mean + std, color=color, **plot_kwargs)
     return ax
 
