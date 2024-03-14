@@ -3,11 +3,13 @@ from grouping import GroupData
 import numpy as np
 from sklearn.cluster import OPTICS
 from tslearn.metrics import soft_dtw
-from tslearn.clustering import TimeSeriesKMeans
+from sktime.clustering.k_means import TimeSeriesKMeans
 from joblib import Parallel, delayed
 from collections.abc import Sequence
 import matplotlib.pyplot
 from analysis.decomposition import explained_variance, silhouette, calinski_harabasz, davies_bouldin
+from analysis.utils.plotting import plot_weight_dist
+from sktime.clustering.utils.plotting._plot_partitions import plot_cluster_algorithm
 
 
 def tsk_func(X, n_clusters, metric="softdtw"):
@@ -39,7 +41,7 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats_opt', wide=False)
-sub_ave = GroupData.from_intermediates("SentenceRep", fpath, folder='ave')
+# sub_ave = GroupData.from_intermediates("SentenceRep", fpath, folder='ave')
 
 conds_aud = ['aud_ls', 'aud_lm', 'aud_jl']
 conds_go = ['go_ls', 'go_lm', 'go_jl']
@@ -49,12 +51,14 @@ go = sub.array['zscore', conds_go]
 go.labels[0] = go.labels[0].replace("go_", "")
 aud_go = aud[..., :175].concatenate(go, -1)
 
-ls = np.moveaxis(np.nanmean(aud_go.combine((0, 1)), axis=2), 0, -1)
-# ls_sm = np.nanmean(ls[list(sub.SM),].dropna(), axis=2)
+ls = np.moveaxis(np.nanmean(aud_go.combine((0, 1)), axis=2), 0, 1)
+ls_sm = ls[list(sub.SM),].dropna()
 # scores = get_k(ls, tsk_func, range(1, 10), n_jobs=6)
 estimator = TimeSeriesKMeans(n_clusters=3,
                              metric="dtw",
                              tol=1,
-                             n_jobs=7,
-                             verbose=40)
-estimator.fit(ls)
+                             verbose=True)
+estimator.fit(ls_sm)
+#
+# fig, ax = plot_weight_dist(np.mean(ls_sm[..., :4], axis=-1).__array__(), estimator.labels_)
+# bins = np.bincount(estimator.labels_)

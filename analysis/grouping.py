@@ -34,7 +34,11 @@ class GroupData:
         zscore = load_dict(layout, conds, "zscore", False, folder)
         data = combine(dict(power=pwr, zscore=zscore), (1, 4))
         # subjects = tuple(data['power'].keys())
-        out = cls(data, sig, **kwargs)
+        pvals = load_dict(layout, conds, "pval", True, folder)
+        if pvals:
+            out = cls(data, sig, combine(pvals, (0, 2)), **kwargs)
+        else:
+            out = cls(data, sig, **kwargs)
         # out.subjects = subjects
         out.task = task
         out._root = root
@@ -42,6 +46,7 @@ class GroupData:
 
     def __init__(self, data: dict | LabeledArray,
                  mask: dict[str, np.ndarray] | LabeledArray = None,
+                 pvals: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
                  fdr: bool = False, pval: float = 0.05,
@@ -59,6 +64,8 @@ class GroupData:
                         self.signif[i] = self.correction(arr, fdr, pval, per_subject)
                 else:
                     self.signif = self.correction(self.signif, fdr, pval, per_subject)
+            elif pvals:
+                self._set_data(pvals, 'p_vals')
             keys = self.signif.labels
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm"]):
@@ -172,7 +179,6 @@ class GroupData:
                    isinstance(key, (Sequence, slice)) and not isinstance(key, str))
 
         return type(self)(self.array[item], sig, cats)
-
 
     def nan_common_denom(self, sort: bool = True, min_trials: int = 0,
                          crop_trials: bool = True, verbose: bool = False):
@@ -607,5 +613,5 @@ if __name__ == "__main__":
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##
-    # fig = sub.plot_groups_on_average(rm_wm=False)
-    # fig.save_image('ALL.png')
+    fig = sub.plot_groups_on_average(rm_wm=False)
+    fig.save_image('ALL.png')

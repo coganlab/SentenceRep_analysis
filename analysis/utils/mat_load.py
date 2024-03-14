@@ -108,7 +108,7 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
               derivatives_folder: PathLike = 'stats'
               ) -> dict[str: dict[str: dict[str: np.ndarray]]]:
 
-    allowed = ["zscore", "power", "significance"]
+    allowed = ["zscore", "power", "significance", "pval"]
     match value_type:
         case "zscore":
             reader = lambda f: mne.read_epochs(f, False, preload=True)
@@ -119,6 +119,9 @@ def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
         case "significance":
             reader = mne.read_evokeds
             suffix = "mask-ave"
+        case "pval":
+            reader = mne.read_evokeds
+            suffix = "pval-ave"
         case _:
             raise ValueError(f"value_type must be one of {allowed}, instead"
                              f" got {value_type}")
