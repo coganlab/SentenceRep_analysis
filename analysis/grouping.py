@@ -36,9 +36,9 @@ class GroupData:
         # subjects = tuple(data['power'].keys())
         pvals = load_dict(layout, conds, "pval", True, folder)
         if pvals:
-            out = cls(data, sig, combine(pvals, (0, 2)), **kwargs)
-        else:
-            out = cls(data, sig, **kwargs)
+            kwargs['pvals'] = combine(pvals, (0, 2))
+
+        out = cls(data, sig, **kwargs)
         # out.subjects = subjects
         out.task = task
         out._root = root
@@ -46,9 +46,9 @@ class GroupData:
 
     def __init__(self, data: dict | LabeledArray,
                  mask: dict[str, np.ndarray] | LabeledArray = None,
-                 pvals: dict[str, np.ndarray] | LabeledArray = None,
                  categories: Sequence[str] = ('dtype', 'epoch', 'stim',
                                               'channel', 'trial', 'time'),
+                 pvals: dict[str, np.ndarray] | LabeledArray = None,
                  fdr: bool = False, pval: float = 0.05,
                  wide: bool = False, subjects_dir: PathLike = None
                  , per_subject: bool = False):
@@ -562,15 +562,12 @@ def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None) -> set[st
     return grey_matter
 
 
-
-
-
 if __name__ == "__main__":
     from ieeg.calc.reshape import stitch_mats
     from analysis.utils.plotting import plot_clustering
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='stats_opt', wide=True)
+                                           folder='ave', fdr=True)
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -593,7 +590,7 @@ if __name__ == "__main__":
     #     plot_dist(arr[SUB], times=conds[cond], label=subj)
     # plt.legend()
     ##
-    cond = 'go_ls'
+    cond = 'aud_ls'
     # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
     # arr = sub.signif[cond].__array__()
     arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
