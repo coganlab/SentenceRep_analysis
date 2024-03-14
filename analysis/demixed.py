@@ -7,7 +7,7 @@ from tslearn.clustering import TimeSeriesKMeans
 from joblib import Parallel, delayed
 from collections.abc import Sequence
 import matplotlib.pyplot
-from .decomposition import explained_variance, silhouette, calinski_harabasz, davies_bouldin
+from analysis.decomposition import explained_variance, silhouette, calinski_harabasz, davies_bouldin
 
 
 def tsk_func(X, n_clusters, metric="softdtw"):
@@ -49,5 +49,12 @@ go = sub.array['zscore', conds_go]
 go.labels[0] = go.labels[0].replace("go_", "")
 aud_go = aud[..., :175].concatenate(go, -1)
 
-ls = aud_go['ls']
-scores = get_k(ls, tsk_func, range(1, 10), n_jobs=6)
+ls = np.moveaxis(np.nanmean(aud_go.combine((0, 1)), axis=2), 0, -1)
+# ls_sm = np.nanmean(ls[list(sub.SM),].dropna(), axis=2)
+# scores = get_k(ls, tsk_func, range(1, 10), n_jobs=6)
+estimator = TimeSeriesKMeans(n_clusters=3,
+                             metric="dtw",
+                             tol=1,
+                             n_jobs=7,
+                             verbose=40)
+estimator.fit(ls)
