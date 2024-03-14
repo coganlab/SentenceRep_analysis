@@ -8,9 +8,10 @@ import os.path as op
 import os
 import mne
 from itertools import product
+import numpy as np
 
 
-n_jobs = -2
+n_jobs = 6
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -85,12 +86,12 @@ for subj in subjects:
                 map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"])))),
             ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
             ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
-            # ((-0.25, 0.25), *((0, 0.5),) * 3, *((0.25, 0.75),) * 3)):  # ave
+            # (*((0, 0.5),) * 5, *((0.25, 0.75),) * 3)):  # ave
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
         # time-perm
         mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=10000, n_jobs=n_jobs,
+                                             n_perm=1, n_jobs=n_jobs,
                                              ignore_adjacency=1)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
                                      tmin=window[0])
@@ -101,14 +102,27 @@ for subj in subjects:
 
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
-        data.append((name, epoch_mask.copy(), power.copy(), z_score.copy()))
+        sig2 = stats.make_data_same(sig2, sig1.shape)
 
-    for name, epoch_mask, power, z_score in data:
+        # Calculate the observed difference
+        obs_diff = np.mean(sig1, axis=0) - np.mean(sig2, axis=0)
+
+        # Calculate the difference between the two groups averaged across
+        diff = stats.shuffle_test(sig1, sig2, 10000, 0, n_jobs=n_jobs)
+
+        # Calculate the p-value
+        p_act = np.mean(obs_diff > diff, axis=0)
+        p_vals = mne.EvokedArray(p_act, epoch_mask.info)
+        data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(), p_vals.copy()))
+
+    for name, epoch_mask, power, z_score, p_vals in data:
         power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True,
                    fmt='double')
         z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                      fmt='double')
-        epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
+        # epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
+        p_vals.save(save_dir + f"/{subj}_{name}_pval-ave.fif", overwrite=True)
+
     base.save(save_dir + f"/{subj}_base-epo.fif", overwrite=True)
     del data
 
