@@ -7,7 +7,7 @@ from sktime.clustering.k_means import TimeSeriesKMeans
 from joblib import Parallel, delayed
 from collections.abc import Sequence
 import matplotlib.pyplot
-from analysis.decomposition import explained_variance, silhouette, calinski_harabasz, davies_bouldin
+from analysis.pick_k import explained_variance, silhouette, calinski_harabasz, davies_bouldin
 from analysis.utils.plotting import plot_weight_dist
 from sktime.clustering.utils.plotting._plot_partitions import plot_cluster_algorithm
 
