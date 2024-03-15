@@ -143,12 +143,12 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
             else:
                 Y = estimator.fit_predict(X)
                 H = estimator.components_
-            est.append(metric(X, Y, H))
+            est.append(metric(X, Y, H) + (estimator.reconstruction_err_,))
         return np.array(est)
 
     par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
         delayed(_repeated_estim)(k) for k in k_test)
-    est = np.zeros((reps, len(k_test), 4))
+    est = np.zeros((reps, len(k_test), 5))
     for i, o in enumerate(par_gen):
         est[:, i, :] = o[...]
 
@@ -173,6 +173,11 @@ if __name__ == "__main__":
                           sub.signif['resp', :]])
                           # sub.signif['resp', :]])
 
+    pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
+                          # sub.signif['aud_lm', :, aud_slice],
+                          sub.p_vals['resp', :]]) ** 4
+                          # sub.signif['resp', :]])
+
     zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     powers = np.nanmean(sub['power'].array, axis=(-4, -2))
     sig = sub.signif
@@ -193,7 +198,7 @@ if __name__ == "__main__":
     #
     options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
                    # beta_loss='kullback-leibler',
-                   tol=1e-13, l1_ratio=1)
+                   tol=1e-14, l1_ratio=0.5)
     # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
     # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
     #                            svd_method='lapack', rotation='varimax')
@@ -208,22 +213,26 @@ if __name__ == "__main__":
                                 davies_bouldin(X, W))
     axs = []
     titles = ["Auditory", "Sensorimotor", "Production"]
-    for idx in idxs:
-        data = get_k(stitched[idx],
+    fig, axs = plt.subplots(1, 3)
+    for idx, ax2 in zip(idxs, axs):
+        data = get_k(pval[idx],
                      model,
                      range(2, 10),
                      met_func,
-                     n_jobs=2,
+                     n_jobs=6,
                      reps=10)
 
         minvar = np.min(data[..., 1])
-        ax2 = plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), label='Calinski')
+
+        plot_dist(scale(data[..., 4]-data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
         plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
         plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
-        plot_dist(scale(data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
+        plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
+        plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
+                  label='Reconstruction Error')
         ax2.legend()
         plt.xlabel("K")
         plt.ylabel("Score (A.U. except Explained Variance)")
         ax2.set_title(titles.pop(0))
-        axs.append(ax2)
+    fig.suptitle("NMF Clustering Metrics (pvals)")
 

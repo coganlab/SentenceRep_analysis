@@ -13,7 +13,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
 
 else:  # if not then set box directory
     box = join(HOME, "Box")
-    ids = list(range(3))
+    ids = [0]
 
 # %% Imports
 
@@ -24,7 +24,7 @@ for id in ids:
         sub = GroupData.from_intermediates("SentenceRep", fpath,
                                            folder='stats_opt',
                                            subjects_dir=subjects_dir)
-        name = "wide"
+        name = "short"
     elif id == 1:
         sub = GroupData.from_intermediates("SentenceRep", fpath, fdr=True,
                                            folder='no_cluster',
@@ -34,7 +34,7 @@ for id in ids:
         sub = GroupData.from_intermediates("SentenceRep", fpath, wide=True,
                                            folder='stats_opt',
                                            subjects_dir=subjects_dir)
-        name = "short"
+        name = "wide"
     else:
         raise ValueError(f"ID {id} not recognized")
 
@@ -53,15 +53,15 @@ for id in ids:
     cats = {'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}
 
     # %% run the modeling
-    fname = join(HOME, f"true_scores_{name}.npy")
-    score(cats, 0.8, 'lda', 5, 10, sub, idxs,
-          conds, window_kwargs, fname, shuffle=False)
+    # fname = join(HOME, f"true_scores_{name}.npy")
+    # score(cats, 0.8, 'lda', 5, 10, sub, idxs,
+    #       conds, window_kwargs, fname, shuffle=False)
     # fname = join(HOME, f"shuffle_score_{name}.npy")
     # score(cats, 0.8, 'lda', 5, 250, sub,
     #       idxs, conds, window_kwargs, fname, shuffle=True)
 
-    # # %% Plot all channels
-    # x = sub.array["zscore", "aud_ls", :, sub.AUD]
-    # x.labels.insert(0, x.labels.pop(1))
-    # x = x.combine((1, 2))
-    # fig = plot_channels(x)
+    # %% Plot all channels
+    x = sub.array["zscore", "aud_ls", :, list(sub.SM)]
+    x.labels.insert(0, x.labels.pop(1))
+    x = x.combine((1, 2))
+    fig = plot_channels(x)

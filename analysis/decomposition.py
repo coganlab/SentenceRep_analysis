@@ -1,6 +1,5 @@
 import os
 import numpy as np
-from collections.abc import Sequence
 import matplotlib
 
 matplotlib.use('Qt5Agg')
@@ -8,15 +7,7 @@ matplotlib.use('Qt5Agg')
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_weight_dist, plot_dist, boxplot_2d
 import sklearn.decomposition as skd
-import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
-from numba import njit
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
-from joblib import Parallel, delayed, Memory
-import tslearn.clustering as tsc
-import nimfa as nf
 
 import matplotlib.pyplot as plt
 
@@ -29,6 +20,9 @@ aud_slice = slice(0, 175)
 stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
                       # sub.signif['aud_lm', :, aud_slice],
                       sub.signif['resp', :]])
+pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
+                  # sub.signif['aud_lm', :, aud_slice],
+                  sub.p_vals['resp', :]]) ** 4
 # sub.signif['resp', :]])
 
 zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
@@ -71,8 +65,8 @@ conds = {"resp": (-1, 1),
          "go_jl": (-0.5, 1.5)}
 metric = zscores
 labeled = [['Instructional', 'c', 2],
-           ['Motor', 'm', 1],
-           ['Feedback', 'k', 0]]
+           ['Motor', 'm', 0],
+           ['Feedback', 'k', 1]]
 # ['Working Memory', 'orange', 3]]
 # ['Auditory', 'g', 4]]
 pred = np.argmax(W, axis=1)
