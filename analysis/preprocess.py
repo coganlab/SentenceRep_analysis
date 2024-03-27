@@ -1,5 +1,4 @@
 ## Preprocess
-import ieeg.viz.utils
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq import gamma, utils
@@ -8,7 +7,6 @@ import os.path as op
 import os
 import mne
 from itertools import product
-import numpy as np
 
 
 n_jobs = 6
@@ -75,11 +73,12 @@ for subj in subjects:
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
     ## run time cluster stats
 
-    save_dir = op.join(layout.root, "derivatives", "stats_opt")
+    save_dir = op.join(layout.root, "derivatives", "stats")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
+    nperm = 100000
     sig2 = base.get_data(copy=True)
     for epoch, name, window in zip((out[0]["Start"],) +
             tuple(out[1][e] for e in ["Response"] + list(
@@ -90,29 +89,32 @@ for subj in subjects:
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
         # time-perm
-        mask[name] = stats.time_perm_cluster(sig1, sig2, p_thresh=0.05, axis=0,
-                                             n_perm=1, n_jobs=n_jobs,
-                                             ignore_adjacency=1)
+        mask[name], p_act = stats.time_perm_cluster(
+            sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
+            ignore_adjacency=1)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
                                      tmin=window[0])
 
-        # ave
+        # # ave
         # mask[name] = stats.window_averaged_shuffle(sig1, sig2, 10000)
-        # epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info)
+        # epoch_mask = mne.EvokedArray(mask[name][:, None], epoch.average().info,
+        #                              tmin=window[0])
+        # p_vals = epoch_mask.copy()
 
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
         sig2 = stats.make_data_same(sig2, sig1.shape)
 
-        # Calculate the observed difference
-        obs_diff = np.mean(sig1, axis=0) - np.mean(sig2, axis=0)
-
         # Calculate the difference between the two groups averaged across
-        diff = stats.shuffle_test(sig1, sig2, 10000, 0, n_jobs=n_jobs)
+        # out = st.permutation_test([sig1, sig2], stats.mean_diff,
+        #                           n_resamples=nperm,
+        #                           vectorized=True, alternative='less',
+        #                           batch=500)
+        # p_act = out.pvalue
 
         # Calculate the p-value
-        p_act = np.mean(obs_diff > diff, axis=0)
-        p_vals = mne.EvokedArray(p_act, epoch_mask.info)
+        p_vals = mne.EvokedArray(p_act, epoch_mask.info, tmin=window[0])
+        # p_vals = epoch_mask.copy()
         data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(), p_vals.copy()))
 
     for name, epoch_mask, power, z_score, p_vals in data:
@@ -120,7 +122,7 @@ for subj in subjects:
                    fmt='double')
         z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True,
                      fmt='double')
-        # epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
+        epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
         p_vals.save(save_dir + f"/{subj}_{name}_pval-ave.fif", overwrite=True)
 
     base.save(save_dir + f"/{subj}_base-epo.fif", overwrite=True)
