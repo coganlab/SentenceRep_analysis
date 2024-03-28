@@ -11,7 +11,7 @@ from analysis.utils.plotting import plot_dist
 import sklearn.decomposition as skd
 import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
-from numba import njit
+import scipy.stats as st
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from joblib import Parallel, delayed
 import nimfa as nf
@@ -94,7 +94,7 @@ def explained_variance(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
         return 1 - splinalg.norm(diff) ** 2 / splinalg.norm(orig) ** 2
 
 
-@njit("f8(f8[:,::1], f8[:,::1], f8[::1,:])", nogil=True)
+# @njit("f8(f8[:,::1], f8[:,::1], f8[:,:])", nogil=True)
 def evar(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
     return 1 - np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
 
@@ -175,30 +175,32 @@ if __name__ == "__main__":
 
     pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
                           # sub.signif['aud_lm', :, aud_slice],
-                          sub.p_vals['resp', :]]) ** 4
+                          sub.p_vals['resp', :]])
                           # sub.signif['resp', :]])
+    pval = np.where(pval > 0.9999, 0.9999, pval)
 
-    zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-    powers = np.nanmean(sub['power'].array, axis=(-4, -2))
+    # pval[pval<0.0001] = 0.0001
+    zscores = st.norm.ppf(pval)
+    powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     sig = sub.signif
 
-    trainz = np.hstack([zscores['aud_ls', :, aud_slice],
-                       # zscores['aud_lm', :, aud_slice],
-                       zscores['resp']])
-                        # zscores['resp']])
+    # trainz = np.hstack([zscores['aud_ls', :, aud_slice],
+    #                    # zscores['aud_lm', :, aud_slice],
+    #                    zscores['resp']])
+    #                     # zscores['resp']])
     trainp = np.hstack([powers['aud_ls', :, aud_slice],
                        # powers['aud_lm', :, aud_slice],
                        powers['resp']])
                         # powers['resp']])
     # raw = train - np.min(train)
-    sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
-    sparse_matrix.data -= np.min(sparse_matrix.data)
+    # sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
+    # sparse_matrix.data -= np.min(sparse_matrix.data)
 
     ## try clustering
     #
-    options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
+    options = dict(init="random", max_iter=10000, solver='mu', shuffle=False,
                    # beta_loss='kullback-leibler',
-                   tol=1e-14, l1_ratio=0.5)
+                   tol=1e-12, l1_ratio=0.5)
     # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
     # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
     #                            svd_method='lapack', rotation='varimax')
@@ -206,7 +208,7 @@ if __name__ == "__main__":
     # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
     # model = tsc.TimeSeriesKMeans(n_clusters=4,
     #                              n_jobs=4, metric="dtw", verbose=True)
-    idxs = [list(idx & sub.grey_matter) for idx in [sub.AUD, sub.SM, sub.PROD]]
+    idxs = [list(idx) for idx in [sub.AUD, sub.SM, sub.PROD]]
     met_func = lambda X, W, H: (calinski_harabasz(X, W),
                                 explained_variance(X, W, H),
                                 silhouette(X, W),
@@ -215,7 +217,7 @@ if __name__ == "__main__":
     titles = ["Auditory", "Sensorimotor", "Production"]
     fig, axs = plt.subplots(1, 3)
     for idx, ax2 in zip(idxs, axs):
-        data = get_k(pval[idx],
+        data = get_k(zscores[idx] - np.min(zscores[idx]),
                      model,
                      range(2, 10),
                      met_func,
@@ -224,7 +226,7 @@ if __name__ == "__main__":
 
         minvar = np.min(data[..., 1])
 
-        plot_dist(scale(data[..., 4]-data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
+        plot_dist(scale(data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
         plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
         plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
         plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
