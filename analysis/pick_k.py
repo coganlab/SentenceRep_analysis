@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_dist
+from analysis.utils.plotting import plot_dist, plot_weight_dist
 import sklearn.decomposition as skd
 import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
@@ -124,6 +124,7 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
     def _repeated_estim(k: int, estimator=estimator
                         ) -> np.ndarray[float]:
         est = []
+        W = []
         for i in range(reps):
             if type(estimator) == skd.NMF:
                 estimator.set_params(n_components=k)
@@ -145,17 +146,20 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
                 H = estimator.components_
             try:
                 est.append(metric(X, Y, H) + (estimator.reconstruction_err_,))
+                W.append(Y)
             except ValueError:
                 est.append(np.array([np.nan] * 5))
-        return np.array(est)
+        return np.array(est), W
 
     par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
         delayed(_repeated_estim)(k) for k in k_test)
     est = np.zeros((reps, len(k_test), 5))
-    for i, o in enumerate(par_gen):
-        est[:, i, :] = o[...]
 
-    return est
+    Ws = []
+    for i, (o, W) in enumerate(par_gen):
+        est[:, i, :] = o[...]
+        Ws.append(W)
+    return est, Ws
 
 
 def scale(X, xmax: float = 1, xmin: float = 0):
@@ -164,11 +168,43 @@ def scale(X, xmax: float = 1, xmin: float = 0):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
 
-    kwarg_sets = [dict(folder='ave'), dict(folder='stats'),
+    r = 5
+    c_minor = 3
+    c_major = 2
+    major_rows = (0, 4)
+
+    c = c_minor * c_major
+    gs = gridspec.GridSpec(r, c)
+
+    # Adjust the space between subplots to 0
+    gs.update(wspace=0, hspace=0)
+
+    # Create subplots
+    axs = np.zeros((r, c), dtype=object)
+    for i in range(r):  # Only for the first two rows
+        for j in range(c):  # Create 3 subplots per row
+            if i in major_rows:
+                if j >= c_major:
+                    continue
+                axs[i, j] = plt.subplot(gs[i, j * c_minor:(j + 1) * c_minor])
+                axs[i, j].set_xticks([])
+                axs[i, j].set_yticks([])
+            else:
+                axs[i, j] = plt.subplot(gs[i, j])
+                if j != 0:
+                    axs[i, j].set_yticks([])
+                if i != r - 1:
+                    axs[i, j].set_xticks([])
+
+
+    kwarg_sets = [dict(folder='stats'),
                   dict(folder='stats', wide=True)]
-    fnames = ["ave", "stats", "stats_wide"]
-    for kwargs in kwarg_sets:
+    fnames = ["short", "wide"]
+    titles = ["AUD", "SM", "PROD"]
+    colors = ['green', 'red', 'blue']
+    for i, kwargs in enumerate(kwarg_sets):
         ## Load the data
         fpath = os.path.expanduser("~/Box/CoganLab")
         sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
@@ -207,7 +243,7 @@ if __name__ == "__main__":
         #
         options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
                        # beta_loss='kullback-leibler',
-                       l1_ratio=0.5, alpha_W=0.5)
+                       )
         # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
         # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
         #                            svd_method='lapack', rotation='varimax')
@@ -219,30 +255,40 @@ if __name__ == "__main__":
         met_func = lambda X, W, H: (calinski_harabasz(X, W),
                                     explained_variance(X, W, H),
                                     silhouette(X, W),
-                                    davies_bouldin(X, W))
-        axs = []
-        titles = ["Auditory", "Sensorimotor", "Production"]
-        fig, axs = plt.subplots(1, 3)
-        for idx, ax2 in zip(idxs, axs):
-            data = get_k(trainp[idx],
+                                    explained_variance(X, W, H))
+        ranks = list(range(3))
+        for j, idx in enumerate(idxs):
+            ax = axs[0, i]
+            data, W = get_k(trainp[idx],
                          model,
                          range(2, 9),
                          met_func,
                          n_jobs=7,
-                         reps=20)
+                         reps=10)
 
             minvar = np.min(data[..., 1])
 
-            plot_dist(scale(data[..., 4] - data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
-            plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
-            plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
-            plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
-            plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
-                      label='Reconstruction Error')
-            ax2.legend()
+            plot_dist(data[..., 2], mode='std', times=(2, 8), ax=ax,
+                      label=titles[j], color=colors[j])
+            loc = np.unravel_index(np.argmax(data[..., 2]), data.shape[:-1])
+            ranks[j] = loc[1] + 2
+            # Ws[j] = W[loc[0]][loc[1]]
+            # plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
+            # plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
+            # plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
+            # plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
+            #           label='Reconstruction Error')
+            if i + j == 0:
+                ax.legend()
             plt.xlabel("K")
-            plt.ylabel("Score (A.U. except Explained Variance)")
-            ax2.set_title(titles.pop(0))
-        fig.suptitle("NMF Clustering Metrics")
-        fig.savefig(f"nmf_metrics_{fnames.pop(0)}.png")
+            plt.ylabel("Score")
+            if j == 1:
+                ax.set_title(fnames[i])
+            # %% plot the best model
+            conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
+            for k, cond in enumerate(conds):
+
+                ax = axs[j + 1, i * c_minor + k]
+                plot_weight_dist(powers[cond, idx].__array__(), W[loc[1]][loc[0]], times=conds[cond],
+                                 sig_titles=titles, ax=ax)
 
