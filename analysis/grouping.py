@@ -391,11 +391,12 @@ class GroupData:
         itergroup = (g for g in groups)
         if isinstance(colors, tuple):
             colors = list(colors)
-        brain = plot_on_average(self.subjects, picks=next(itergroup),
-                                color=colors.pop(0), **kwargs)
+        if kwargs.get('fig') is None:
+            kwargs['fig'] = plot_on_average(self.subjects, picks=next(itergroup),
+                                    color=colors.pop(0), **kwargs)
         for g, c in zip(itergroup, colors):
-            plot_on_average(self.subjects, picks=g, color=c, fig=brain, **kwargs)
-        return brain
+            plot_on_average(self.subjects, picks=g, color=c, **kwargs)
+        return kwargs['fig']
 
     def groups_from_weights(self, w: np.ndarray[float], idx: list[int] = None):
         if idx is None:

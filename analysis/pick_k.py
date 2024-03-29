@@ -146,7 +146,7 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
             try:
                 est.append(metric(X, Y, H) + (estimator.reconstruction_err_,))
             except ValueError:
-                est.append(np.array([np.nan] * 4))
+                est.append(np.array([np.nan] * 5))
         return np.array(est)
 
     par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
