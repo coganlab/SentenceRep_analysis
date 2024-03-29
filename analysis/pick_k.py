@@ -143,7 +143,10 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
             else:
                 Y = estimator.fit_predict(X)
                 H = estimator.components_
-            est.append(metric(X, Y, H) + (estimator.reconstruction_err_,))
+            try:
+                est.append(metric(X, Y, H) + (estimator.reconstruction_err_,))
+            except ValueError:
+                est.append(np.array([np.nan] * 4))
         return np.array(est)
 
     par_gen = Parallel(n_jobs=n_jobs, verbose=10, return_as='generator')(
@@ -162,79 +165,84 @@ def scale(X, xmax: float = 1, xmin: float = 0):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    ## Load the data
-    fpath = os.path.expanduser("~/Box/CoganLab")
-    sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                       folder='stats_opt', wide=False)
-    ## setup training data
-    aud_slice = slice(0, 175)
-    stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
-                          # sub.signif['aud_lm', :, aud_slice],
-                          sub.signif['resp', :]])
-                          # sub.signif['resp', :]])
+    kwarg_sets = [dict(folder='ave'), dict(folder='stats'),
+                  dict(folder='stats', wide=True)]
+    fnames = ["ave", "stats", "stats_wide"]
+    for kwargs in kwarg_sets:
+        ## Load the data
+        fpath = os.path.expanduser("~/Box/CoganLab")
+        sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
+        ## setup training data
+        aud_slice = slice(0, 175)
+        stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
+                              # sub.signif['aud_lm', :, aud_slice],
+                              sub.signif['resp', :]])
+                              # sub.signif['resp', :]])
 
-    pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
-                          # sub.signif['aud_lm', :, aud_slice],
-                          sub.p_vals['resp', :]])
-                          # sub.signif['resp', :]])
-    pval = np.where(pval > 0.9999, 0.9999, pval)
+        pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
+                              # sub.signif['aud_lm', :, aud_slice],
+                              sub.p_vals['resp', :]])
+                              # sub.signif['resp', :]])
+        pval = np.where(pval > 0.9999, 0.9999, pval)
 
-    # pval[pval<0.0001] = 0.0001
-    zscores = st.norm.ppf(pval)
-    powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-    sig = sub.signif
+        # pval[pval<0.0001] = 0.0001
+        zscores = st.norm.ppf(pval)
+        powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
+        sig = sub.signif
 
-    # trainz = np.hstack([zscores['aud_ls', :, aud_slice],
-    #                    # zscores['aud_lm', :, aud_slice],
-    #                    zscores['resp']])
-    #                     # zscores['resp']])
-    trainp = np.hstack([powers['aud_ls', :, aud_slice],
-                       # powers['aud_lm', :, aud_slice],
-                       powers['resp']])
-                        # powers['resp']])
-    # raw = train - np.min(train)
-    # sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
-    # sparse_matrix.data -= np.min(sparse_matrix.data)
+        # trainz = np.hstack([zscores['aud_ls', :, aud_slice],
+        #                    # zscores['aud_lm', :, aud_slice],
+        #                    zscores['resp']])
+        #                     # zscores['resp']])
+        trainp = np.hstack([powers['aud_ls', :, aud_slice],
+                           # powers['aud_lm', :, aud_slice],
+                           powers['resp']])
+                            # powers['resp']])
+        trainp -= np.min(trainp)
+        # raw = train - np.min(train)
+        # sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
+        # sparse_matrix.data -= np.min(sparse_matrix.data)
 
-    ## try clustering
-    #
-    options = dict(init="random", max_iter=10000, solver='mu', shuffle=False,
-                   # beta_loss='kullback-leibler',
-                   tol=1e-12, l1_ratio=0.5)
-    # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
-    # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
-    #                            svd_method='lapack', rotation='varimax')
-    model = skd.NMF(**options)
-    # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
-    # model = tsc.TimeSeriesKMeans(n_clusters=4,
-    #                              n_jobs=4, metric="dtw", verbose=True)
-    idxs = [list(idx) for idx in [sub.AUD, sub.SM, sub.PROD]]
-    met_func = lambda X, W, H: (calinski_harabasz(X, W),
-                                explained_variance(X, W, H),
-                                silhouette(X, W),
-                                davies_bouldin(X, W))
-    axs = []
-    titles = ["Auditory", "Sensorimotor", "Production"]
-    fig, axs = plt.subplots(1, 3)
-    for idx, ax2 in zip(idxs, axs):
-        data = get_k(zscores[idx] - np.min(zscores[idx]),
-                     model,
-                     range(2, 10),
-                     met_func,
-                     n_jobs=6,
-                     reps=10)
+        ## try clustering
+        #
+        options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
+                       # beta_loss='kullback-leibler',
+                       l1_ratio=0.5, alpha_W=0.5)
+        # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
+        # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
+        #                            svd_method='lapack', rotation='varimax')
+        model = skd.NMF(**options)
+        # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
+        # model = tsc.TimeSeriesKMeans(n_clusters=4,
+        #                              n_jobs=4, metric="dtw", verbose=True)
+        idxs = [list(idx) for idx in [sub.AUD, sub.SM, sub.PROD]]
+        met_func = lambda X, W, H: (calinski_harabasz(X, W),
+                                    explained_variance(X, W, H),
+                                    silhouette(X, W),
+                                    davies_bouldin(X, W))
+        axs = []
+        titles = ["Auditory", "Sensorimotor", "Production"]
+        fig, axs = plt.subplots(1, 3)
+        for idx, ax2 in zip(idxs, axs):
+            data = get_k(trainp[idx],
+                         model,
+                         range(2, 9),
+                         met_func,
+                         n_jobs=7,
+                         reps=20)
 
-        minvar = np.min(data[..., 1])
+            minvar = np.min(data[..., 1])
 
-        plot_dist(scale(data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
-        plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
-        plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
-        plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
-        plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
-                  label='Reconstruction Error')
-        ax2.legend()
-        plt.xlabel("K")
-        plt.ylabel("Score (A.U. except Explained Variance)")
-        ax2.set_title(titles.pop(0))
-    fig.suptitle("NMF Clustering Metrics (pvals)")
+            plot_dist(scale(data[..., 4] - data[..., 0], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Calinski')
+            plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
+            plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
+            plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
+            plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
+                      label='Reconstruction Error')
+            ax2.legend()
+            plt.xlabel("K")
+            plt.ylabel("Score (A.U. except Explained Variance)")
+            ax2.set_title(titles.pop(0))
+        fig.suptitle("NMF Clustering Metrics")
+        fig.savefig(f"nmf_metrics_{fnames.pop(0)}.png")
 
