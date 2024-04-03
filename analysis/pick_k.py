@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_dist, plot_weight_dist
+from ieeg.viz.ensemble import plot_dist, plot_weight_dist, subgrids
 import sklearn.decomposition as skd
 import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
@@ -168,35 +168,14 @@ def scale(X, xmax: float = 1, xmin: float = 0):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gridspec
+
 
     r = 5
     c_minor = 3
     c_major = 2
     major_rows = (0, 4)
 
-    c = c_minor * c_major
-    gs = gridspec.GridSpec(r, c)
-
-    # Adjust the space between subplots to 0
-    gs.update(wspace=0, hspace=0)
-
-    # Create subplots
-    axs = np.zeros((r, c), dtype=object)
-    for i in range(r):  # Only for the first two rows
-        for j in range(c):  # Create 3 subplots per row
-            if i in major_rows:
-                if j >= c_major:
-                    continue
-                axs[i, j] = plt.subplot(gs[i, j * c_minor:(j + 1) * c_minor])
-                axs[i, j].set_xticks([])
-                axs[i, j].set_yticks([])
-            else:
-                axs[i, j] = plt.subplot(gs[i, j])
-                if j != 0:
-                    axs[i, j].set_yticks([])
-                if i != r - 1:
-                    axs[i, j].set_xticks([])
+    fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 
     kwarg_sets = [dict(folder='stats'),
@@ -258,7 +237,7 @@ if __name__ == "__main__":
                                     explained_variance(X, W, H))
         ranks = list(range(3))
         for j, idx in enumerate(idxs):
-            ax = axs[0, i]
+            ax = axs[0][i]
             data, W = get_k(trainp[idx],
                          model,
                          range(2, 9),
@@ -288,7 +267,7 @@ if __name__ == "__main__":
             conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
             for k, cond in enumerate(conds):
 
-                ax = axs[j + 1, i * c_minor + k]
+                ax = axs[j + 1][i * c_minor + k]
                 plot_weight_dist(powers[cond, idx].__array__(), W[loc[1]][loc[0]], times=conds[cond],
                                  sig_titles=titles, ax=ax)
 

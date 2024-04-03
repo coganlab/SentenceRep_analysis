@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_weight_dist, plot_dist, boxplot_2d
+from ieeg.viz.ensemble import plot_weight_dist
 import sklearn.decomposition as skd
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
 

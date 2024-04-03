@@ -4,7 +4,7 @@ import numpy as np
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
-from ieeg.viz.utils import plot_dist
+from ieeg.viz.ensemble import plot_dist
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
 from analysis.utils.mat_load import load_dict

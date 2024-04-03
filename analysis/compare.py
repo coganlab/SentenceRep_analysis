@@ -1,10 +1,8 @@
 from analysis.grouping import GroupData
-from analysis.utils.plotting import plot_dist
+from ieeg.viz.ensemble import plot_dist, subgrids
 import os
 import numpy as np
 import scipy.stats as st
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
 
 ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
@@ -14,28 +12,7 @@ c_minor = 3
 c_major = 2
 major_rows = (0, 1)
 
-c = c_minor * c_major
-gs = gridspec.GridSpec(r, c)
-
-# Adjust the space between subplots to 0
-gs.update(wspace=0, hspace=0)
-
-# Create subplots
-axs = np.zeros((r, c), dtype=object)
-for i in range(r):  # Only for the first two rows
-    for j in range(c):  # Create 3 subplots per row
-        if i in major_rows:  # which rows will show minor columns
-            if j >= c_major:
-                continue
-            axs[i, j] = plt.subplot(gs[i, j*c_minor:(j+1)*c_minor])
-            axs[i, j].set_xticks([])
-            axs[i, j].set_yticks([])
-        else:
-            axs[i, j] = plt.subplot(gs[i, j])
-            if j != 0:
-                axs[i, j].set_yticks([])
-            if i != r - 1:
-                axs[i, j].set_xticks([])
+fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 
 ## Load the data
@@ -46,8 +23,9 @@ colors = ['green', 'red', 'blue', 'grey']
 for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
     sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
     subfig = sub.plot_groups_on_average(rm_wm=False, hemi='lh')
-    axs[0, i].imshow(subfig.screenshot())
-    axs[0, i].set_title(fname)
+    axs[0][i].imshow(subfig.screenshot())
+    axs[0][i].set_title(fname)
+    axs[0][i].axis('off')
 
     # %% more plots
     idx_count = []
@@ -68,7 +46,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         ax = axs[2, i*c_minor+j]
         for group, color in zip(groups[:-1], colors[:-1]):
             plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
-                      label=group, ax=ax, color=color, mode='std')
+                      label=group, ax=ax, color=color)
         if j == 0:
             # ax.legend()
             ax.set_ylabel("Z-Score (V)")
@@ -91,7 +69,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         ax = axs[3, i*c_minor+j]
         for group, color in zip(groups[:-1], colors[:-1]):
             plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
-                      label=group, ax=ax, color=color, mode='std')
+                      label=group, ax=ax, color=color)
         if j == 0:
             if i == 0:
                 ax.legend()

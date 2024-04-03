@@ -1,6 +1,6 @@
 ## Description: Check channels for outliers and remove them
 import mne.time_frequency
-from ieeg.viz.utils import chan_grid
+from ieeg.viz.ensemble import chan_grid
 from ieeg.viz.parula import parula_map
 from ieeg.io import get_data, update, get_bad_chans
 import os
