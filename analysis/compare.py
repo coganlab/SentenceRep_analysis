@@ -33,17 +33,19 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         idx_count += [len(getattr(sub, group))]
 
     if i == 0:
-        axs[1, i].table(cellText=np.array([[idx_count]]).T, rowLabels=groups,
+        axs[1][i].table(cellText=np.array([[idx_count]]).T, rowLabels=groups,
                         loc='center')
     else:
-        axs[1, i].table(cellText=np.array([[idx_count]]).T, loc='center')
+        axs[1][i].table(cellText=np.array([[idx_count]]).T, loc='center')
+    axs[1][i].axis('off')
+
     # %% plot the distribution sub.power in aud_ls, go_ls, and resp as subplots
     conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
 
     # make a plot for each condition in conds as a subgrid
     for j, cond in enumerate(conds):
         arr = np.nanmean(sub.array['zscore', cond].__array__(), axis=(0, 2))
-        ax = axs[2, i*c_minor+j]
+        ax = axs[2][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
             plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
                       label=group, ax=ax, color=color)
@@ -66,7 +68,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         if fname == 'ave':
             arr = np.tile(arr, (1, 200))
 
-        ax = axs[3, i*c_minor+j]
+        ax = axs[3][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
             plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
                       label=group, ax=ax, color=color)

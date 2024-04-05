@@ -8,11 +8,13 @@ matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
 from ieeg.viz.ensemble import plot_dist, plot_weight_dist, subgrids
+from ieeg.calc.mat import LabeledArray
 import sklearn.decomposition as skd
 import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
 import scipy.stats as st
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
+from sklearn.model_selection import cross_val_score
 from joblib import Parallel, delayed
 import nimfa as nf
 
@@ -131,6 +133,12 @@ def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
                 estimator.fit(X)
                 Y = estimator.transform(X)
                 H = estimator.components_
+            elif type(estimator) == skd.DictionaryLearning:
+                estimator.set_params(n_components=k)
+                estimator.fit(X)
+                Y = estimator.transform(X)
+                H = estimator.components_
+                estimator.reconstruction_err_ = np.linalg.norm(X - Y @ H)
             elif estimator == 'Psmf':
                 estim = nf.Psmf(X, rank=k, n_runs=6, max_iter=1000)
                 estim.rank = k
@@ -169,49 +177,46 @@ def scale(X, xmax: float = 1, xmin: float = 0):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-
-    r = 5
-    c_minor = 3
-    c_major = 2
-    major_rows = (0, 4)
-
-    fig, axs = subgrids(r, c_major, c_minor, major_rows)
-
+    fig1, axs1 = subgrids(5, 2, 3, (0,))
+    fig2, axs2 = subgrids(5, 2, 3, (0,))
+    fig3, axs3 = subgrids(5, 2, 3, (0,))
+    fig4, axs4 = subgrids(5, 2, 3, (0,))
+    fig5, axs5 = subgrids(5, 2, 3, (0,))
+    axss = [axs1, axs2, axs3, axs4, axs5]
+    suptitles = ["calinski_harabasz", "explained_variance",
+                 "silhouette", "davies_bouldin", "err"]
+    for fig, title in zip([fig1, fig2, fig3, fig4, fig5], suptitles):
+        fig.suptitle(title)
 
     kwarg_sets = [dict(folder='stats'),
                   dict(folder='stats', wide=True)]
     fnames = ["short", "wide"]
-    titles = ["AUD", "SM", "PROD"]
-    colors = ['green', 'red', 'blue']
+    titles = ["AUD", "SM", "PROD", "ALL"]
+    colors = ['green', 'red', 'blue', 'grey']
+    conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
+    met_func = lambda X, W, H: (calinski_harabasz(X, W),
+                                explained_variance(X, W, H),
+                                silhouette(X, W),
+                                davies_bouldin(X, W)*-1)
     for i, kwargs in enumerate(kwarg_sets):
         ## Load the data
         fpath = os.path.expanduser("~/Box/CoganLab")
         sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
         ## setup training data
         aud_slice = slice(0, 175)
-        stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
-                              # sub.signif['aud_lm', :, aud_slice],
-                              sub.signif['resp', :]])
-                              # sub.signif['resp', :]])
-
-        pval = np.hstack([sub.p_vals['aud_ls', :, aud_slice],
-                              # sub.signif['aud_lm', :, aud_slice],
-                              sub.p_vals['resp', :]])
-                              # sub.signif['resp', :]])
-        pval = np.where(pval > 0.9999, 0.9999, pval)
+        pval = np.where(sub.p_vals > 0.9999, 0.9999, sub.p_vals)
 
         # pval[pval<0.0001] = 0.0001
-        zscores = st.norm.ppf(pval)
+        zscores = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
         powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-        sig = sub.signif
-
-        # trainz = np.hstack([zscores['aud_ls', :, aud_slice],
-        #                    # zscores['aud_lm', :, aud_slice],
-        #                    zscores['resp']])
-        #                     # zscores['resp']])
-        trainp = np.hstack([powers['aud_ls', :, aud_slice],
-                           # powers['aud_lm', :, aud_slice],
-                           powers['resp']])
+        met = powers
+        trainp = np.hstack([met['aud_ls', :, aud_slice],
+                            met['aud_lm', :, aud_slice],
+                            met['aud_jl', :, aud_slice],
+                            met['go_ls'],
+                            met['go_lm'],
+                            met['go_jl'],
+                            met['resp']])
                             # powers['resp']])
         trainp -= np.min(trainp)
         # raw = train - np.min(train)
@@ -220,54 +225,49 @@ if __name__ == "__main__":
 
         ## try clustering
         #
-        options = dict(init="random", max_iter=100000, solver='cd', shuffle=False,
-                       # beta_loss='kullback-leibler',
-                       )
         # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
         # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
         #                            svd_method='lapack', rotation='varimax')
-        model = skd.NMF(**options)
+        model = skd.NMF(init="random", max_iter=100000, solver='cd', shuffle=False,
+                       alpha_W=0, l1_ratio=0,
+                       # beta_loss='kullback-leibler',
+                       )
+        # model = skd.DictionaryLearning(positive_dict=True, n_jobs=7, verbose=10)
         # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
         # model = tsc.TimeSeriesKMeans(n_clusters=4,
         #                              n_jobs=4, metric="dtw", verbose=True)
         idxs = [list(idx) for idx in [sub.AUD, sub.SM, sub.PROD]]
-        met_func = lambda X, W, H: (calinski_harabasz(X, W),
-                                    explained_variance(X, W, H),
-                                    silhouette(X, W),
-                                    explained_variance(X, W, H))
-        ranks = list(range(3))
+        if i == 0:
+            idxs.append(list(sub.sig_chans))
+        ranks = list(range(len(idxs)))
         for j, idx in enumerate(idxs):
-            ax = axs[0][i]
+
             data, W = get_k(trainp[idx],
                          model,
                          range(2, 9),
                          met_func,
                          n_jobs=7,
-                         reps=10)
+                         reps=30)
 
             minvar = np.min(data[..., 1])
-
-            plot_dist(data[..., 2], mode='std', times=(2, 8), ax=ax,
-                      label=titles[j], color=colors[j])
-            loc = np.unravel_index(np.argmax(data[..., 2]), data.shape[:-1])
-            ranks[j] = loc[1] + 2
-            # Ws[j] = W[loc[0]][loc[1]]
-            # plot_dist(data[..., 1], mode='std', times=(2, 9), ax=ax2, label='Explained Variance')
-            # plot_dist(data[..., 2] + minvar, mode='std', times=(2, 9), ax=ax2, label='Silhouette')
-            # plot_dist(scale(-data[..., 3], xmin=minvar), mode='std', times=(2, 9), ax=ax2, label='Davies-Bouldin')
-            # plot_dist(scale(data[..., 4], xmin=minvar), mode='std', times=(2, 9), ax=ax2,
-            #           label='Reconstruction Error')
-            if i + j == 0:
+            for k, axs in enumerate(axss):
+                ax = axs[0][i]
+                if i + k == 0:
+                    ax.get_figure().suptitle(titles[j])
+                plot_dist(np.max(data[..., k], axis=0)[None], mode='std', times=(2,8), ax=ax,
+                          label=titles[j], color=colors[j])
+                loc = np.unravel_index(np.argmax(data[..., k]), data.shape[:-1])
+                ranks[j] = loc[1] + 2
                 ax.legend()
-            plt.xlabel("K")
-            plt.ylabel("Score")
-            if j == 1:
-                ax.set_title(fnames[i])
-            # %% plot the best model
-            conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
-            for k, cond in enumerate(conds):
+                ax.set_ylabel("Score")
+                ax.set_xlabel("K")
+                # %% plot the best model
+                for x, cond in enumerate(conds):
 
-                ax = axs[j + 1][i * c_minor + k]
-                plot_weight_dist(powers[cond, idx].__array__(), W[loc[1]][loc[0]], times=conds[cond],
-                                 sig_titles=titles, ax=ax)
+                    ax = axs[j + 1][i][x]
+                    plot_weight_dist(zscores[cond, idx].__array__(),
+                                     W[loc[1]][loc[0]], times=conds[cond],
+                                     sig_titles=titles, ax=ax)
+                    if i + x == 0:
+                        ax.set_ylabel(titles[j])
 
