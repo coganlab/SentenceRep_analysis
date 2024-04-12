@@ -35,6 +35,7 @@ def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
     for key, values in get_scores(sub, decoder, idxs, conds, scores_dict, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
+    scores_dict = {key: value for key, value in scores_dict.items() if value is not None}
     dict_to_structured_array(scores_dict, output_file)
 
 
