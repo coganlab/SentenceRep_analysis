@@ -57,11 +57,12 @@ for thresh in [0.29, 0.3, 0.31, 0.32, 0.33]:
     # plt.axvline(np.mean(all_dat), color='blue')
     plt.hist(np.mean(good_dat, axis=2).flatten(), bins=100)
     # plt.axvline(np.mean(good_dat), color='orange')
+    plt.title(f"Threshold: {thresh}")
 
     # %% Time Sliding decoding for word tokens
     idxs2 = [[i for i in idx if sub.array.labels[3][i][:5] not in [b[:5] for b in bad.keys()]]]
     scores2 = {'All': None}
-    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 20, sub, idxs2,
+    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 30, sub, idxs2,
           conds,
           window_kwargs, '../../out_scores.npy', scores2,
           shuffle=False)
