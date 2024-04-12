@@ -8,7 +8,7 @@ from numpy.lib.stride_tricks import as_strided
 from ieeg.calc import stats
 import numpy as np
 import matplotlib.pyplot as plt
-from ieeg.viz.utils import plot_dist
+from ieeg.viz.ensemble import plot_dist
 from joblib import Parallel, delayed
 import itertools
 from tqdm import tqdm

@@ -13,7 +13,7 @@ box = os.path.expanduser(os.path.join("~", "Box"))
 fpath = os.path.join(box, "CoganLab")
 subjects_dir = os.path.join(box, "ECoG_Recon")
 sub = GroupData.from_intermediates(
-    "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
+    "SentenceRep", fpath, folder='stats', subjects_dir=subjects_dir)
 all_data = []
 idx = list(sub.SM & sub.grey_matter)
 subjects = np.unique(sub.keys['channel'][idx].astype('U5'))

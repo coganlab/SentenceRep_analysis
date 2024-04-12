@@ -3,7 +3,7 @@ from sklearn.decomposition import NMF
 import numpy as np
 from ieeg.calc.stats import dist
 from ieeg.calc.mat import get_elbow, LabeledArray
-from ieeg.viz.utils import plot_dist, plot_weight_dist
+from ieeg.viz.ensemble import plot_dist, plot_weight_dist
 import matplotlib.pyplot as plt
 from collections.abc import Iterable
 from matplotlib.patches import Rectangle
