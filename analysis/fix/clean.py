@@ -2,7 +2,7 @@
 import os
 from ieeg.io import get_data, raw_from_layout, save_derivative
 from ieeg.mt_filter import line_filter
-from events import fix_annotations, add_stim_conds
+from events import fix
 
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -29,8 +29,7 @@ line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
             notch_widths=20)
 
 ## fix events
-fix_annotations(raw)
-add_stim_conds(raw)
+fixed = fix(raw)
 
 # %% Save the data
-save_derivative(raw, layout, "clean", True)
+save_derivative(fixed, layout, "clean", True)
