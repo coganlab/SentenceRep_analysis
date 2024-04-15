@@ -2,7 +2,7 @@
 import os
 from ieeg.io import get_data, raw_from_layout, save_derivative
 from ieeg.mt_filter import line_filter
-from events import fix
+from analysis.fix.events import fix
 
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
