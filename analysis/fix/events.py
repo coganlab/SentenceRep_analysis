@@ -133,7 +133,8 @@ def mark_bad(inst: Signal, bads: list[int, ...]):
         elif desc.startswith('Start') and i not in bads:
             is_bad = False
         elif i in bads or is_bad:
-            event['description'] = 'bad ' + desc
+            if not desc.startswith('bad'):
+                event['description'] = 'bad ' + desc
             is_bad = True
 
 
@@ -155,3 +156,47 @@ def fix(inst: Signal):
     inst = add_stim_conds(inst)
     inst = mark_bad(inst, bad)
     return inst
+
+
+if __name__ == "__main__":
+    import os
+    from ieeg.io import get_data, raw_from_layout
+
+    HOME = os.path.expanduser("~")
+    LAB_root = os.path.join(HOME, "Box", "CoganLab")
+    layout = get_data("SentenceRep", root=LAB_root)
+    subjects = layout.get(return_type="id", target="subject")
+
+    for subj in subjects:
+        raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
+                                preload=True)
+        filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
+                                extension='.edf', desc='clean', preload=False)
+        fixed = fix(raw)
+        fixed.annotations._orig_time = filt.annotations.orig_time
+        filt.set_annotations(fixed.annotations)
+
+
+        files = layout.derivatives['clean'].get(subject=subj, suffix='events',
+                                extension='.tsv', desc='clean')
+
+        i = 0
+        data = []
+        offset = 0
+        for f in files:
+            events = f.get_df()
+            for j, event in events.iterrows():
+                if 'boundary' in event['trial_type']:
+                    if event['trial_type'] == 'BAD boundary':
+                        continue
+                    offset = filt.annotations.onset[i] - event['onset']
+                    i += 1
+                    continue
+                diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
+                if diff > 0.15:
+                    raise ValueError(f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
+                events.loc[j, 'trial_type'] = filt.annotations.description[i]
+                i += 1
+            data.append(events)
+        for f, events in zip(files, data):
+            events.to_csv(f.path, sep='\t', index=False)
