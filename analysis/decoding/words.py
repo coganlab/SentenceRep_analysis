@@ -46,7 +46,7 @@ if __name__ == '__main__':
     fpath = os.path.join(box, "CoganLab")
     subjects_dir = os.path.join(box, "ECoG_Recon")
     sub = GroupData.from_intermediates(
-        "SentenceRep", fpath, folder='stats_opt', subjects_dir=subjects_dir)
+        "SentenceRep", fpath, folder='stats', subjects_dir=subjects_dir)
     all_data = []
     colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
     scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
