@@ -102,22 +102,24 @@ def add_stim_conds(inst: Signal):
     inst.set_annotations(annot)
     return inst
 
+
 def get_overlapping_indices(onsets, durations, margin=0):
     # Calculate the end times for each event
     end_times = onsets + durations
 
     # Initialize an empty list to store the indices of overlapping events
-    overlapping_indices = []
+    overlapping_indices = set()
 
     # Iterate over each event
     for i in range(len(onsets)):
         # Check if the start time of the current event is within the duration of any other event
         for j in range(len(onsets)):
             if i != j and onsets[i] >= onsets[j] - margin and onsets[i] <= end_times[j] + margin:
-                overlapping_indices.append(i)
+                overlapping_indices.add(i)
+                overlapping_indices.add(j)
                 break
 
-    return overlapping_indices
+    return sorted(list(overlapping_indices))
 
 
 def mark_bad(inst: Signal, bads: list[int, ...]):
@@ -130,13 +132,13 @@ def mark_bad(inst: Signal, bads: list[int, ...]):
             event.pop('orig_time')
             annot.append(**event)
             continue
+        elif desc.startswith('bad'):
+            is_bad = True
         elif desc.startswith('Start') and i not in bads:
             is_bad = False
         elif i in bads or is_bad:
-            if not desc.startswith('bad'):
-                event['description'] = 'bad ' + desc
+            event['description'] = 'bad ' + desc
             is_bad = True
-
 
         if annot is None:
             annot = mne.Annotations(**event)
@@ -168,6 +170,8 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
+        # if int(subj[1:]) != 28:
+        #     continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
                                 preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
