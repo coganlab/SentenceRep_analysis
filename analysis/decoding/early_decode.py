@@ -36,11 +36,11 @@ score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 50, sub, idxs,
 # %% Plot the results
 import matplotlib.pyplot as plt
 scores = {key: value for key, value in scores.items() if value is not None}
-for thresh in [0.29, 0.3, 0.31, 0.32, 0.33]:
+for thresh in [0.31, 0.33, 1]:
     plots = {}; bad = {}; allscore = {}
     for key, values in scores.items():
         result = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-        if not np.any(thresh < np.mean(result[:30], axis=1)):
+        if not np.any(thresh < np.mean(result[:40], axis=1)):
             plots[key] = result
         else:
             bad[key] = result

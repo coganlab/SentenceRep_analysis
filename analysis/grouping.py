@@ -564,11 +564,10 @@ def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None) -> set[st
 
 
 if __name__ == "__main__":
-    from ieeg.calc.reshape import stitch_mats
-    from analysis.utils.plotting import plot_clustering
+    from scipy import stats as st
     fpath = os.path.expanduser("~/Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                           folder='ave', fdr=True)
+                                           folder='stats')
     conds = {"resp": (-1, 1),
              "aud_ls": (-0.5, 1.5),
              "aud_lm": (-0.5, 1.5),
@@ -578,7 +577,11 @@ if __name__ == "__main__":
              "go_jl": (-0.5, 1.5)}
 
     power = sub['power']
-    zscore = sub['zscore']
+    # zscore = np.nanmean(sub['zscore'].__array__(), axis=(-4, -2))
+    pval = np.where(sub.p_vals > 0.9999, 0.9999, sub.p_vals)
+
+    # pval[pval<0.0001] = 0.0001
+    zscore = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
     sig = sub.signif
 
     #
@@ -594,7 +597,7 @@ if __name__ == "__main__":
     cond = 'aud_ls'
     # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
     # arr = sub.signif[cond].__array__()
-    arr = np.nanmean(zscore.array[cond].__array__(), axis=(-4, -2))
+    arr = zscore[cond].__array__()
     fig = plt.figure()
     ax = fig.gca()
     plot_dist(arr[list(sub.AUD)], times=conds[cond], label='AUD',
@@ -607,7 +610,7 @@ if __name__ == "__main__":
     plt.xlabel("Time(s)")
     plt.ylabel("Z-Score (V)")
     plt.title('Response')
-    plt.ylim(-0.1, 0.9)
+    # plt.ylim(-0.1, 0.9)
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##

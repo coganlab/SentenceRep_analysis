@@ -41,7 +41,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper_alt', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -57,8 +57,8 @@ for sub in subjects:
         t2 = t[1] + 0.5
         trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.arange(10, 200., 2.)
-        kwargs = dict(average=False, n_jobs=-1, freqs=freq, return_itc=False,
+        freq = np.arange(4, 500., 5.)
+        kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
                       n_cycles=freq / 2, time_bandwidth=10)
         if name == "base":
             base = mne.time_frequency.tfr_multitaper(trials, **kwargs)
