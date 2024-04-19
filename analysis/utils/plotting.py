@@ -263,27 +263,31 @@ def alt_plot(X_train: np.ndarray, y_pred: np.ndarray):
     plt.show()
 
 
-def plot_channels(arr: LabeledArray, n_cols: int = 10, n_rows: int = 6,
-                  size: tuple[int, int] = (8, 12)):
+def plot_channels(arr: LabeledArray, sig: LabeledArray = None,
+                  n_cols: int = 10, n_rows: int = 6,
+                  size: tuple[int, int] = (8, 12), **kwargs):
     # n_rows = int(np.ceil(arr.shape[-3] / n_cols))
     per_fig = n_cols * n_rows
     numfigs = int(np.ceil(arr.shape[-3] / per_fig))
     figs = []
     for i in range(numfigs):
-        fig, axs = plt.subplots(n_cols, n_rows, figsize=size, frameon=False)
+        fig, axs = plt.subplots(n_rows, n_cols, figsize=size, frameon=False,
+                                layout='tight')
         for j, ax in enumerate(axs.flatten()):
             sig_num = j + i * per_fig
-            if sig_num > arr.shape[-3]:
+            if sig_num >= arr.shape[-3]:
                 break
-            plot_dist(arr[sig_num].__array__(), axis=0, ax=ax, mode='std')
+            plot_dist(arr[sig_num].__array__(), axis=0, ax=ax, mode='std', **kwargs)
+            if sig is not None:
+                plot_horizontal_bars(ax, [sig[sig_num].__array__()], kwargs['times'])
             ax.set_title(arr.labels[-3][sig_num])
         figs.append(fig)
     return figs
 
 
 def plot_horizontal_bars(ax: plt.Axes,
-                         where: list[np.ndarray[bool], ...],
-                         bar_height=0.2, location='below'):
+                         where: list[np.ndarray[bool], ...], times: list[float] = None,
+                         bar_height=None, location='below'):
     """Plot horizontal bars on an axis according to a boolean array
 
     Parameters
@@ -306,15 +310,17 @@ def plot_horizontal_bars(ax: plt.Axes,
         width = x[1] - x[0]
         color = line.get_color()
         ylims = ax.get_ylim()
+        if bar_height is None:
+            bar_height = (ylims[1] - ylims[0]) / 12
         if location == 'below':
-            y0 = ylims[0] + (i + 1) * width
-            y0 -= width / 2
+            y0 = ylims[0] + (i + 1) * bar_height
+            y0 -= bar_height / 2
         else:
-            y0 = ylims[1] - (i + 1) * width
-            y0 += width / 2
+            y0 = ylims[1] - (i + 1) * bar_height
+            y0 += bar_height / 2
         for j in range(len(x)):
             if where[i][j]:
-                ax.barh(y0, width=bar_height, left=x[j], height=width,
+                ax.barh(y0, width=width, left=x[j], height=bar_height,
                         color=color)
 
 
