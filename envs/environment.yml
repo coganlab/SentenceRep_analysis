@@ -1,16 +1,14 @@
-name: ieeg
+name: analysis
 channels:
-  - defaults
+  - conda-forge
 dependencies:
-  - python<3.12
+  - python<3.13
   - pip
   - matplotlib
   - tqdm
   - scikit-learn
-  - scipy
-  - numpy
-  - pandas
+  - scikit-learn-intelex
   - numba
-  - conda-forge::nimfa
   - pip:
-    - -r ../IEEG_Pipelines/envs/requirements.txt
+    - ieeg
+    - nimfa
