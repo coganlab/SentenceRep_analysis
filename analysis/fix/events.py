@@ -256,8 +256,6 @@ def add_stim_conds(inst: Signal):
 
 def fix(inst: Signal):
     """Fix the events"""
-    # items = get_annotations(layout,
-    #                         inst.info['subject_info']['his_id'][4:])
     items = zip(inst.annotations.onset, inst.annotations.duration,
                 inst.annotations.description)
     events = [Event(*i) for i in items if 'boundary' not in i[2]]
@@ -276,6 +274,13 @@ def fix(inst: Signal):
     events_sorted = sorted(
         itertools.chain.from_iterable((t.get_events() for t in trials)))
 
+    if len(events_sorted) != len(events):
+        if len(events_sorted) == len(events) - 1:
+            events_sorted.append(events[-1].mark_event_as_bad("Unpaired"))
+        else:
+            raise ValueError(f"Number of events {len(events_sorted)} does not match "
+                             f"number of annotations {len(events)}")
+
     annotations = fix_annotations(inst.annotations, events_sorted.copy())
     inst.set_annotations(annotations)
     inst = add_stim_conds(inst)
@@ -292,7 +297,7 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) not in (6, 30, 31, 32, 60, 63):
+        if int(subj[1:]) not in (6, 31, 60):
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
