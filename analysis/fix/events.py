@@ -275,11 +275,10 @@ def fix(inst: Signal):
         itertools.chain.from_iterable((t.get_events() for t in trials)))
 
     if len(events_sorted) != len(events):
-        if len(events_sorted) == len(events) - 1:
-            events_sorted.append(events[-1].mark_event_as_bad("Unpaired"))
-        else:
-            raise ValueError(f"Number of events {len(events_sorted)} does not match "
-                             f"number of annotations {len(events)}")
+        diff = set(events) - set(events_sorted)
+        for i in diff:
+            events_sorted.append(i.mark_event_as_bad("Unpaired"))
+        events_sorted.sort()
 
     annotations = fix_annotations(inst.annotations, events_sorted.copy())
     inst.set_annotations(annotations)
@@ -297,7 +296,7 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) not in (6, 31, 60):
+        if int(subj[1:]) not in (6,):
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
