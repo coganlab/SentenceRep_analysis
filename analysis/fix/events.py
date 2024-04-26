@@ -5,14 +5,14 @@ import dataclasses
 import itertools
 
 
-@dataclasses.dataclass(frozen=True, order=True)
+@dataclasses.dataclass(frozen=True, order=True, slots=True)
 class Event:
     """A class to represent an Event."""
     onset: float
     duration: float
-    description: str
-    bad: bool = False
-    why: str = ""
+    description: str = dataclasses.field(compare=False)
+    bad: bool = dataclasses.field(default=False, compare=False)
+    why: str = dataclasses.field(default="", compare=False)
 
     def __post_init__(self):
         """Validates the data after initialization."""
@@ -201,20 +201,19 @@ def fix_annotations(annotations: mne.Annotations, events: list[Event, ...]):
     annot = None
     for a in annotations:
 
+        orig = a.pop('orig_time')
         if 'boundary' in a['description']:
-            a.pop('orig_time')
             annot.append(**a)
             continue
         else:
             event = events.pop(0)
-            assert a['onset'] == event.onset, f"onset mismatch {a['onset']} != {event.onset}"
-            assert a['duration'] - event.duration < 0.001, f"duration mismatch {a['duration']} != {event.duration}"
+            assert Event(**a) == event, f"onset mismatch {a['onset']} != {event.onset}"
+            # assert a['duration'] - event.duration < 0.001, f"duration mismatch {a['duration']} != {event.duration}"
             a['description'] = event.description
 
         if annot is None:
-            annot = mne.Annotations(**a)
+            annot = mne.Annotations(**a, orig_time=orig)
         else:
-            a.pop('orig_time')
             annot.append(**a)
     if len(events) > 0:
         raise ValueError(f"More events than annotations {len(events)}")
@@ -297,11 +296,10 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) in (3, 6):
+        if int(subj[1:]) < 5 or int(subj[1:]) in (60,):
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
-                              desc=None,
-                              preload=True)
+                              desc=None, preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                                extension='.edf', desc='clean', preload=False)
         fixed = fix(raw.copy())
