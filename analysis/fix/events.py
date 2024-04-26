@@ -40,10 +40,8 @@ class Event:
         """Marks the event as bad."""
         if self.bad:
             return self
-        return dataclasses.replace(self,
-                                   bad=True,
-                                   description='bad ' + self.description,
-                                   why=why)
+        return dataclasses.replace(self, bad=True, why=why,
+                                   description='bad ' + self.description)
 
     def relabel(self, new_desc: str) -> 'Event':
         """Relabels the event."""
@@ -168,7 +166,6 @@ class Trial:
     def chunk(cls, iterable: list[Event]) -> tuple['Trial', ...]:
 
         starts, stims, gos, responses = [], [], [], []
-
         for event in iterable:
             if 'Listen' in event.description or ':=:' in event.description:
                 starts.append(event)
@@ -189,8 +186,7 @@ class Trial:
             go = gos.pop(0)
             if not responses:
                 yield cls(start, stim, go)
-            elif stim.onset < responses[0].onset < (
-                    stims[0].onset if stims else float("inf")):
+            elif responses[0].onset < stims[0].onset if stims else float("inf"):
                 yield cls(start, stim, go, responses.pop(0))
             else:
                 yield cls(start, stim, go)
@@ -296,7 +292,7 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) < 5 or int(subj[1:]) in (60,):
+        if int(subj[1:]) not in (6, 30, 31, 32, 60, 63):
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
