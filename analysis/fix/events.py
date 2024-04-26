@@ -259,7 +259,7 @@ def add_stim_conds(inst: Signal):
     return inst
 
 
-def fix(inst: Signal, layout):
+def fix(inst: Signal):
     """Fix the events"""
     # items = get_annotations(layout,
     #                         inst.info['subject_info']['his_id'][4:])
@@ -304,7 +304,7 @@ if __name__ == "__main__":
                               preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                                extension='.edf', desc='clean', preload=False)
-        fixed = fix(raw.copy(), layout)
+        fixed = fix(raw.copy())
         filt.set_annotations(fixed.annotations)
         _, ids = mne.events_from_annotations(filt, regexp='.*')
 
