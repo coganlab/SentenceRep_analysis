@@ -1,73 +1,229 @@
 import mne
 from ieeg import Signal
 import pandas as pd
-import numpy as np
+import dataclasses
+import itertools
 
 
-def fix_annotations(inst: Signal):
+@dataclasses.dataclass(frozen=True, order=True)
+class Event:
+    """A class to represent an Event."""
+    onset: float
+    duration: float
+    description: str
+    bad: bool = False
+    why: str = ""
+
+    def __post_init__(self):
+        """Validates the data after initialization."""
+        self.validate()
+
+    def __str__(self):
+        return (f"{self.description}: {self.onset:.4f} - "
+                f"{self.onset + self.duration:.4f} s. {self.why}").strip()
+
+    def __repr__(self):
+        return self.__str__()
+
+    def validate(self):
+        """Validates the onset, duration, and description."""
+        if self.onset < 0:
+            raise ValueError("onset must be positive")
+        if self.duration < 0:
+            raise ValueError("duration must be positive")
+        if not isinstance(self.description, str):
+            raise ValueError("description must be a string")
+        if not self.description:
+            raise ValueError("description must not be empty")
+
+    def mark_event_as_bad(self, why: str) -> 'Event':
+        """Marks the event as bad."""
+        if self.bad:
+            return self
+        return dataclasses.replace(self,
+                                   bad=True,
+                                   description='bad ' + self.description,
+                                   why=why)
+
+    def relabel(self, new_desc: str) -> 'Event':
+        """Relabels the event."""
+        out = dataclasses.replace(self, description=new_desc, bad=False)
+        if self.bad:
+            return out.mark_event_as_bad(self.why)
+        return out
+
+
+@dataclasses.dataclass(order=True)
+class Trial:
+    """A class to represent a Trial."""
+    start: Event
+    stim: Event
+    go: Event
+    response: Event = None
+
+    def __post_init__(self):
+        """Validates the data after initialization."""
+        self.validate_events()
+        self.check_co_occurrence()
+        self.relabel_events()
+
+    def validate_events(self):
+        """Validates the identity of each event based on the description."""
+
+        assert any(i in self.start.description.split("/") for i in
+                   ('Listen', ':=:')), \
+            f"Start event {self.start} is not a valid start event"
+
+        assert 'Audio' in self.stim.description.split("/"), \
+            f"Stim event {self.stim} is not a valid stim event"
+
+        assert 'GoCue' in self.go.description.split("/"), \
+            f"Go event {self.go} is not a valid go event"
+
+        if self.response is not None:
+            assert 'Response' in self.response.description.split("/"), \
+                f"Response event {self.response} is not a valid response event"
+
+    def check_co_occurrence(self):
+        """Checks the co-occurrence of events."""
+        pairs = (('start', 'stim'), ('stim', 'go'), ('go', 'response'))
+        for first, second in pairs:
+            prev = getattr(self, first)
+            current = getattr(self, second)
+
+            if second == 'response' and current is None:
+                # mark all no response go cues as bad
+                if self.condition == 'LS':
+                    setattr(self, first, prev.mark_event_as_bad("No response"))
+                continue
+            elif prev.onset + prev.duration > current.onset:
+                setattr(self, first, prev.mark_event_as_bad(f"Overlapping {second}"))
+                setattr(self, second, current.mark_event_as_bad(f"Overlapping {first}"))
+
+    def relabel_events(self):
+        """Relabels the events."""
+        new = "/".join(('Start', self.start.description, self.condition))
+        setattr(self, 'start', self.start.relabel(new.replace('/bad ', '/')))
+
+        new = "/".join(
+            (self.trial_type, self.stim.description, self.condition))
+        setattr(self, 'stim', self.stim.relabel(new.replace('/bad ', '/')))
+
+        new = "/".join((self.trial_type, 'Go', self.condition))
+        setattr(self, 'go', self.go.relabel(new))
+
+        if self.response is not None:
+            new = "/".join((self.trial_type, 'Response', self.condition))
+            setattr(self, 'response', self.response.relabel(new))
+            if self.go.bad:
+                setattr(self, 'response', self.response.mark_event_as_bad("bad go"))
+
+    @property
+    def trial_type(self) -> str:
+        """Returns the trial type."""
+        if self.stim.duration > 1.:
+            return 'Sentence'
+        else:
+            return 'Word'
+
+    @property
+    def condition(self) -> str:
+        """Returns the condition."""
+        all_desc = self.start.description.split('/')
+        for cond in ("LS", "LM", "JL"):
+            if cond in all_desc:
+                return cond
+
+        if ':=:' in self.start.description:
+            return "JL"
+        elif 'Listen' in self.start.description:
+            if 'Mime' in self.go.description:
+                return "LM"
+            elif 'Speak' in self.go.description:
+                return "LS"
+            else:
+                raise ValueError("Condition could not be determined")
+        else:
+            raise ValueError("Condition could not be determined")
+
+    def mark_bad(self, event: str = None, why: str = "bad trial"):
+        """Marks the whole trial as bad."""
+        if event is None:
+            self.start = self.start.mark_event_as_bad(why)
+            self.stim = self.stim.mark_event_as_bad(why)
+            self.go = self.go.mark_event_as_bad(why)
+            if self.response is not None:
+                self.response = self.response.mark_event_as_bad(why)
+        else:
+            setattr(self, event, getattr(self, event).mark_event_as_bad(why))
+
+    def get_events(self) -> tuple[Event, ...]:
+        """Returns the events in the trial."""
+        if self.response is None:
+            return self.start, self.stim, self.go
+        else:
+            return self.start, self.stim, self.go, self.response
+
+    @classmethod
+    def chunk(cls, iterable: list[Event]) -> tuple['Trial', ...]:
+
+        starts, stims, gos, responses = [], [], [], []
+
+        for event in iterable:
+            if 'Listen' in event.description or ':=:' in event.description:
+                starts.append(event)
+            elif 'Audio' in event.description:
+                stims.append(event)
+            elif 'GoCue' in event.description:
+                gos.append(event)
+            elif 'Response' in event.description:
+                responses.append(event)
+            else:
+                raise ValueError(f"Unknown event {event}")
+
+        assert len(starts) == len(stims) == len(gos), "Unequal number of events"
+
+        while starts:
+            start = starts.pop(0)
+            stim = stims.pop(0)
+            go = gos.pop(0)
+            if not responses:
+                yield cls(start, stim, go)
+            elif stim.onset < responses[0].onset < (
+                    stims[0].onset if stims else float("inf")):
+                yield cls(start, stim, go, responses.pop(0))
+            else:
+                yield cls(start, stim, go)
+
+
+def fix_annotations(annotations: mne.Annotations, events: list[Event, ...]):
     """fix SentenceRep events"""
-    is_sent = False
     annot = None
-    no_response = []
-    for i, event in enumerate(inst.annotations):
+    for a in annotations:
 
-        if 'boundary' in event['description']:
-            event.pop('orig_time')
-            annot.append(**event)
+        if 'boundary' in a['description']:
+            a.pop('orig_time')
+            annot.append(**a)
             continue
-        # check if sentence or word trial
-        if event['description'].strip() in ['Audio']:
-            if event['duration'] > 1:
-                is_sent = True
-            else:
-                is_sent = False
-
-        # check for trial type or bad
-        if event['description'].strip() not in ['Listen', ':=:']:
-            if is_sent:
-                trial_type = "Sentence/"
-            else:
-                trial_type = "Word/"
         else:
-            # determine trial type
-            trial_type = "Start/"
-            if event['description'].strip() in [':=:']:
-                cond = "/JL"
-            elif 'Mime' in inst.annotations[i + 2]['description']:
-                cond = "/LM"
-            elif event['description'].strip() in ['Listen']:
-                cond = "/LS"
-                if 'Speak' not in inst.annotations[i + 2]['description']:
-                    if 'Response' in inst.annotations[i + 2]['description']:
-                        mne.utils.logger.warn(f"Early response condition {i}")
-                    else:
-                        mne.utils.logger.error(
-                            f"Speak cue not found for condition #{i} "
-                            f"{event['description']}")
-                if len(inst.annotations) < i+4:
-                    no_response.append(i)
-                elif 'Response' not in inst.annotations[i + 3]['description']:
-                    no_response.append(i)
+            event = events.pop(0)
+            assert a['onset'] == event.onset, f"onset mismatch {a['onset']} != {event.onset}"
+            assert a['duration'] - event.duration < 0.001, f"duration mismatch {a['duration']} != {event.duration}"
+            a['description'] = event.description
 
-            else:
-                raise ValueError("Condition {} could not be determined {}"
-                                 "".format(i, event['description']))
-        if 'GoCue' in event['description']:
-            event['description'] = 'Go'
-
-        event['description'] = trial_type + event['description'] + cond
         if annot is None:
-            annot = mne.Annotations(**event)
+            annot = mne.Annotations(**a)
         else:
-            event.pop('orig_time')
-            annot.append(**event)
-    inst.set_annotations(annot)
-    return no_response
+            a.pop('orig_time')
+            annot.append(**a)
+    if len(events) > 0:
+        raise ValueError(f"More events than annotations {len(events)}")
+    return annot
 
 
 def add_stim_conds(inst: Signal):
     """Read the events files and add stim label to Audio events"""
-    e_fnames = [f.replace('ieeg.edf', 'events.tsv') for f in inst.filenames]
+    e_fnames = (f.replace('ieeg.edf', 'events.tsv') for f in inst.filenames)
 
     # read all the events files into a dataframe and concatenate
     df = pd.concat([pd.read_csv(f, sep='\t') for f in e_fnames],
@@ -103,60 +259,31 @@ def add_stim_conds(inst: Signal):
     return inst
 
 
-def get_overlapping_indices(onsets, durations, margin=0):
-    # Calculate the end times for each event
-    end_times = onsets + durations
-
-    # Initialize an empty list to store the indices of overlapping events
-    overlapping_indices = set()
-
-    # Iterate over each event
-    for i in range(len(onsets)):
-        # Check if the start time of the current event is within the duration of any other event
-        for j in range(len(onsets)):
-            if i != j and onsets[i] >= onsets[j] - margin and onsets[i] <= end_times[j] + margin:
-                overlapping_indices.add(i)
-                overlapping_indices.add(j)
-                break
-
-    return sorted(list(overlapping_indices))
-
-
-def mark_bad(inst: Signal, bads: list[int, ...]):
-    """Mark bad events"""
-    annot = None
-    is_bad = False
-    for i, event in enumerate(inst.annotations):
-        desc = event['description']
-        if 'boundary' in desc:
-            event.pop('orig_time')
-            annot.append(**event)
-            continue
-        elif desc.startswith('bad'):
-            is_bad = True
-        elif desc.startswith('Start') and i not in bads:
-            is_bad = False
-        elif i in bads or is_bad:
-            event['description'] = 'bad ' + desc
-            is_bad = True
-
-        if annot is None:
-            annot = mne.Annotations(**event)
-        else:
-            event.pop('orig_time')
-            annot.append(**event)
-    inst.set_annotations(annot)
-    return inst
-
-
-def fix(inst: Signal):
+def fix(inst: Signal, layout):
     """Fix the events"""
-    no_response = fix_annotations(inst)
-    bad = get_overlapping_indices(inst.annotations.onset,
-                                  inst.annotations.duration, 0.15)
-    bad += no_response
+    # items = get_annotations(layout,
+    #                         inst.info['subject_info']['his_id'][4:])
+    items = zip(inst.annotations.onset, inst.annotations.duration,
+                inst.annotations.description)
+    events = [Event(*i) for i in items if 'boundary' not in i[2]]
+    trials = [trial for trial in Trial.chunk(events)]
+    for i, trial in enumerate(trials):
+        if trial.response is None and trial.condition == 'LS':
+            trial.mark_bad(why='No response')
+        elif trial.response is not None and trial.condition != 'LS':
+            trial.mark_bad(why='Response in non-LS trial')
+        if i == 0:
+            continue
+        elif trials[i - 1].trial_type == 'Sentence':
+            trial.mark_bad('start', 'Prior Sentence')
+            # trial.mark_bad('stim', 'Prior Sentence')
+
+    events_sorted = sorted(
+        itertools.chain.from_iterable((t.get_events() for t in trials)))
+
+    annotations = fix_annotations(inst.annotations, events_sorted.copy())
+    inst.set_annotations(annotations)
     inst = add_stim_conds(inst)
-    inst = mark_bad(inst, bad)
     return inst
 
 
@@ -170,16 +297,16 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        # if int(subj[1:]) != 28:
-        #     continue
-        raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None,
-                                preload=True)
+        if int(subj[1:]) in (3, 6):
+            continue
+        raw = raw_from_layout(layout, subject=subj, extension=".edf",
+                              desc=None,
+                              preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
-                                extension='.edf', desc='clean', preload=False)
-        fixed = fix(raw)
-        fixed.annotations._orig_time = filt.annotations.orig_time
+                               extension='.edf', desc='clean', preload=False)
+        fixed = fix(raw.copy(), layout)
         filt.set_annotations(fixed.annotations)
-
+        _, ids = mne.events_from_annotations(filt, regexp='.*')
 
         files = layout.derivatives['clean'].get(subject=subj, suffix='events',
                                 extension='.tsv', desc='clean')
@@ -198,8 +325,10 @@ if __name__ == "__main__":
                     continue
                 diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
                 if diff > 0.15:
-                    raise ValueError(f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
+                    raise ValueError(
+                        f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
                 events.loc[j, 'trial_type'] = filt.annotations.description[i]
+                events.loc[j, 'value'] = ids[filt.annotations.description[i]]
                 i += 1
             data.append(events)
         for f, events in zip(files, data):
