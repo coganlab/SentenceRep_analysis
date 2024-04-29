@@ -34,19 +34,19 @@ sub = GroupData.from_intermediates(
 all_data = []
 idx = list(sub.SM)
 subjects = np.unique(sub.keys['channel'][idx].astype('U5'))
-subject = random_iterator(subjects.tolist(), 15, 5)
+subject = random_iterator(subjects.tolist(), 15, 1)
 idxs = [[i for i in idx if any(s in sub.array.labels[3][i] for s in subj)] for subj in
         subject]
 names = ["/".join(subj) for subj in subject]
 colors = mat_colors
 scores = {subj: None for subj in names}
 conds = [['aud_ls', 'aud_lm'], ]
-window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 8,
+window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 5,
                  'average_repetitions': False}
 
 # %% Time Sliding decoding for word tokens
 
-score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs,
+score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 1, sub, idxs,
       conds,
       window_kwargs, '../../test_scores.npy', scores,
       shuffle=False)
@@ -77,7 +77,7 @@ plt.ylim((-0.15, 0.2))
 all_scores = np.hstack(ins+outs)
 plot_dist(all_scores.T, mode='std', color='red', times=(-0.4, 1.4))
 # %%
-for thresh in [1]:
+for thresh in [0.31]:
     plots = {}; bad = {}; allscore = {}
     for key, values in scores.items():
         result = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
@@ -89,6 +89,7 @@ for thresh in [1]:
 
     pos = {n: i for n, i in zip(names, idxs) if any(n in p for p in plots.keys())}
     fig, axs = plot_all_scores(plots, conds, pos, colors, "Individual Decoding")
+    # plt.legend('upper left')
 
     # bad.keys()
     # plt.figure()

@@ -216,8 +216,7 @@ def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
 
 
 def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
-               scores: dict, **decoder_kwargs) -> dict[str, np.ndarray]:
-    names = list(scores.keys())
+               names: list[str], **decoder_kwargs) -> dict[str, np.ndarray]:
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
         x_data = extract(subjects, all_conds, idx, decoder.n_splits, 'zscore',
@@ -288,7 +287,7 @@ def plot_dist_bound(data: np.ndarray, mode: str = 'sem', which: str = 'both',
     assert which in ['both', 'upper', 'lower']
     mean, std = stats.dist(data, axis=axis, mode=mode)
     if times is None:
-        tscale = range(len(mean))
+        tscale = range(mean.shape[0])
     else:
         tscale = np.linspace(times[0], times[1], len(mean))
     if ax is None:

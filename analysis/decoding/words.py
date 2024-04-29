@@ -32,10 +32,12 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
 def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
           conds, window_kwargs, output_file, scores_dict, shuffle=False):
     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-    for key, values in get_scores(sub, decoder, idxs, conds, scores_dict, shuffle=shuffle, **window_kwargs):
+    names = list(scores_dict.keys())
+    for key in scores_dict.keys():
+        scores_dict.pop(key)
+    for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
-    scores_dict = {key: value for key, value in scores_dict.items() if value is not None}
     dict_to_structured_array(scores_dict, output_file)
 
 
@@ -50,8 +52,9 @@ if __name__ == '__main__':
     all_data = []
     colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
     scores = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
+    scores2 = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
     idxs = [sub.AUD, sub.SM, sub.PROD, sub.sig_chans]
-    idxs = [list(idx & sub.grey_matter) for idx in idxs]
+    idxs = [list(idx) for idx in idxs]
     names = list(scores.keys())
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
@@ -59,13 +62,13 @@ if __name__ == '__main__':
 
     # %% Time Sliding decoding for word tokens
 
-    # score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
-    #                             window_kwargs, '../../true_scores.npy',
-    #                             shuffle=False)
-    # score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-    #                                 0.8, 'lda', 5, 250, sub, idxs, conds,
-    #                                 window_kwargs, '../../shuffle_score.npy',
-    #                                 shuffle=True)
+    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
+                                window_kwargs, '../../data/true_scores.npy', scores,
+                                shuffle=False)
+    score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+                                    0.8, 'lda', 5, 250, sub, idxs, conds,
+                                    window_kwargs, '../../data/shuffle_score.npy', scores2,
+                                    shuffle=True)
 
     # %% Plotting
     data_dir = '../../data/'
@@ -74,6 +77,8 @@ if __name__ == '__main__':
 
     plots = {}
     for key, values in true_scores.items():
+        if values is None:
+            continue
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
     fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors, "Word Decoding")
 
