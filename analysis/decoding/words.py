@@ -33,8 +33,8 @@ def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
           conds, window_kwargs, output_file, scores_dict, shuffle=False):
     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
     names = list(scores_dict.keys())
-    for key in scores_dict.keys():
-        scores_dict.pop(key)
+    while len(scores_dict) > 0:
+        scores_dict.popitem()
     for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
@@ -63,11 +63,11 @@ if __name__ == '__main__':
     # %% Time Sliding decoding for word tokens
 
     score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
-                                window_kwargs, '../../data/true_scores.npy', scores,
+                                window_kwargs, 'true_scores.npy', scores,
                                 shuffle=False)
     score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                                     0.8, 'lda', 5, 250, sub, idxs, conds,
-                                    window_kwargs, '../../data/shuffle_score.npy', scores2,
+                                    window_kwargs, 'shuffle_score.npy', scores2,
                                     shuffle=True)
 
     # %% Plotting
