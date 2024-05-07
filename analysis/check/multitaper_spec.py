@@ -23,6 +23,8 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
+    if int(sub[1:]) != 5:
+        continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
@@ -41,7 +43,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper_test', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -57,18 +59,17 @@ for sub in subjects:
         t2 = t[1] + 0.5
         trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.arange(4, 500., 5.)
+        freq = np.arange(4, 500., 3.)
         kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
                       n_cycles=freq / 2, time_bandwidth=10)
+
+        spectra = trials.compute_tfr(method="multitaper",  **kwargs)
+        del trials
+        crop_pad(spectra, "0.5s")
         if name == "base":
-            base = mne.time_frequency.tfr_multitaper(trials, **kwargs)
-            crop_pad(base, "0.5s")
-            base = base.average(lambda x: np.nanmean(x, axis=0), copy=True)
+            base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
             continue
 
-        spectra = mne.time_frequency.tfr_multitaper(trials,  **kwargs)
-        crop_pad(spectra, "0.5s")
-        del trials
         spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
         rescale(spectra._data, base._data, mode='ratio', axis=-1)
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
