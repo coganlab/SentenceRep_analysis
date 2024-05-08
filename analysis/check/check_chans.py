@@ -27,7 +27,11 @@ for subj in subjects:
         spec_type = 'multitaper_test'
         filename = os.path.join(layout.root, 'derivatives',
                                 'spec', spec_type, subj, f'{cond}-tfr.h5')
-        spec = mne.time_frequency.read_tfrs(filename)
+        try:
+            spec = mne.time_frequency.read_tfrs(filename)
+        except FileNotFoundError:
+            print(f"Skipping {subj} {cond}")
+            continue
         info_file = os.path.join(layout.root, spec.info['subject_info']['files'][0])
         all_bad = get_bad_chans(info_file)
         spec.info.update(bads=[b for b in all_bad if b in spec.ch_names])
