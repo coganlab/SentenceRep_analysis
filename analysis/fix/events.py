@@ -265,11 +265,11 @@ def fix(inst: Signal):
             trial.mark_bad(why='No response')
         elif trial.response is not None and trial.condition != 'LS':
             trial.mark_bad(why='Response in non-LS trial')
-        if i == 0:
-            continue
-        elif trials[i - 1].trial_type == 'Sentence':
-            trial.mark_bad('start', 'Prior Sentence')
-            # trial.mark_bad('stim', 'Prior Sentence')
+        # if i == 0:
+        #     continue
+        # elif trials[i - 1].trial_type == 'Sentence':
+        #     trial.mark_bad('start', 'Prior Sentence')
+        #     trial.mark_bad('stim', 'Prior Sentence')
 
     events_sorted = sorted(
         itertools.chain.from_iterable((t.get_events() for t in trials)))
@@ -296,13 +296,14 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) not in (6,):
+        if int(subj[1:]) not in (5,):
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                                extension='.edf', desc='clean', preload=False)
         fixed = fix(raw.copy())
+        fixed.annotations._orig_time = filt.annotations.orig_time
         filt.set_annotations(fixed.annotations)
         _, ids = mne.events_from_annotations(filt, regexp='.*')
 
