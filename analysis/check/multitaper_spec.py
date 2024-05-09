@@ -59,9 +59,9 @@ for sub in subjects:
         t2 = t[1] + 0.5
         trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.arange(4, 500., 3.)
+        freq = np.arange(4, 500., 2.)
         kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
-                      n_cycles=freq / 2, time_bandwidth=10)
+                      n_cycles=freq / 2, time_bandwidth=10, decim=10)
 
         spectra = trials.compute_tfr(method="multitaper",  **kwargs)
         del trials
