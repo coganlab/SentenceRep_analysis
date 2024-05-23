@@ -67,20 +67,19 @@ class Trial:
 
     def validate_events(self):
         """Validates the identity of each event based on the description."""
+        events = [('start', ['Listen', ':=:'], "Start event"),
+                  ('stim', ['Audio'], "Stim event"),
+                  ('go', ['GoCue'], "Go event"),
+                  ('response', ['Response'], "Response event")]
 
-        assert any(i in self.start.description.split("/") for i in
-                   ('Listen', ':=:')), \
-            f"Start event {self.start} is not a valid start event"
+        for event_name, valid_descriptions, error_message in events:
+            event = getattr(self, event_name)
+            if event_name != 'response' or event is not None:
+                description = event.description.replace("bad ", "").split("/")
+                if not any(i in description for i in valid_descriptions):
+                    raise ValueError(f"{error_message} {event} is not a "
+                                     f"valid {event_name} event")
 
-        assert 'Audio' in self.stim.description.split("/"), \
-            f"Stim event {self.stim} is not a valid stim event"
-
-        assert 'GoCue' in self.go.description.split("/"), \
-            f"Go event {self.go} is not a valid go event"
-
-        if self.response is not None:
-            assert 'Response' in self.response.description.split("/"), \
-                f"Response event {self.response} is not a valid response event"
 
     def check_co_occurrence(self):
         """Checks the co-occurrence of events."""
@@ -260,11 +259,14 @@ def fix(inst: Signal):
                 inst.annotations.description)
     events = [Event(*i) for i in items if 'boundary' not in i[2]]
     trials = [trial for trial in Trial.chunk(events)]
+
+    # mark bad trials using custom logic
     for i, trial in enumerate(trials):
         if trial.response is None and trial.condition == 'LS':
             trial.mark_bad(why='No response')
         elif trial.response is not None and trial.condition != 'LS':
             trial.mark_bad(why='Response in non-LS trial')
+
         # if i == 0:
         #     continue
         # elif trials[i - 1].trial_type == 'Sentence':
@@ -296,39 +298,41 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) not in (5,):
-            continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                                extension='.edf', desc='clean', preload=False)
-        fixed = fix(raw.copy())
-        fixed.annotations._orig_time = filt.annotations.orig_time
-        filt.set_annotations(fixed.annotations)
-        _, ids = mne.events_from_annotations(filt, regexp='.*')
+        try:
+            raise ValueError("This is a test")
+            fixed = fix(raw.copy())
+            fixed.annotations._orig_time = filt.annotations.orig_time
+            filt.set_annotations(fixed.annotations)
+            _, ids = mne.events_from_annotations(filt, regexp='.*')
 
-        files = layout.derivatives['clean'].get(subject=subj, suffix='events',
-                                extension='.tsv', desc='clean')
+            files = layout.derivatives['clean'].get(subject=subj, suffix='events',
+                                    extension='.tsv', desc='clean')
 
-        i = 0
-        data = []
-        offset = 0
-        for f in files:
-            events = f.get_df()
-            for j, event in events.iterrows():
-                if 'boundary' in event['trial_type']:
-                    if event['trial_type'] == 'BAD boundary':
+            i = 0
+            data = []
+            offset = 0
+            for f in files:
+                events = f.get_df()
+                for j, event in events.iterrows():
+                    if 'boundary' in event['trial_type']:
+                        if event['trial_type'] == 'BAD boundary':
+                            continue
+                        offset = filt.annotations.onset[i] - event['onset']
+                        i += 1
                         continue
-                    offset = filt.annotations.onset[i] - event['onset']
+                    diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
+                    if diff > 0.15:
+                        raise ValueError(
+                            f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
+                    events.loc[j, 'trial_type'] = filt.annotations.description[i]
+                    events.loc[j, 'value'] = ids[filt.annotations.description[i]]
                     i += 1
-                    continue
-                diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
-                if diff > 0.15:
-                    raise ValueError(
-                        f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
-                events.loc[j, 'trial_type'] = filt.annotations.description[i]
-                events.loc[j, 'value'] = ids[filt.annotations.description[i]]
-                i += 1
-            data.append(events)
-        for f, events in zip(files, data):
-            events.to_csv(f.path, sep='\t', index=False)
+                data.append(events)
+            for f, events in zip(files, data):
+                events.to_csv(f.path, sep='\t', index=False)
+        except Exception as e:
+            print(f"Skipping {subj} due to {e}")
