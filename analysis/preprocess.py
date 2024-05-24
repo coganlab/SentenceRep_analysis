@@ -32,6 +32,9 @@ for subj in subjects:
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                            extension='.edf', desc='clean', preload=False)
 
+    if "Trigger" in filt.ch_names:
+        filt.drop_channels(["Trigger"])
+
     ## Crop raw data to minimize processing time
     new = crop_empty_data(filt, )
 
@@ -103,7 +106,7 @@ for subj in subjects:
 
         power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
-        sig2 = stats.make_data_same(sig2, sig1.shape)
+        # sig2 = stats.make_data_same(sig2, sig1.shape)
 
         # Calculate the difference between the two groups averaged across
         # out = st.permutation_test([sig1, sig2], stats.mean_diff,
