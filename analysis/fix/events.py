@@ -80,7 +80,6 @@ class Trial:
                     raise ValueError(f"{error_message} {event} is not a "
                                      f"valid {event_name} event")
 
-
     def check_co_occurrence(self):
         """Checks the co-occurrence of events."""
         pairs = (('start', 'stim'), ('stim', 'go'), ('go', 'response'))
@@ -257,7 +256,7 @@ def fix(inst: Signal):
     """Fix the events"""
     items = zip(inst.annotations.onset, inst.annotations.duration,
                 inst.annotations.description)
-    events = [Event(*i) for i in items if 'boundary' not in i[2]]
+    events = [Event(*i, bad=i[2].startswith('bad')) for i in items if 'boundary' not in i[2]]
     trials = [trial for trial in Trial.chunk(events)]
 
     # mark bad trials using custom logic
@@ -298,12 +297,14 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
+        if int(subj[1:]) != 30:
+            continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                                extension='.edf', desc='clean', preload=False)
         try:
-            raise ValueError("This is a test")
+            # raise ValueError("This is a test")
             fixed = fix(raw.copy())
             fixed.annotations._orig_time = filt.annotations.orig_time
             filt.set_annotations(fixed.annotations)
@@ -336,3 +337,4 @@ if __name__ == "__main__":
                 events.to_csv(f.path, sep='\t', index=False)
         except Exception as e:
             print(f"Skipping {subj} due to {e}")
+            raise e
