@@ -9,7 +9,7 @@ import mne
 from itertools import product
 
 
-n_jobs = 6
+n_jobs = -1
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -24,7 +24,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if int(subj[1:]) in (3, 32, 65, 71):
+    if int(subj[1:]) in (3, 65, 71):
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -81,7 +81,7 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 100000
+    nperm = 10000
     sig2 = base.get_data(copy=True)
     for epoch, name, window in zip((out[0]["Start"],) +
             tuple(out[1][e] for e in ["Response"] + list(
