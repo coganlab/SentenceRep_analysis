@@ -81,7 +81,7 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 10000
+    nperm = 100000
     sig2 = base.get_data(copy=True)
     for epoch, name, window in zip((out[0]["Start"],) +
             tuple(out[1][e] for e in ["Response"] + list(
