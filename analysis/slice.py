@@ -19,26 +19,30 @@ device = ('cuda' if torch.cuda.is_available() else 'cpu')
 if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
-    # transfer data to torch tensor
-    zscores = sub['zscore', 'aud_ls'].array[:,:,:, range(175)].concatenate(sub['zscore', 'resp'].array, 3)
     idx = sorted(list(sub.SM))
-    data = zscores.combine((0, 2))[idx,]
-    # del sub
     aud_slice = slice(0, 175)
+    reduced = sub[:, :, :, idx]['zscore'][:, ('aud_ls', 'resp')]
+    reduced.array = reduced.array.dropna()
+    reduced = reduced.nan_common_denom(True, 10, True)
+    # transfer data to torch tensor
+    zscores = reduced['aud_ls'].array[:,:,:, aud_slice].concatenate(reduced['resp'].array, 3)
+    data = zscores.combine((0, 2)).__array__()
+    # del sub
+
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
                           # sub.signif['aud_lm', :, aud_slice],
                           sub.signif['resp', :]])
     neural_data_tensor = torch.tensor(
-        data.__array__() / np.nanstd(data.__array__(), axis=0),
-        device=device, dtype=torch.float64)
+        data / np.std(data, axis=0),
+        device=device, dtype=torch.long)
 
     # Assuming neural_data_tensor is your 3D tensor
     # Remove NaN values
-    mask = torch.isnan(neural_data_tensor)
-    neural_data_tensor[mask.any(dim=2)] = 0.
-
-    # Convert to sparse tensor
-    sparse_tensor = neural_data_tensor.to_sparse()
+    # mask = torch.isnan(neural_data_tensor)
+    # neural_data_tensor[mask.any(dim=2)] = 0.
+    #
+    # # Convert to sparse tensor
+    # sparse_tensor = neural_data_tensor.to_sparse(sparse_dim=2)
     # del data
 
     ## set up the model
@@ -49,7 +53,7 @@ if __name__ == '__main__':
                                                 fraction_test=0.2,
                                                 device=device)
 
-    procs = 4
+    procs = 2
     torch.set_num_threads(joblib.cpu_count() // procs)
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks = [2, 0, 0],
