@@ -209,18 +209,21 @@ if __name__ == "__main__":
         # pval[pval<0.0001] = 0.0001
         zscores = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
         powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-        met = powers
+        met = zscores
         trainp = np.hstack([met['aud_ls', :, aud_slice],
                             met['aud_lm', :, aud_slice],
-                            met['aud_jl', :, aud_slice],
+                            # met['aud_jl', :, aud_slice],
                             met['go_ls'],
-                            met['go_lm'],
-                            met['go_jl'],
+                            # met['go_lm'],
+                            # met['go_jl'],
                             met['resp']])
                             # powers['resp']])
         trainp -= np.min(trainp)
         # raw = train - np.min(train)
-        # sparse_matrix = csr_matrix((trainz[stitched == 1], stitched.nonzero()))
+        stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
+                              # sub.signif['aud_lm', :, aud_slice],
+                              sub.signif['resp', :]])
+        # sparse_matrix = csr_matrix((trainp[stitched == 1], stitched.nonzero()))
         # sparse_matrix.data -= np.min(sparse_matrix.data)
 
         ## try clustering
@@ -228,8 +231,8 @@ if __name__ == "__main__":
         # model = skd.FastICA(max_iter=1000000, whiten='unit-variance', tol=1e-9)
         # model = skd.FactorAnalysis(max_iter=1000000, tol=1e-9, copy=True,
         #                            svd_method='lapack', rotation='varimax')
-        model = skd.NMF(init="random", max_iter=100000, solver='cd', shuffle=False,
-                       alpha_W=0, l1_ratio=0,
+        model = skd.NMF(init="random", max_iter=100000, solver='mu', shuffle=False,
+                       l1_ratio=1,
                        # beta_loss='kullback-leibler',
                        )
         # model = skd.DictionaryLearning(positive_dict=True, n_jobs=7, verbose=10)

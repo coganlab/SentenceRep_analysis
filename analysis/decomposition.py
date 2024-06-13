@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 ## Load the data
 fpath = os.path.expanduser("~/Box/CoganLab")
 sub = GroupData.from_intermediates("SentenceRep", fpath,
-                                   folder='stats_opt', wide=False)
+                                   folder='stats', wide=False)
 ## setup training data
 aud_slice = slice(0, 175)
 stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
@@ -49,7 +49,7 @@ idx = list(sub.SM & sub.grey_matter)
 model = skd.NMF(**options)
 # idx = list(sub.SM & sub.grey_matter)
 W, H, n = skd.non_negative_factorization(sparse_matrix[idx],
-                                         n_components=3,
+                                         n_components=5,
                                          **options)
 # W = H.T
 # W *= np.mean(zscores) / np.mean(powers) / 1000
@@ -64,11 +64,11 @@ conds = {"resp": (-1, 1),
          "go_lm": (-0.5, 1.5),
          "go_jl": (-0.5, 1.5)}
 metric = zscores
-labeled = [['Instructional', 'c', 2],
-           ['Motor', 'm', 0],
-           ['Feedback', 'k', 1]]
-# ['Working Memory', 'orange', 3]]
-# ['Auditory', 'g', 4]]
+labeled = [['Instructional', 'c', 1],
+           ['Motor', 'm', 2],
+           ['Feedback', 'k', 0],
+['Working Memory', 'orange', 4],
+['Auditory', 'g', 3]]
 pred = np.argmax(W, axis=1)
 groups = [[idx[i] for i in np.where(pred == j)[0]]
           for j in range(W.shape[1])]
@@ -94,7 +94,7 @@ else:
     legend = False
 plot = metric[cond, idx, times].__array__().copy()
 # plot[sig[cond, sub.SM, times].__array__() == 0] = np.nan
-fig, ax = plot_weight_dist(plot, pred, times=conds[cond], colors=colors,
+ax = plot_weight_dist(plot, pred, times=conds[cond], colors=colors,
                            sig_titles=labels)
 plt.xticks(ticks)
 plt.rcParams.update({'font.size': 14})
@@ -160,7 +160,7 @@ pred = np.argmax(W, axis=1)
 groups = [[sub.keys['channel'][idx[i]] for i in np.where(pred == j)[0]]
           for j in range(W.shape[1])]
 fig1 = sub.plot_groups_on_average(groups,
-                                  ['k', 'm', 'c', 'red'],
+                                  ['k', 'c', 'm', 'g', 'orange'],
                                   hemi='lh',
                                   rm_wm=False)
 
