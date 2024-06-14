@@ -32,7 +32,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
     idx_count = []
     for group in groups:
         idx = list(getattr(sub, group))
-        if wm[i]:
+        if not wm[i]:
             idx = list(set(idx) & set(sub.grey_matter))
         idx_count += [len(idx)]
 
@@ -52,7 +52,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         ax = axs[2][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
             idx = list(getattr(sub, group))
-            if wm[i]:
+            if not wm[i]:
                 idx = list(set(idx) & set(sub.grey_matter))
             plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
@@ -78,7 +78,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         ax = axs[3][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
             idx = list(getattr(sub, group))
-            if wm[i]:
+            if not wm[i]:
                 idx = list(set(idx) & set(sub.grey_matter))
             plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
