@@ -31,7 +31,10 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
     # %% more plots
     idx_count = []
     for group in groups:
-        idx_count += [len(getattr(sub, group))]
+        idx = list(getattr(sub, group))
+        if wm[i]:
+            idx = list(set(idx) & set(sub.grey_matter))
+        idx_count += [len(idx)]
 
     if i == 0:
         axs[1][i].table(cellText=np.array([[idx_count]]).T, rowLabels=groups,
