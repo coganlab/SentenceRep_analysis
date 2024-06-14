@@ -21,9 +21,11 @@ if __name__ == '__main__':
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     idx = sorted(list(sub.SM))
     aud_slice = slice(0, 175)
-    reduced = sub[:, :, :, idx]['zscore'][:, ('aud_ls', 'resp')]
+    reduced = sub[:, :, :, idx]['zscore'][('aud_ls', 'resp'),]
     reduced.array = reduced.array.dropna()
     reduced = reduced.nan_common_denom(True, 10, True)
+    idx = [i for i, l in enumerate(sub.array.labels[3]) if
+     l in reduced.array.labels[2]]
     # transfer data to torch tensor
     zscores = reduced['aud_ls'].array[:,:,:, aud_slice].concatenate(reduced['resp'].array, 3)
     data = zscores.combine((0, 2)).__array__()
@@ -32,13 +34,12 @@ if __name__ == '__main__':
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
                           # sub.signif['aud_lm', :, aud_slice],
                           sub.signif['resp', :]])
-    neural_data_tensor = torch.tensor(
-        data / np.std(data, axis=0),
-        device=device, dtype=torch.long)
+    neural_data_tensor = torch.from_numpy(
+        (data / np.std(data, axis=0)).swapaxes(0, 1)).to(device)
 
     # Assuming neural_data_tensor is your 3D tensor
     # Remove NaN values
-    # mask = torch.isnan(neural_data_tensor)
+    mask = ~torch.isnan(neural_data_tensor)
     # neural_data_tensor[mask.any(dim=2)] = 0.
     #
     # # Convert to sparse tensor
@@ -53,12 +54,12 @@ if __name__ == '__main__':
                                                 fraction_test=0.2,
                                                 device=device)
 
-    procs = 2
+    procs = 10
     torch.set_num_threads(joblib.cpu_count() // procs)
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
-                                                min_ranks = [2, 0, 0],
-                                                max_ranks = [5, 2, 2],
-                                                sample_size=4,
+                                                min_ranks = [0, 1, 0],
+                                                max_ranks = [3, 7, 3],
+                                                sample_size=8,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
                                                 processes_grid=procs,
@@ -67,3 +68,5 @@ if __name__ == '__main__':
                                                 learning_rate=5*10**-3,
                                                 max_iter=10**4,
                                                 positive=True)
+    np.savez('loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
+             idx=idx)
