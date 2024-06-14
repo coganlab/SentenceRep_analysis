@@ -16,13 +16,14 @@ fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 
 ## Load the data
-kwarg_sets = [dict(folder='stats'), dict(folder='stats', wide=True)]
-fnames = ["short", "wide"]
+kwarg_sets = [dict(folder='stats')]
+fnames = ["GM_only", "GM_WM"]
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
+wm = [True, False]
 for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
     sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
-    subfig = sub.plot_groups_on_average(rm_wm=False, hemi='lh')
+    subfig = sub.plot_groups_on_average(rm_wm=not wm[i], hemi='lh')
     axs[0][i].imshow(subfig.screenshot())
     axs[0][i].set_title(fname)
     axs[0][i].axis('off')
@@ -47,7 +48,10 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
         arr = np.nanmean(sub.array['zscore', cond].__array__(), axis=(0, 2))
         ax = axs[2][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
-            plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
+            idx = list(getattr(sub, group))
+            if wm[i]:
+                idx = list(set(idx) & set(sub.grey_matter))
+            plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
         if j == 0:
             # ax.legend()
@@ -70,7 +74,10 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
 
         ax = axs[3][i][j]
         for group, color in zip(groups[:-1], colors[:-1]):
-            plot_dist(arr[list(getattr(sub, group))], times=conds[cond],
+            idx = list(getattr(sub, group))
+            if wm[i]:
+                idx = list(set(idx) & set(sub.grey_matter))
+            plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
         if j == 0:
             if i == 0:
