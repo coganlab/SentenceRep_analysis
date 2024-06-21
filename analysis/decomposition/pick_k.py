@@ -101,6 +101,18 @@ def evar(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
     return 1 - np.linalg.norm(orig - W @ H) ** 2 / np.linalg.norm(orig) ** 2
 
 
+def reconstruction_error(orig: np.ndarray, W: np.ndarray, H: np.ndarray) -> float:
+    return np.linalg.norm(orig - W @ H)
+
+
+def orthogonality(W: np.ndarray, H: np.ndarray) -> float:
+    return np.linalg.norm(W.T @ W - np.eye(W.shape[1]))
+
+
+def sparsity(W: np.ndarray, H: np.ndarray) -> float:
+    return np.linalg.norm(W, ord=1) + np.linalg.norm(H, ord=1)
+
+
 def get_k(X: np.ndarray, estimator, k_test: Sequence[int] = range(1, 10),
           metric: callable = explained_variance, n_jobs: int = -3,
           measure: np.ndarray = None, reps: int = 10) -> tuple[matplotlib.pyplot.Axes, np.ndarray]:
@@ -189,7 +201,7 @@ if __name__ == "__main__":
         fig.suptitle(title)
 
     kwarg_sets = [dict(folder='stats'),
-                  dict(folder='stats', wide=True)]
+                  dict(folder='stats')]
     fnames = ["short", "wide"]
     titles = ["AUD", "SM", "PROD", "ALL"]
     colors = ['green', 'red', 'blue', 'grey']
@@ -209,7 +221,7 @@ if __name__ == "__main__":
         # pval[pval<0.0001] = 0.0001
         zscores = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
         powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-        met = zscores
+        met = powers
         trainp = np.hstack([met['aud_ls', :, aud_slice],
                             met['aud_lm', :, aud_slice],
                             # met['aud_jl', :, aud_slice],
@@ -239,7 +251,7 @@ if __name__ == "__main__":
         # model = tsc.KShape(max_iter=1000000, tol=1e-9, n_clusters=4)
         # model = tsc.TimeSeriesKMeans(n_clusters=4,
         #                              n_jobs=4, metric="dtw", verbose=True)
-        idxs = [list(idx) for idx in [sub.AUD, sub.SM, sub.PROD]]
+        idxs = [list(idx & sub.grey_matter) for idx in [sub.AUD, sub.SM, sub.PROD]]
         if i == 0:
             idxs.append(list(sub.sig_chans))
         ranks = list(range(len(idxs)))
