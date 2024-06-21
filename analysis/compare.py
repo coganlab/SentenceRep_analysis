@@ -9,32 +9,33 @@ fpath = os.path.expanduser("~/Box/CoganLab")
 # Create a gridspec instance with 3 rows and 3 columns
 r = 4
 c_minor = 3
-c_major = 2
+c_major = 3
 major_rows = (0, 1)
 
 fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 
 ## Load the data
-kwarg_sets = [dict(folder='stats'), dict(folder='stats')]
-fnames = ["GM_only", "GM_WM"]
+kwargs = dict(folder='stats')
+fnames = ["All", "GM_a2009s", "GM_BN_atlas"]
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
-wm = [True, False]
-for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
-    sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
-    subfig = sub.plot_groups_on_average(rm_wm=not wm[i], hemi='lh')
+wm = [None, ".a2009s", ".BN_atlas"]
+sub = GroupData.from_intermediates("SentenceRep", fpath, **kwargs)
+for i, fname in enumerate(fnames):
+
+    idxs = [list(getattr(sub, group)) for group in groups]
+    if wm[i] is not None:
+        sub.atlas = wm[i]
+        idxs = [list(set(idx) & set(sub.grey_matter)) for idx in idxs]
+
+    subfig = sub.plot_groups_on_average(idxs[:-1], hemi='lh', colors=colors[:-1])
     axs[0][i].imshow(subfig.screenshot())
     axs[0][i].set_title(fname)
     axs[0][i].axis('off')
 
     # %% more plots
-    idx_count = []
-    for group in groups:
-        idx = list(getattr(sub, group))
-        if not wm[i]:
-            idx = list(set(idx) & set(sub.grey_matter))
-        idx_count += [len(idx)]
+    idx_count = [len(idx) for idx in idxs]
 
     if i == 0:
         axs[1][i].table(cellText=np.array([[idx_count]]).T, rowLabels=groups,
@@ -50,10 +51,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
     for j, cond in enumerate(conds):
         arr = np.nanmean(sub.array['zscore', cond].__array__(), axis=(0, 2))
         ax = axs[2][i][j]
-        for group, color in zip(groups[:-1], colors[:-1]):
-            idx = list(getattr(sub, group))
-            if not wm[i]:
-                idx = list(set(idx) & set(sub.grey_matter))
+        for group, color, idx in zip(groups[:-1], colors[:-1], idxs[:-1]):
             plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
         if j == 0:
@@ -76,10 +74,7 @@ for i, (kwargs, fname) in enumerate(zip(kwarg_sets, fnames)):
             arr = np.tile(arr, (1, 200))
 
         ax = axs[3][i][j]
-        for group, color in zip(groups[:-1], colors[:-1]):
-            idx = list(getattr(sub, group))
-            if not wm[i]:
-                idx = list(set(idx) & set(sub.grey_matter))
+        for group, color, idx in zip(groups[:-1], colors[:-1], idxs[:-1]):
             plot_dist(arr[idx], times=conds[cond],
                       label=group, ax=ax, color=color)
         if j == 0:
