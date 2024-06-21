@@ -41,11 +41,27 @@ def sparsity_scorer(est, X, y=None):
 
 
 def calinski_harabasz(X: np.ndarray, W: np.ndarray):
-    """ratio of the sum of between-cluster dispersion and of within-cluster dispersion"""
+    k = W.shape[1]
+    # create groups
+    groups = np.zeros((k,) + X.T.shape)
+    for i in range(k):
+        groups[i] = X.T * W[:, i].T
+
+    # within group scatter
+    B = np.zeros(X.shape)
+    for i in range(k):
+        B += np.linalg.norm(groups[i] - np.mean(groups[i], axis=0), axis=1)
+    B = np.sum(B)
+
+    # between group scatter
+    grp = np.sum(np.linalg.norm(W, axis=0))
+
+    return B / grp
 
 
+def calinski_scorer(est, X, y=None):
+    calinski_harabasz(X, est.transform(X))
 
-def calinski_scorer()
 
 # %%
 # Load the data
@@ -72,18 +88,31 @@ trainz /= np.max(trainz)
 
 # %% set up cross-validation
 param_grid = {'n_components': np.arange(1, 11),
-              'solver': ['cd', 'mu'],
-              'beta_loss': ['frobenius', 'kullback-leibler']}
-scoring = {'calinski_harabasz': calinski_harabasz,
-              'davies_bouldin': davies_bouldin,
-              'silhouette_score': silhouette_score,
-              'orthogonality': orthogonality,
-              'reconstruction_error': lambda est: est.reconstruction_err_,
-              'sparsity': sparsity,
-              'explaned_varience': evar}
-nmf = NMF(init='random', max_iter=100000)
-grid = GridSearchCV(nmf, param_grid, cv=5, n_jobs=1, verbose=10,
-                    scoring=recon_scorer, refit=True)
+              'alpha_W': [0, 0.1, 1],
+                'alpha_H': [0, 0.1, 1],
+                'l1_ratio': np.linspace(0, 1, 4)}
+
+def scorer(est, X, y=None):
+    W = est.transform(X)
+    H = est.components_
+    return dict(
+        calinski_harabasz=calinski_harabasz(X, W),
+        sparsity=sparsity(W, H),
+        orthogonality=orthogonality(W),
+        reconstruction_error=reconstruction_error(X, W, H),
+        explained_variance=evar(X, W, H))
+
+scoring = {'calinski_harabasz': calinski_scorer,
+              'sparsity' : sparsity_scorer,
+              'orthogonality': ortho_scorer,
+              'reconstruction_error': recon_scorer,
+              'explaned_varience': evar_scorer}
+nmf = NMF(init='random', max_iter=100000, solver='cd')
+grid = GridSearchCV(nmf, param_grid, cv=10, n_jobs=1, verbose=10,
+                    scoring=scorer, refit='calinski_harabasz')
 
 grid.fit(trainz)
+
+# %% plot
+
 
