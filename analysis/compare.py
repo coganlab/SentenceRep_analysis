@@ -30,7 +30,12 @@ for i, fname in enumerate(fnames):
         idxs = [list(set(idx) & set(sub.grey_matter)) for idx in idxs]
 
     subfig = sub.plot_groups_on_average(idxs[:-1], hemi='lh', colors=colors[:-1])
-    axs[0][i].imshow(subfig.screenshot())
+    screenshot = subfig.screenshot()
+    nonwhite_pix = (screenshot != 255).any(-1)
+    nonwhite_row = nonwhite_pix.any(1)
+    nonwhite_col = nonwhite_pix.any(0)
+    cropped_screenshot = screenshot[nonwhite_row][:, nonwhite_col]
+    axs[0][i].imshow(cropped_screenshot)
     axs[0][i].set_title(fname)
     axs[0][i].axis('off')
 
