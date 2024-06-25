@@ -23,8 +23,6 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
-    if int(sub[1:]) != 5:
-        continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
@@ -43,34 +41,36 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper_test', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'stockwell_log', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     for epoch, t, name in zip(
-            ("Start", "Start", "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
+            ("Start", "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
              "Word/Audio/JL", "Word/Go/LS", "Word/Go/LM",
              "Word/Go/JL"),
-            ((-0.5, 0), (-0.5, 0.5), (-0.5, 1), (-0.5, 1.25), (-0.5, 1.25), (-0.5, 1.25),
+            ((-0.5, 0.5), (-0.5, 1), (-0.5, 1.25), (-0.5, 1.25), (-0.5, 1.25),
              (0, 1.5), (0, 1.5), (0, 1.5)),
-            ("base", "start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
-             "go_jl")):
+            ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
+             "go_jl", )):
         t1 = t[0] - 0.5
         t2 = t[1] + 0.5
         trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.arange(4, 500., 2.)
-        kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
-                      n_cycles=freq / 2, time_bandwidth=10, decim=10)
+        freq = np.logspace(np.log10(0.5), np.log10(1024), num=80)
+        kwargs = dict(average=False, n_jobs=-2, freqs=(0.5, 1000), return_itc=False,
+                      # n_cycles=freq/8, time_bandwidth=4,
+                      decim=20, )
+                      # adaptive=True)
 
-        spectra = trials.compute_tfr(method="multitaper",  **kwargs)
+        spectra = trials.compute_tfr(method="stockwell",  **kwargs)
         del trials
         crop_pad(spectra, "0.5s")
-        if name == "base":
-            base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
-            continue
+        if name == "start":
+            # base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+            base = spectra.copy().crop(-0.5, 0)
 
-        spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+        # spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
         rescale(spectra._data, base._data, mode='ratio', axis=-1)
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         spectra.info['subject_info']['files'] = tuple(fnames)

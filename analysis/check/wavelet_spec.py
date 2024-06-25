@@ -8,7 +8,6 @@ from ieeg.calc.scaling import rescale
 import os
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
 import numpy as np
-import naplib.preprocessing as pre
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -23,7 +22,7 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
-    if sub != "D0064":
+    if sub != "D0070":
         continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
@@ -42,11 +41,11 @@ for sub in subjects:
     good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 
     # Remove intermediates from mem
-    good.plot()
+    # good.plot()
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet_test', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'wavelet', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -54,9 +53,9 @@ for sub in subjects:
             ("Start",  "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
              "Word/Audio/JL", "Word/Go/LS", "Word/Go/LM",
              "Word/Go/JL"),
-            ((-0.5, 0), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
+            ((-0.5, 0.5), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
              (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5)),
-            ("base", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
+            ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
              "go_jl")):
         times = [None, None]
         times[0] = t[0] - 0.5
@@ -67,11 +66,10 @@ for sub in subjects:
             good.info['sfreq'] / 100))
         crop_pad(spec, "0.5s")
         if epoch == "Start":
-            base = spec.copy()
-            continue
-        spec_a = rescale(spec, base, copy=True, mode='ratio').average(
+            base = spec.copy().crop(-0.5, 0)
+        spec_a = rescale(spec, base, copy=True, mode='zlogratio').average(
             lambda x: np.nanmean(x, axis=0), copy=True)
-        spec_a._data = np.log10(spec_a._data) * 20
+        # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         spec_a.info['subject_info']['files'] = tuple(fnames)
         spec_a.info['bads'] = good.info['bads']
