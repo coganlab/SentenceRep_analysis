@@ -67,9 +67,8 @@ for sub in subjects:
         crop_pad(spec, "0.5s")
         if epoch == "Start":
             base = spec.copy().crop(-0.5, 0)
-        spec_a = rescale(spec, base, copy=True, mode='zlogratio').average(
+        spec_a = rescale(spec, base, copy=True, mode='zscore').average(
             lambda x: np.nanmean(x, axis=0), copy=True)
-        # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         spec_a.info['subject_info']['files'] = tuple(fnames)
         spec_a.info['bads'] = good.info['bads']

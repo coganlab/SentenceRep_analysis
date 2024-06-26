@@ -61,7 +61,7 @@ for sub in subjects:
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
         spec = hilbert_spectrogram(trials, Wn=(0.5, 1024), n_jobs=-2, decim=int(
-            good.info['sfreq'] / 100), spacing='log', f_smooth=1)
+            good.info['sfreq'] / 100))
         crop_pad(spec, "0.5s")
         if epoch == "Start":
             base = spec.copy().crop(-0.5, 0)

@@ -41,7 +41,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'stockwell_log', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper_big', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -57,13 +57,14 @@ for sub in subjects:
         t2 = t[1] + 0.5
         trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.logspace(np.log10(0.5), np.log10(1024), num=80)
-        kwargs = dict(average=False, n_jobs=-2, freqs=(0.5, 1000), return_itc=False,
-                      # n_cycles=freq/8, time_bandwidth=4,
+        freq = np.linspace(0.5, 1024, num=80)
+        kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
+                      n_cycles=freq/2, time_bandwidth=4,
+                      # n_fft=int(trials.info['sfreq'] * 2.75),
                       decim=20, )
                       # adaptive=True)
 
-        spectra = trials.compute_tfr(method="stockwell",  **kwargs)
+        spectra = trials.compute_tfr(method="multitaper",  **kwargs)
         del trials
         crop_pad(spectra, "0.5s")
         if name == "start":
