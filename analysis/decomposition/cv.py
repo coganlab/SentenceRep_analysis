@@ -74,10 +74,6 @@ trainz -= np.min(trainz)
 # trainz /= np.max(trainz)
 
 # %% set up cross-validation
-param_grid = {'n_components': np.arange(2, 11),
-              'solver': ['cd'], 'tol': [1e-4],
-              'alpha_W': [0, 0.5, 1], 'alpha_H': [0, 0.5, 1],
-              'l1_ratio': [0, 0.5, 1], 'shuffle': [True]}
 
 def safe_score(func, *args, **kwargs):
     try:
@@ -104,12 +100,29 @@ def scorer(est, X, y=None):
         reconstruction_error=safe_score(reconstruction_error, X, W, H),
         explained_variance=safe_score(evar, X, W, H))
 
+param_grid = {'n_components': [4],
+              'solver': ['cd'], 'tol': [1e-4, 1e-6],
+              'alpha_W': [0, 0.5, 1], 'alpha_H': [0, 0.5, 1],
+              'l1_ratio': [0, 0.5, 1], 'shuffle': [True]}
 nmf = NMF(init='random', max_iter=100000)
-grid = GridSearchCV(nmf, param_grid, cv=10, n_jobs=1, verbose=10,
+gridCD = GridSearchCV(nmf, param_grid, cv=10, n_jobs=1, verbose=10,
                     scoring=scorer, refit='calinski_harabasz')
 # , error_score=err)
+gridCD.fit(trainz.T)
 
-grid.fit(trainz.T)
+param_grid2 = {'n_components': [4],
+              'solver': ['mu'], 'tol': [1e-4, 1e-6],
+              'beta_loss': [2, 1.5, 1, 0.5]}
+nmf = NMF(init='random', max_iter=100000)
+gridMU = GridSearchCV(nmf, param_grid, cv=10, n_jobs=1, verbose=10,
+                    scoring=scorer, refit='calinski_harabasz')
+gridMU.fit(trainz.T)
+best = gridCD.best_estimator_ if gridCD.best_score_ > gridMU.best_score_ else gridMU.best_estimator_
+
+param_grid3 = {'n_components': list(range(2, 11))}
+grid = GridSearchCV(best, param_grid3, cv=10, n_jobs=1, verbose=10,
+                    scoring=scorer, refit='calinski_harabasz')
+
 
 # %% get results
 results = dict()
