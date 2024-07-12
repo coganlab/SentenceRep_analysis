@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
+from functools import partial
 
 # ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
@@ -13,6 +14,9 @@ fpath = os.path.expanduser("~/Box/CoganLab")
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 #
 #
+def mse(x, y, mask):
+    return (x.values() - torch.masked_select(y, mask)) ** 2
+
 # %% Load the data
 
 if __name__ == '__main__':
@@ -37,12 +41,17 @@ if __name__ == '__main__':
     data = aud_go.combine((0, 1)).combine((0, 2)).__array__()
     # del sub
 
+    stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
+                          # sub.signif['aud_lm', :, aud_slice],
+                          sub.signif['resp', :]])
+
     neural_data_tensor = torch.from_numpy(
         (data / np.nanstd(data)).swapaxes(0, 1)).to(device)
 
     # Assuming neural_data_tensor is your 3D tensor
     # Remove NaN values
     mask = ~torch.isnan(neural_data_tensor)
+    # mask = mask & torch.from_numpy(stitched[None, idx]).to(device, dtype=torch.bool)
     # offset = torch.min(neural_data_tensor[mask]) - 1
     # neural_data_tensor -= offset
     # neural_data_tensor[~mask] = 0.
@@ -51,6 +60,10 @@ if __name__ == '__main__':
     # sparse_tensor = torch.sparse_csr_tensor(mask.any(dim=2).nonzero().t(),
     #                                         np.arange(375), neural_data_tensor[mask],
     #                                         size=neural_data_tensor.shape)
+    sparse_tensor = torch.sparse_coo_tensor(mask.nonzero().t(), neural_data_tensor[mask],
+                                            requires_grad=True)
+    with torch.no_grad():
+        sparse_tensor = sparse_tensor.coalesce()
     # del data
 
     ## set up the model
@@ -62,45 +75,50 @@ if __name__ == '__main__':
     test_mask = torch.logical_and(test_mask, mask)
     train_mask = torch.logical_and(train_mask, mask)
 
-    procs = 3
-    torch.set_num_threads(2)
-    # min_ranks = [0, 1, 0]
-    # loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor.type(torch.float32),
-    #                                             min_ranks = min_ranks,
-    #                                             max_ranks = [1,5,1],
-    #                                             sample_size=4,
-    #                                             mask_train=train_mask,
-    #                                             mask_test=test_mask,
-    #                                             processes_grid=procs,
-    #                                             seed=1,
-    #                                             min_std=10**-4,
-    #                                             learning_rate=5*10**-3,
-    #                                             max_iter=10 ** 4,
-    #                                             positive=True)
+    procs = 4
+    torch.set_num_threads(1)
+    threads = 2
+    min_ranks = [0, 1, 0]
+    loss_grid, seed_grid = slicetca.grid_search(sparse_tensor.type(torch.float16),
+                                                min_ranks = min_ranks,
+                                                max_ranks = [1,5,1],
+                                                sample_size=4,
+                                                mask_train=train_mask,
+                                                mask_test=test_mask,
+                                                processes_grid=procs,
+                                                processes_sample=threads,
+                                                seed=1,
+                                                min_std=10**-4,
+                                                learning_rate=5*10**-3,
+                                                max_iter=10 ** 4,
+                                                positive=True,
+                                                batch_prop=1.0,
+                                                loss_function=partial(mse, mask=mask))
     # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
     # #          idx=idx)
-    # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
+    slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
     # # load the grid
     # # with np.load('../loss_grid.npz') as data:
     # #     loss_grid = data['loss_grid']
     # #     seed_grid = data['seed_grid']
     # # plot_dist(np.squeeze(loss_grid.T))
     # # #
-    # # %% decompose the optimal model
-    # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
-    # best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
-    with torch.autograd.profiler.profile(with_modules=True) as prof:
-        losses, model = slicetca.decompose(neural_data_tensor.type(torch.float64), (1,1,0),
-                               #         n_components,
-                               # seed=best_seed,
-                               positive=True,
-                               min_std=10 ** -4,
-                               learning_rate=5 * 10 ** -3,
-                               max_iter=300,
-                               mask=mask,
-                               batch_prop=0.2
-                               )
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    # %% decompose the optimal model
+    n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
+    best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
+    # with torch.autograd.profiler.profile(with_modules=True) as prof:
+    losses, model = slicetca.decompose(sparse_tensor, # (1, 1, 0),
+                                               n_components,
+                                       seed=best_seed,
+                                       positive=True,
+                                       min_std=10 ** -4,
+                                       learning_rate=5 * 10 ** -3,
+                                       max_iter=300,
+                                       # mask=mask,
+                                       batch_prop=1.0,
+                                       loss_function=partial(mse, mask=mask))
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+    # slicetca.invariance(model)
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
     plt.plot(np.arange(500, len(model.losses)), model.losses[500:], 'k')
