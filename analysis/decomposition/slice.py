@@ -75,8 +75,8 @@ if __name__ == '__main__':
     test_mask = torch.logical_and(test_mask, mask)
     train_mask = torch.logical_and(train_mask, mask)
 
-    procs = 4
-    torch.set_num_threads(1)
+    procs = 2
+    torch.set_num_threads(2)
     threads = 2
     min_ranks = [0, 1, 0]
     loss_grid, seed_grid = slicetca.grid_search(sparse_tensor.type(torch.float16),
@@ -93,7 +93,7 @@ if __name__ == '__main__':
                                                 max_iter=10 ** 4,
                                                 positive=True,
                                                 batch_prop=1.0,
-                                                loss_function=partial(mse, mask=mask))
+                                                loss_function=partial(mse, mask=train_mask))
     # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
     # #          idx=idx)
     slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -107,8 +107,8 @@ if __name__ == '__main__':
     n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
     best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
     # with torch.autograd.profiler.profile(with_modules=True) as prof:
-    losses, model = slicetca.decompose(sparse_tensor, # (1, 1, 0),
-                                               n_components,
+    losses, model = slicetca.decompose(sparse_tensor,  # (1, 1, 0),
+                                       n_components,
                                        seed=best_seed,
                                        positive=True,
                                        min_std=10 ** -4,
