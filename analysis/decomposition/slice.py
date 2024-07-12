@@ -113,8 +113,7 @@ if __name__ == '__main__':
                                        positive=True,
                                        min_std=10 ** -4,
                                        learning_rate=5 * 10 ** -3,
-                                       max_iter=300,
-                                       # mask=mask,
+                                       max_iter=10 ** 4,
                                        batch_prop=1.0,
                                        loss_function=partial(mse, mask=mask))
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
