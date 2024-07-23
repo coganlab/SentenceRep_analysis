@@ -81,28 +81,28 @@ if __name__ == '__main__':
     min_ranks = [0, 1, 0]
     loss_grid, seed_grid = slicetca.grid_search(sparse_tensor.type(torch.float16),
                                                 min_ranks = min_ranks,
-                                                max_ranks = [1,5,1],
+                                                max_ranks = [0,10,0],
                                                 sample_size=4,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
                                                 processes_grid=procs,
                                                 processes_sample=threads,
                                                 seed=1,
-                                                min_std=10**-4,
-                                                learning_rate=5*10**-3,
+                                                min_std=10 ** -4,
+                                                learning_rate=5*10 ** -3,
                                                 max_iter=10 ** 4,
                                                 positive=True,
                                                 batch_prop=1.0,
                                                 loss_function=partial(mse, mask=train_mask))
     # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
     # #          idx=idx)
-    slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
+    # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
     # # load the grid
     # # with np.load('../loss_grid.npz') as data:
     # #     loss_grid = data['loss_grid']
     # #     seed_grid = data['seed_grid']
-    # # plot_dist(np.squeeze(loss_grid.T))
-    # # #
+    plot_dist(np.squeeze(loss_grid.T))
+    # #
     # %% decompose the optimal model
     n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
     best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]

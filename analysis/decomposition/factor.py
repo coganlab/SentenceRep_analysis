@@ -9,6 +9,7 @@ from multiprocessing import freeze_support
 from scipy import stats as st
 from ieeg.calc.mat import LabeledArray
 from sklearn.preprocessing import minmax_scale
+from copy import deepcopy
 
 # ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
@@ -24,7 +25,7 @@ if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     # %%
-    idx = sorted(list(sub.SM & sub.grey_matter))
+    idx = sorted(list(sub.SM))
     zscore = np.nanmean(sub['zscore'].array, axis=(-4, -2))
     aud_slice = slice(0, 175)
     pval = sub.p_vals
@@ -32,12 +33,20 @@ if __name__ == '__main__':
                      # pval['resp']])
     pval = np.where(pval > 0.9999, 0.9999, pval,)
     zpval = LabeledArray(st.norm.ppf(1 - pval), zscore.labels)
+    pval = LabeledArray(pval, zscore.labels)
     met = zscore
     trainz = np.hstack([met['aud_ls', :, aud_slice],
+                        met['aud_lm',:, aud_slice],
+                        met['go_ls'],
                         met['resp']])
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
-                          # sub.signif['aud_lm', :, aud_slice],
+                          sub.signif['aud_lm', :, aud_slice],
+                          sub.signif['go_ls'],
                           sub.signif['resp', :]])
+    weights = 1 - np.hstack([pval['aud_ls', :, aud_slice],
+                            pval['aud_lm', :, aud_slice],
+                            pval['go_ls'],
+                            pval['resp']])
     data = trainz[idx]
     neural_data_tensor = torch.from_numpy(data
                                           / np.nanstd(data)
@@ -67,7 +76,7 @@ if __name__ == '__main__':
     min_ranks = [1]
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks = min_ranks,
-                                                max_ranks = [10],
+                                                max_ranks = [11],
                                                 sample_size=10,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
@@ -77,7 +86,8 @@ if __name__ == '__main__':
                                                 learning_rate=5 * 10 ** -3,
                                                 max_iter=10**4,
                                                 positive=True,
-                                                batch_prop=1.0)
+                                                batch_prop=1.0,
+                                                initialization='uniform-positive')
     #     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
     # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
     # #          idx=idx)
@@ -89,13 +99,13 @@ if __name__ == '__main__':
     # # from ieeg.viz.ensemble import plot_dist;
     # #
     plot_dist(loss_grid.T)
-    plt.xticks(np.arange(0, 10), np.arange(1, 11))
+    plt.xticks(np.arange(0, 11), np.arange(1, 12))
     #
     # # %% decompose the optimal model
     # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
-    n_components = np.mean(loss_grid, axis=0).argmin() + 1
+    n_components = np.mean(loss_grid, axis=1).argmin() + 1
     # best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
-    best_seed = seed_grid[n_components-1, loss_grid[n_components - 1].argmin()]
+    best_seed = seed_grid[loss_grid[:, n_components - 1].argmin(), n_components-1]
     # with torch.profiler.profile(
     #         schedule=torch.profiler.schedule(wait=0, warmup=1, active=1,
     #                                          repeat=0),
@@ -109,12 +119,14 @@ if __name__ == '__main__':
     losses, model = slicetca.decompose(neural_data_tensor, [n_components],
                                seed=best_seed,
                                positive=True,
-                               min_std=10 ** -4,
-                               learning_rate=5 * 10 ** -3,
-                               max_iter=10 ** 4,
+                               min_std=10 ** -5,
+                               learning_rate=5 * 10 ** -4,
+                               max_iter=10 ** 5,
                                # mask=mask == 1
-                               batch_prop=1.0)
-    # slicetca.invariance(model)
+                               batch_prop=1.0,
+                               initialization='uniform-positive')
+    orig = deepcopy(model)
+    slicetca.invariance(model, L2 = None)
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
 
