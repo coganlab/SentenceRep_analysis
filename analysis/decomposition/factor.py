@@ -17,8 +17,8 @@ fpath = os.path.expanduser("~/Box/CoganLab")
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 #
 #
-def mse(x, y, mask):
-    return (x - torch.masked_select(y, mask)) ** 2
+def mse(x, y):
+    return (x - y) ** 2
 # %% Load the data
 
 if __name__ == '__main__':
@@ -55,6 +55,7 @@ if __name__ == '__main__':
     # Assuming neural_data_tensor is your 3D tensor
     # Remove NaN values
     mask = torch.from_numpy(stitched[idx]).to(device)
+    # masked_data = torch.masked.masked_tensor(neural_data_tensor, mask.type(torch.bool), requires_grad=True)
     # neural_data_tensor[mask.any(dim=2)] = 0.
     #
     # # Convert to sparse tensor
@@ -86,7 +87,8 @@ if __name__ == '__main__':
                                                 learning_rate=5 * 10 ** -3,
                                                 max_iter=10**4,
                                                 positive=True,
-                                                batch_prop=1.0,
+                                                batch_prop=0.2,
+                                                batch_prop_decay=3,
                                                 initialization='uniform-positive')
     #     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
     # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
@@ -116,17 +118,27 @@ if __name__ == '__main__':
     # ) as prof:
     #     for i in range(2):
     # n_components = 4
-    losses, model = slicetca.decompose(neural_data_tensor, [n_components],
-                               seed=best_seed,
+    # os.environ['TORCH_LOGS'] = 'not_implemented'
+    # import logging
+    #
+    # torch._logging.set_logs(all=logging.DEBUG)
+    # with torch.autograd.detect_anomaly():
+    losses, model = slicetca.decompose(
+        neural_data_tensor,
+        # masked_data,
+                                       [6],
+                                       # [n_components],
+                               # seed=best_seed,
                                positive=True,
                                min_std=10 ** -5,
                                learning_rate=5 * 10 ** -4,
                                max_iter=10 ** 5,
-                               # mask=mask == 1
-                               batch_prop=1.0,
+                               mask=mask.type(torch.bool),
+                               batch_prop=0.2,
+                               batch_prop_decay=3,
                                initialization='uniform-positive')
     orig = deepcopy(model)
-    slicetca.invariance(model, L2 = None)
+    slicetca.invariance(orig)
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
 
@@ -143,15 +155,15 @@ if __name__ == '__main__':
                          variables=('neuron', 'time'),)
 
     # %%
-    met = zpval
+    met = zscore
     plotz = np.hstack([met['aud_ls', :, aud_slice],
                         met['resp']])
     fig = plot_weight_dist(plotz[idx], W.T)
 
     # %%
     # fig, axs = plt.subplots(2, 2)
-    size = minmax_scale(W, feature_range=(0.1, 1))
+    size = minmax_scale(W, feature_range=(0.1, 0.7))
     for i in range(W.shape[0]):
         # ax = axs.flatten()[i]
-        size = W[i]*10
+        size = W[i]*1
         sub.plot_groups_on_average([idx], size=list(size), hemi='lh')
