@@ -124,7 +124,7 @@ if __name__ == '__main__':
     losses, model = slicetca.decompose(
         neural_data_tensor,
         # masked_data,
-                                       [6],
+                                       [5],
                                        # [n_components],
                                # seed=best_seed,
                                positive=True,
@@ -134,9 +134,10 @@ if __name__ == '__main__':
                                mask=mask.type(torch.bool),
                                batch_prop=0.2,
                                batch_prop_decay=3,
-                               initialization='uniform-positive')
+                               initialization='uniform-positive',
+        loss_function=lambda x, y: (x - y) ** 2)
     orig = deepcopy(model)
-    slicetca.invariance(orig)
+    slicetca.invariance(orig, L3=None)
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
 
@@ -156,12 +157,14 @@ if __name__ == '__main__':
     met = zscore
     plotz = np.hstack([met['aud_ls', :, aud_slice],
                         met['resp']])
-    fig = plot_weight_dist(plotz[idx], W.T)
+    # plotz /= (std := np.nanstd(plotz))
+    colors = ['b', 'r', 'g', 'y', 'k']
+    fig = plot_weight_dist(plotz[idx], W.T, mask, colors=colors)
 
     # %%
     # fig, axs = plt.subplots(2, 2)
-    size = minmax_scale(W, feature_range=(0.1, 0.7))
+    size = minmax_scale(W, feature_range=(0.05, 0.5))
     for i in range(W.shape[0]):
         # ax = axs.flatten()[i]
         size = W[i]*1
-        sub.plot_groups_on_average([idx], size=list(size), hemi='lh')
+        sub.plot_groups_on_average([idx], size=list(size), hemi='lh', colors=[colors[i]])
