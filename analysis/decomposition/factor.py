@@ -9,14 +9,24 @@ from multiprocessing import freeze_support
 from scipy import stats as st
 from ieeg.calc.mat import LabeledArray
 from sklearn.preprocessing import minmax_scale
+from functools import partial
 from copy import deepcopy
+from tslearn import metrics
+from slicetca.core.helper_functions import squared_difference, to_sparse
+
 
 # ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
 # # Create a gridspec instance with 3 rows and 3 columns
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
-#
-#
+
+
+def mse(x, y, w=None):
+    out = (x - y) ** 2
+    if w is not None:
+        out2 = out * w
+        out = out2 * out.sum() / out2.sum()
+    return out
 # %% Load the data
 
 if __name__ == '__main__':
@@ -41,10 +51,10 @@ if __name__ == '__main__':
                           sub.signif['aud_lm', :, aud_slice],
                           sub.signif['go_ls'],
                           sub.signif['resp', :]])
-    weights = 1 - np.hstack([pval['aud_ls', :, aud_slice],
+    weights = torch.as_tensor(1 - np.hstack([pval['aud_ls', :, aud_slice],
                             pval['aud_lm', :, aud_slice],
                             pval['go_ls'],
-                            pval['resp']])
+                            pval['resp']]))
     data = trainz[idx]
     neural_data_tensor = torch.from_numpy(data
                                           / np.nanstd(data)
@@ -73,10 +83,11 @@ if __name__ == '__main__':
     procs = 3
     torch.set_num_threads(2)
     min_ranks = [1]
+    reps = 40
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
-                                                min_ranks = min_ranks,
-                                                max_ranks = [11],
-                                                sample_size=10,
+                                                min_ranks=min_ranks,
+                                                max_ranks=[10],
+                                                sample_size=reps,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
                                                 processes_grid=procs,
@@ -87,19 +98,16 @@ if __name__ == '__main__':
                                                 positive=True,
                                                 batch_prop=0.2,
                                                 batch_prop_decay=3,
-                                                initialization='uniform-positive')
-    #     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    # # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
-    # #          idx=idx)
-    # # slicetca.plot_grid(np.mean(loss_grid, axis=0), min_ranks=(0,))
-    # # load the grid
-    # # with np.load('../loss_grid.npz') as data:
-    # #     loss_grid = data['loss_grid']
-    # #     seed_grid = data['seed_grid']
-    # # from ieeg.viz.ensemble import plot_dist;
-    # #
-    plot_dist(loss_grid.T)
-    plt.xticks(np.arange(0, 11), np.arange(1, 12))
+                                                initialization='uniform-positive',
+                                                init_bias=0.001,
+                                                loss_function=partial(mse, w=weights[idx]))
+    #     seed_grid = data['seed_grid']
+    x_ticks = np.arange(0, 10)
+    x_data = np.repeat(x_ticks, reps)
+    y_data = loss_grid.flatten()
+    ax = plot_dist(np.squeeze(loss_grid).T)
+    ax.scatter(x_data, y_data, c='k')
+    plt.xticks(x_ticks, np.arange(1, 11))
     #
     # # %% decompose the optimal model
     # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
@@ -120,38 +128,39 @@ if __name__ == '__main__':
     # import logging
     #
     # torch._logging.set_logs(all=logging.DEBUG)
-    # with torch.autograd.detect_anomaly():
+    # with torch.autograd.detect_anomaly(True):
     losses, model = slicetca.decompose(
         neural_data_tensor,
         # masked_data,
-                                       [5],
-                                       # [n_components],
-                               # seed=best_seed,
+        #                                [3],
+                                       [n_components],
+                               seed=best_seed,
                                positive=True,
                                min_std=10 ** -5,
                                learning_rate=5 * 10 ** -4,
                                max_iter=10 ** 5,
-                               mask=mask.type(torch.bool),
-                               batch_prop=0.2,
-                               batch_prop_decay=3,
+                               # mask=mask.type(torch.bool),
+                               batch_prop=0.3,
+                               batch_prop_decay=10,
                                initialization='uniform-positive',
-        loss_function=lambda x, y: (x - y) ** 2)
+        init_bias=0.001,
+        loss_function=partial(mse, w=weights[idx]))
     orig = deepcopy(model)
-    slicetca.invariance(orig, L3=None)
+    slicetca.invariance(orig, L2='L2')
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
-
+    # W, H = orig.get_components(numpy=True)[0]
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(500, len(model.losses)), model.losses[500:], 'k')
+    plt.plot(np.arange(5000, len(model.losses)), model.losses[5000:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
     plt.tight_layout()
     # %% plot the model
     axes = slicetca.plot(model,
-                         variables=('neuron', 'time'),)
+                         variables=('trial', 'time', 'neuron'),)
 
     # %%
     met = zscore
@@ -159,12 +168,12 @@ if __name__ == '__main__':
                         met['resp']])
     # plotz /= (std := np.nanstd(plotz))
     colors = ['b', 'r', 'g', 'y', 'k']
-    fig = plot_weight_dist(plotz[idx], W.T, mask, colors=colors)
+    fig = plot_weight_dist(plotz[idx], W.T, colors=colors)
 
     # %%
     # fig, axs = plt.subplots(2, 2)
-    size = minmax_scale(W, feature_range=(0.05, 0.5))
+    size = minmax_scale(W, feature_range=(0.05, 0.3))
     for i in range(W.shape[0]):
         # ax = axs.flatten()[i]
-        size = W[i]*1
+        size = W[i]
         sub.plot_groups_on_average([idx], size=list(size), hemi='lh', colors=[colors[i]])

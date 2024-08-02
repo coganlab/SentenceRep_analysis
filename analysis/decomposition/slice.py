@@ -103,7 +103,7 @@ if __name__ == '__main__':
     #     loss_grid = data['loss_grid']
     #     seed_grid = data['seed_grid']
     x_ticks = np.arange(0, 10)
-    x_data = np.repeat(x_ticks, 4)
+    x_data = np.repeat(x_ticks, 10)
     y_data = loss_grid.flatten()
     ax = plot_dist(np.squeeze(loss_grid).T)
     ax.scatter(x_data, y_data, c='k')
