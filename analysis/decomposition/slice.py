@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
+from slicetca.core.helper_functions import squared_difference
 from functools import partial
 
 # ## set up the figure
@@ -13,9 +14,7 @@ fpath = os.path.expanduser("~/Box/CoganLab")
 # # Create a gridspec instance with 3 rows and 3 columns
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 #
-#
-def mse(x, y):
-    return (x - y) ** 2
+
 
 # %% Load the data
 
@@ -79,10 +78,10 @@ if __name__ == '__main__':
     torch.set_num_threads(2)
     threads = 2
     min_ranks = [0, 1, 0]
-    loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor.type(torch.float32),
+    loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks = min_ranks,
-                                                max_ranks = [0,10,0],
-                                                sample_size=10,
+                                                max_ranks = [0,8,0],
+                                                sample_size=30,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
                                                 processes_grid=procs,
@@ -93,8 +92,8 @@ if __name__ == '__main__':
                                                 max_iter=10 ** 4,
                                                 positive=True,
                                                 batch_prop=0.2,
-                                                batch_prop_decay=5,
-                                                loss_function=mse)
+                                                batch_prop_decay=3,
+                                                loss_function=partial(squared_difference, weights=None))
     # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
     #          idx=idx)
     slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -125,7 +124,7 @@ if __name__ == '__main__':
                                        batch_prop_decay=3,
                                        mask=mask,
                                        initialization='uniform-positive',
-        loss_function=lambda x, y: (x - y) ** 2)
+        loss_function=squared_difference)
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
     slicetca.invariance(model, L3 = None)
     # %% plot the losses

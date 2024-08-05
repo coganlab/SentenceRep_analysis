@@ -11,7 +11,9 @@ from ieeg.calc.mat import LabeledArray
 from sklearn.preprocessing import minmax_scale
 from functools import partial
 from copy import deepcopy
-from tslearn import metrics
+import pyvistaqt as pv
+from scipy.stats import permutation_test
+from ieeg.calc.fast import mean_diff
 from slicetca.core.helper_functions import squared_difference, to_sparse
 
 
@@ -21,12 +23,9 @@ fpath = os.path.expanduser("~/Box/CoganLab")
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def mse(x, y, w=None):
-    out = (x - y) ** 2
-    if w is not None:
-        out2 = out * w
-        out = out2 * out.sum() / out2.sum()
-    return out
+def permtest(x, y, n_perm=1000):
+    return permutation_test([x, y], mean_diff, n_resamples=n_perm,
+                            vectorized=True).statistic
 # %% Load the data
 
 if __name__ == '__main__':
@@ -83,10 +82,10 @@ if __name__ == '__main__':
     procs = 3
     torch.set_num_threads(2)
     min_ranks = [1]
-    reps = 40
+    reps = 10
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks=min_ranks,
-                                                max_ranks=[10],
+                                                max_ranks=[8],
                                                 sample_size=reps,
                                                 mask_train=train_mask,
                                                 mask_test=test_mask,
@@ -100,19 +99,18 @@ if __name__ == '__main__':
                                                 batch_prop_decay=3,
                                                 initialization='uniform-positive',
                                                 init_bias=0.001,
-                                                loss_function=partial(mse, w=weights[idx]))
+                                                loss_function=squared_difference)
     #     seed_grid = data['seed_grid']
-    x_ticks = np.arange(0, 10)
+    x_ticks = np.arange(0, 8)
     x_data = np.repeat(x_ticks, reps)
     y_data = loss_grid.flatten()
     ax = plot_dist(np.squeeze(loss_grid).T)
     ax.scatter(x_data, y_data, c='k')
-    plt.xticks(x_ticks, np.arange(1, 11))
+    plt.xticks(x_ticks, np.arange(1, 9))
     #
     # # %% decompose the optimal model
     # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
     n_components = np.mean(loss_grid, axis=1).argmin() + 1
-    # best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
     best_seed = seed_grid[loss_grid[:, n_components - 1].argmin(), n_components-1]
     # with torch.profiler.profile(
     #         schedule=torch.profiler.schedule(wait=0, warmup=1, active=1,
@@ -130,9 +128,9 @@ if __name__ == '__main__':
     # torch._logging.set_logs(all=logging.DEBUG)
     # with torch.autograd.detect_anomaly(True):
     losses, model = slicetca.decompose(
-        neural_data_tensor,
+        neural_data_tensor.type(torch.float32),
         # masked_data,
-        #                                [3],
+        #                                [5],
                                        [n_components],
                                seed=best_seed,
                                positive=True,
@@ -140,20 +138,21 @@ if __name__ == '__main__':
                                learning_rate=5 * 10 ** -4,
                                max_iter=10 ** 5,
                                # mask=mask.type(torch.bool),
-                               batch_prop=0.3,
-                               batch_prop_decay=10,
+                               batch_prop=0.2,
+                               batch_prop_decay=3,
                                initialization='uniform-positive',
-        init_bias=0.001,
-        loss_function=partial(mse, w=weights[idx]))
+        init_bias=0.001)
     orig = deepcopy(model)
-    slicetca.invariance(orig, L2='L2')
+    slicetca.invariance(orig, L2='L2', L3=None,min_std=10 ** -5,
+                               learning_rate=5 * 10 ** -4,
+                               max_iter=10 ** 5, maximize=True)
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
     # W, H = orig.get_components(numpy=True)[0]
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(5000, len(model.losses)), model.losses[5000:], 'k')
+    plt.plot(np.arange(500, len(model.losses)), model.losses[500:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
@@ -167,13 +166,46 @@ if __name__ == '__main__':
     plotz = np.hstack([met['aud_ls', :, aud_slice],
                         met['resp']])
     # plotz /= (std := np.nanstd(plotz))
-    colors = ['b', 'r', 'g', 'y', 'k']
-    fig = plot_weight_dist(plotz[idx], W.T, colors=colors)
+    colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
+    conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'go_lm': (-0.5, 1.5), 'resp': (-1, 1)}
+    fig, axs = plt.subplots(1, 4)
+
+    # make a plot for each condition in conds as a subgrid
+    for j, (cond, times) in enumerate(conds.items()):
+        plotz = met[cond].__array__()
+        ax = axs[j]
+        fig = plot_weight_dist(plotz[idx,], W.T, colors=colors, ax=ax,
+                               times=times, sig_titles=colors)
+        if j == 0:
+            ax.legend()
+            ax.set_ylabel("Z-Score (V)")
+            ylims = ax.get_ylim()
+        elif j == 1:
+            ax.set_xlabel("Time(s)")
+        ax.set_ylim(ylims)
+        ax.set_title(cond)
 
     # %%
-    # fig, axs = plt.subplots(2, 2)
-    size = minmax_scale(W, feature_range=(0.05, 0.3))
+    # plt.figure()
+    # maxz = np.max(data, axis=1, keepdims=True)
+    # plt_idx = np.logical_and(np.logical_and(2 > W, W > 0.01),
+    #                          np.tile(np.logical_and(4 > maxz, maxz > 0.01).T, (5, 1)))
+    # plt.scatter(W[plt_idx], np.tile(maxz,5).T[plt_idx],
+    #             c=np.tile(colors, (330, 1)).T[plt_idx])
+
+    # %%
+    min_size = int(np.ceil(np.sqrt(W.shape[0])))
+    min_size = [int(np.ceil(np.sqrt(W.shape[0] / min_size))), min_size]
+    plotter = pv.BackgroundPlotter(shape=min_size)
+    size = W.copy()
+    size[size > 2] = 2
     for i in range(W.shape[0]):
-        # ax = axs.flatten()[i]
-        size = W[i]
-        sub.plot_groups_on_average([idx], size=list(size), hemi='lh', colors=[colors[i]])
+        j, k = divmod(i, min_size[1])
+        plotter.subplot(j, k)
+        brain = sub.plot_groups_on_average([idx], size=list(size[i]), hemi='both',
+                                           colors=[colors[i]], show=False)
+        for actor in brain.plotter.actors.values():
+            plotter.add_actor(actor, reset_camera=False)
+        plotter.camera = brain.plotter.camera
+        plotter.camera_position = brain.plotter.camera_position
+    plotter.link_views()
