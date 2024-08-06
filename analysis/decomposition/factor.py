@@ -14,7 +14,8 @@ from copy import deepcopy
 import pyvistaqt as pv
 from scipy.stats import permutation_test
 from ieeg.calc.fast import mean_diff
-from slicetca.core.helper_functions import squared_difference, to_sparse
+from slicetca.core.helper_functions import huber_loss, to_sparse
+import tslearn
 
 
 # ## set up the figure
@@ -26,6 +27,17 @@ device = ('cuda' if torch.cuda.is_available() else 'cpu')
 def permtest(x, y, n_perm=1000):
     return permutation_test([x, y], mean_diff, n_resamples=n_perm,
                             vectorized=True).statistic
+
+
+def myloss(x, y):
+    if x.ndim == 2:
+        x = x[None]
+    x = x.adjoint()
+    if y.ndim == 2:
+        y = y[None]
+    y = y.adjoint()
+    return tslearn.metrics.SoftDTWLossPyTorch(normalize=True,
+        dist_func=torch.nn.HuberLoss(reduction='none'))(x, y) * x.numel()
 # %% Load the data
 
 if __name__ == '__main__':
@@ -99,7 +111,7 @@ if __name__ == '__main__':
                                                 batch_prop_decay=3,
                                                 initialization='uniform-positive',
                                                 init_bias=0.001,
-                                                loss_function=squared_difference)
+                                                loss_function=huber_loss)
     #     seed_grid = data['seed_grid']
     x_ticks = np.arange(0, 8)
     x_data = np.repeat(x_ticks, reps)
@@ -128,38 +140,39 @@ if __name__ == '__main__':
     # torch._logging.set_logs(all=logging.DEBUG)
     # with torch.autograd.detect_anomaly(True):
     losses, model = slicetca.decompose(
-        neural_data_tensor.type(torch.float32),
+        neural_data_tensor,
         # masked_data,
-        #                                [5],
+        #                                [4],
                                        [n_components],
                                seed=best_seed,
                                positive=True,
-                               min_std=10 ** -5,
-                               learning_rate=5 * 10 ** -4,
-                               max_iter=10 ** 5,
+                               min_std=10 ** -4,
+                               learning_rate=5 * 10 ** -3,
+                               max_iter=10 ** 4,
                                # mask=mask.type(torch.bool),
                                batch_prop=0.2,
                                batch_prop_decay=3,
                                initialization='uniform-positive',
-        init_bias=0.001)
+        init_bias=0.001,
+        loss_function=huber_loss)
     orig = deepcopy(model)
-    slicetca.invariance(orig, L2='L2', L3=None,min_std=10 ** -5,
-                               learning_rate=5 * 10 ** -4,
-                               max_iter=10 ** 5, maximize=True)
+    # slicetca.invariance(orig, L2='soft_dtw', L3=None,min_std=10 ** -5,
+    #                            learning_rate=5 * 10 ** -4,
+    #                            max_iter=10 ** 5, maximize=False)
             # prof.step()
     W, H = model.get_components(numpy=True)[0]
     # W, H = orig.get_components(numpy=True)[0]
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(500, len(model.losses)), model.losses[500:], 'k')
+    plt.plot(np.arange(5000, len(model.losses)), model.losses[5000:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
     plt.tight_layout()
     # %% plot the model
     axes = slicetca.plot(model,
-                         variables=('trial', 'time', 'neuron'),)
+                         variables=('neuron', 'time'),)
 
     # %%
     met = zscore
@@ -167,6 +180,7 @@ if __name__ == '__main__':
                         met['resp']])
     # plotz /= (std := np.nanstd(plotz))
     colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
+    colors = colors[:n_components]
     conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'go_lm': (-0.5, 1.5), 'resp': (-1, 1)}
     fig, axs = plt.subplots(1, 4)
 
@@ -186,12 +200,12 @@ if __name__ == '__main__':
         ax.set_title(cond)
 
     # %%
-    # plt.figure()
-    # maxz = np.max(data, axis=1, keepdims=True)
-    # plt_idx = np.logical_and(np.logical_and(2 > W, W > 0.01),
-    #                          np.tile(np.logical_and(4 > maxz, maxz > 0.01).T, (5, 1)))
-    # plt.scatter(W[plt_idx], np.tile(maxz,5).T[plt_idx],
-    #             c=np.tile(colors, (330, 1)).T[plt_idx])
+    plt.figure()
+    maxz = np.max(data, axis=1, keepdims=True)
+    plt_idx = np.logical_and(np.logical_and(2 > W, W > 0.01),
+                             np.tile(np.logical_and(4 > maxz, maxz > 0.01).T, (5, 1)))
+    plt.scatter(W[plt_idx], np.tile(maxz,5).T[plt_idx],
+                c=np.tile(colors, (330, 1)).T[plt_idx])
 
     # %%
     min_size = int(np.ceil(np.sqrt(W.shape[0])))
