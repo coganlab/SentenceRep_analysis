@@ -32,13 +32,25 @@ def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
     np.save(filename, structured_array)
 
 
-def score(categories, test_size, method, n_splits, n_repeats, sub,
+def score1(categories, test_size, method, n_splits, n_repeats, sub,
           conds, weights, window_kwargs, scores_dict, shuffle=False):
     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
     # names = list(scores_dict.keys())
     while len(scores_dict) > 0:
         scores_dict.popitem()
     for key, values in get_scores(sub, decoder, [list(sub.SM)], conds, ['Sensory-Motor'], weights, shuffle=shuffle, **window_kwargs):
+        print(key)
+        scores_dict[key] = values
+    return scores_dict
+
+
+def score2(categories, test_size, method, n_splits, n_repeats, sub, idxs,
+          conds, window_kwargs, scores_dict, shuffle=False):
+    decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
+    names = list(scores_dict.keys())
+    while len(scores_dict) > 0:
+        scores_dict.popitem()
+    for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
     return scores_dict
@@ -53,9 +65,9 @@ if __name__ == '__main__':
     sub = GroupData.from_intermediates(
         "SentenceRep", fpath, folder='stats', subjects_dir=subjects_dir)
     all_data = []
-    colors = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0.5, 0.5, 0.5]]
+    colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
     scores = {'Sensory-Motor': None}
-    scores2 = {'Auditory': None, 'Sensory-Motor': None, 'Production': None, 'All': None}
+    scores2 = {'Sensory-Motor': None}
     idxs = [sub.SM]
     idxs = [list(idx) for idx in idxs]
     names = list(scores.keys())
@@ -94,11 +106,16 @@ if __name__ == '__main__':
     sm_labels = zscore[:, idxs[0]].labels[1]
     W = LabeledArray(W, [np.arange(W.shape[0]), sm_labels])
 
+    idxs = [[(sub.array.labels[3] == s).nonzero()[0][0] for s in W.labels[1][np.argmax(W,0) == i]] for i in range(5) ]
+
     # %% Time Sliding decoding for word tokens
 
-    scores = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, conds,
+    scores = score1({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, conds,
                                W, window_kwargs, scores, shuffle=False)
     dict_to_structured_array(scores, 'true_scores.npy')
+
+    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, idxs, conds,
+                                window_kwargs, scores2, shuffle=False)
 
     # %% Plotting
     data_dir = ''
@@ -109,8 +126,12 @@ if __name__ == '__main__':
     for key, values in scores.items():
         if values is None:
             continue
+        keys = key.split('-')
+        keys.insert(2, keys.pop(-1))
+        key = '-'.join(keys)
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors, "Word Decoding")
+    names = [f"Sensory-Motor-{i}" for i in range(5)]
+    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors[:5], "Word Decoding")
 
     for ax in fig.axes:
         ax.axhline(0.25, color='k', linestyle='--')
