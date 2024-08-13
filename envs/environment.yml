@@ -1,4 +1,4 @@
-name: preprocess
+name: analysis
 channels:
   - conda-forge
 dependencies:
