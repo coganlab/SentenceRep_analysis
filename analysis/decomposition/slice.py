@@ -7,7 +7,7 @@ import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
 from slicetca.core.helper_functions import huber_loss, to_sparse
-from functools import partial
+from functools import partial, reduce
 import pyvistaqt as pv
 
 # ## set up the figure
@@ -24,21 +24,19 @@ if __name__ == '__main__':
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     idx = sorted(list(sub.SM))
     aud_slice = slice(0, 175)
-    reduced = sub[:, :, :, idx][:, ('aud_ls', 'go_ls'),]
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'resp']
+    reduced = sub[:, :, :, idx][:, conds,]
     reduced.array = reduced.array.dropna()
     # reduced = reduced.nan_common_denom(True, 10, True)
     # idx = [i for i, l in enumerate(sub.array.labels[3]) if
     #  l in reduced.array.labels[2]]
     # transfer data to torch tensor
-    conds_aud = ['aud_ls']
-    conds_go = ['go_ls']
-    aud = reduced.array['zscore', conds_aud]
-    aud.labels[0] = aud.labels[0].replace("aud_", "")
-    go = reduced.array['zscore', conds_go]
-    go.labels[0] = go.labels[0].replace("go_", "")
-    aud_go = aud[..., :175].concatenate(go, -1)
+
+    metric = 'zscore'
+    combined = reduce(lambda x, y: x.concatenate(y, -1),
+                      [reduced.array[metric, c] for c in conds])
     # aud_go = LabeledArray(np.ascontiguousarray(aud_go.__array__()), aud_go.labels)
-    data = aud_go.combine((0, 1)).combine((0, 2)).__array__()
+    data = combined.combine((0, 2)).__array__()
     # del sub
 
     stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
@@ -58,7 +56,7 @@ if __name__ == '__main__':
     #
     # # Convert to sparse tensor
     # sparse_tensor = to_sparse(neural_data_tensor, mask)
-    neural_data_tensor[mask == 0] = 0
+    # neural_data_tensor[mask == 0] = 0
     # del data
 
     ## set up the model
