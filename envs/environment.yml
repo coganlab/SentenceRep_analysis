@@ -7,6 +7,8 @@ dependencies:
   - matplotlib
   - tqdm
   - numpy<2.0
+  - lightning
+  - nimfa
   - pip:
-    - C:\Users\ae166\git\IEEG_Pipelines\. -v
-    - nimfa
+    - -e ..\..\IEEG_Pipelines\. -v
+
