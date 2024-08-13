@@ -279,14 +279,14 @@ def plot_channels(arr: LabeledArray, sig: LabeledArray = None,
                 break
             plot_dist(arr[sig_num].__array__(), axis=0, ax=ax, mode='std', **kwargs)
             if sig is not None:
-                plot_horizontal_bars(ax, [sig[sig_num].__array__()], kwargs['times'])
+                plot_horizontal_bars(ax, [sig[sig_num].__array__()])
             ax.set_title(arr.labels[-3][sig_num])
         figs.append(fig)
     return figs
 
 
 def plot_horizontal_bars(ax: plt.Axes,
-                         where: list[np.ndarray[bool], ...], times: list[float] = None,
+                         where: list[np.ndarray[bool], ...],
                          bar_height=None, location='below'):
     """Plot horizontal bars on an axis according to a boolean array
 

@@ -1,14 +1,12 @@
-name: analysis
+name: preprocess
 channels:
   - conda-forge
 dependencies:
-  - python<3.13
+  - python
   - pip
   - matplotlib
   - tqdm
-  - scikit-learn
-  - scikit-learn-intelex
-  - numba
+  - numpy<2.0
   - pip:
-    - ieeg
+    - C:\Users\ae166\git\IEEG_Pipelines\. -v
     - nimfa

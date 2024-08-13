@@ -82,79 +82,83 @@ if __name__ == '__main__':
     # del data
 
     ## set up the model
+    grid = False
+    if grid:
+        train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
+                                                    train_blocks_dimensions=(1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
+                                                    test_blocks_dimensions=(1, 5), # Same, 2*test_blocks_dimensions + 1
+                                                    fraction_test=0.2,
+                                                    device=device)
+        # test_mask = torch.logical_and(test_mask, mask)
+        # train_mask = torch.logical_and(train_mask, mask)
 
-    train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
-                                                train_blocks_dimensions=(1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
-                                                test_blocks_dimensions=(1, 5), # Same, 2*test_blocks_dimensions + 1
-                                                fraction_test=0.2,
-                                                device=device)
-    # test_mask = torch.logical_and(test_mask, mask)
-    # train_mask = torch.logical_and(train_mask, mask)
-
-    procs = 3
-    torch.set_num_threads(2)
-    min_ranks = [1]
-    reps = 10
-    loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
-                                                min_ranks=min_ranks,
-                                                max_ranks=[8],
-                                                sample_size=reps,
-                                                mask_train=train_mask,
-                                                mask_test=test_mask,
-                                                processes_grid=procs,
-                                                seed=1,
-                                                min_std=10 ** -4,
-                                                learning_rate=5 * 10 ** -3,
-                                                max_iter=10**4,
-                                                positive=True,
-                                                batch_prop=0.2,
-                                                batch_prop_decay=3,
-                                                initialization='uniform-positive',
-                                                init_bias=0.001,
-                                                loss_function=huber_loss)
-    #     seed_grid = data['seed_grid']
-    x_ticks = np.arange(0, 8)
-    x_data = np.repeat(x_ticks, reps)
-    y_data = loss_grid.flatten()
-    ax = plot_dist(np.squeeze(loss_grid).T)
-    ax.scatter(x_data, y_data, c='k')
-    plt.xticks(x_ticks, np.arange(1, 9))
-    #
-    # # %% decompose the optimal model
-    # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
-    n_components = np.mean(loss_grid, axis=1).argmin() + 1
-    best_seed = seed_grid[loss_grid[:, n_components - 1].argmin(), n_components-1]
-    # with torch.profiler.profile(
-    #         schedule=torch.profiler.schedule(wait=0, warmup=1, active=1,
-    #                                          repeat=0),
-    #         on_trace_ready=torch.profiler.tensorboard_trace_handler('./log'),
-    #         record_shapes=True,
-    #         with_stack=True,
-    #         activities=[torch.profiler.ProfilerActivity.CPU]
-    # ) as prof:
-    #     for i in range(2):
-    # n_components = 4
-    # os.environ['TORCH_LOGS'] = 'not_implemented'
-    # import logging
-    #
-    # torch._logging.set_logs(all=logging.DEBUG)
-    # with torch.autograd.detect_anomaly(True):
+        procs = 3
+        torch.set_num_threads(2)
+        min_ranks = [1]
+        reps = 10
+        loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
+                                                    min_ranks=min_ranks,
+                                                    max_ranks=[8],
+                                                    sample_size=reps,
+                                                    mask_train=train_mask,
+                                                    mask_test=test_mask,
+                                                    processes_grid=procs,
+                                                    seed=1,
+                                                    min_std=10 ** -4,
+                                                    learning_rate=5 * 10 ** -3,
+                                                    max_iter=10**4,
+                                                    positive=True,
+                                                    batch_prop=0.2,
+                                                    batch_prop_decay=3,
+                                                    initialization='uniform-positive',
+                                                    init_bias=0.001,
+                                                    loss_function=huber_loss)
+        #     seed_grid = data['seed_grid']
+        x_ticks = np.arange(0, 8)
+        x_data = np.repeat(x_ticks, reps)
+        y_data = loss_grid.flatten()
+        ax = plot_dist(np.squeeze(loss_grid).T)
+        ax.scatter(x_data, y_data, c='k')
+        plt.xticks(x_ticks, np.arange(1, 9))
+        #
+        # # %% decompose the optimal model
+        # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
+        n_components = np.mean(loss_grid, axis=1).argmin() + 1
+        best_seed = seed_grid[loss_grid[:, n_components - 1].argmin(), n_components-1]
+        # with torch.profiler.profile(
+        #         schedule=torch.profiler.schedule(wait=0, warmup=1, active=1,
+        #                                          repeat=0),
+        #         on_trace_ready=torch.profiler.tensorboard_trace_handler('./log'),
+        #         record_shapes=True,
+        #         with_stack=True,
+        #         activities=[torch.profiler.ProfilerActivity.CPU]
+        # ) as prof:
+        #     for i in range(2):
+        # n_components = 4
+        # os.environ['TORCH_LOGS'] = 'not_implemented'
+        # import logging
+        #
+        # torch._logging.set_logs(all=logging.DEBUG)
+        # with torch.autograd.detect_anomaly(True):
+    else:
+        n_components = 5
+        best_seed = 123456
+    # sparse_tensor = to_sparse(neural_data_tensor, mask)
     losses, model = slicetca.decompose(
         neural_data_tensor,
-        # masked_data,
-        #                                [4],
-                                       [n_components],
+                                [n_components],
                                seed=best_seed,
                                positive=True,
-                               min_std=10 ** -4,
+                               min_std=1 * 10 ** -5,
+                               iter_std=100,
                                learning_rate=5 * 10 ** -3,
                                max_iter=10 ** 4,
                                # mask=mask.type(torch.bool),
-                               batch_prop=0.2,
-                               batch_prop_decay=3,
+                               batch_prop=1,
+                               # batch_prop_decay=3,
                                initialization='uniform-positive',
         init_bias=0.001,
-        loss_function=huber_loss)
+        loss_function=torch.nn.HuberLoss(reduction='none'))
     orig = deepcopy(model)
     # slicetca.invariance(orig, L2='soft_dtw', L3=None,min_std=10 ** -5,
     #                            learning_rate=5 * 10 ** -4,
@@ -181,7 +185,7 @@ if __name__ == '__main__':
     # plotz /= (std := np.nanstd(plotz))
     colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
     colors = colors[:n_components]
-    conds = {'aud_ls': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'go_lm': (-0.5, 1.5), 'resp': (-1, 1)}
+    conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5), 'go_ls': (-0.5, 1.5), 'resp': (-1, 1)}
     fig, axs = plt.subplots(1, 4)
 
     # make a plot for each condition in conds as a subgrid
@@ -206,6 +210,11 @@ if __name__ == '__main__':
                              np.tile(np.logical_and(4 > maxz, maxz > 0.01).T, (5, 1)))
     plt.scatter(W[plt_idx], np.tile(maxz,5).T[plt_idx],
                 c=np.tile(colors, (330, 1)).T[plt_idx])
+
+    fig, ax = plt.subplots(1, 1)
+    for i in range(5):
+        plot_dist(model.construct_single_component(0, i).detach().numpy()[(W[i] / W.sum(0)) > 0.1],
+                  ax=ax, color=colors[i])
 
     # %%
     min_size = int(np.ceil(np.sqrt(W.shape[0])))
