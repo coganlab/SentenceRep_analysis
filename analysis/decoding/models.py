@@ -187,7 +187,7 @@ class SimpleDecoder(L.LightningModule):
         x = x.reshape(x.size(0), -1).t()
 
         x = self.fc(x)
-        return x
+        return x.t()
 
     def training_step(self, batch, batch_idx):
         x, y = batch

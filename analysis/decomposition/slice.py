@@ -17,9 +17,11 @@ device = ('cuda' if torch.cuda.is_available() else 'cpu')
 #
 
 
-def dataloader(sub, idx, conds, metric='zscore', do_mixup=False):
+def dataloader(sub, idx, conds, metric='zscore', do_mixup=False, no_nan=False):
     reduced = sub[:, :, :, idx][:, conds,]
     reduced.array = reduced.array.dropna()
+    if no_nan:
+        reduced.nan_common_denom(True, 10, True)
     std = np.nanstd(reduced.array[metric].__array__())
     if do_mixup:
         mixup(reduced.array[metric], 3)
@@ -44,7 +46,7 @@ if __name__ == '__main__':
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = True
+    grid = False
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -91,7 +93,7 @@ if __name__ == '__main__':
         best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
     else:
         n_components = (5,)
-        best_seed = 123456
+        best_seed = 123457
 
     # #
     # %% decompose the optimal model
@@ -106,6 +108,7 @@ if __name__ == '__main__':
 
     losses, model = slicetca.decompose(neural_data_tensor,
                                        n_components,
+                                       # (0, n_components[0], 0),
                                        seed=best_seed,
                                        positive=True,
                                        min_std=10 ** -6,
@@ -114,8 +117,10 @@ if __name__ == '__main__':
                                        max_iter=10 ** 4,
                                        batch_dim=0,
                                        batch_prop=0.2,
-                                       # batch_prop_decay=3,
+                                       batch_prop_decay=3,
                                        mask=mask,
+                                       init_bias=0.001,
+                                       weight_decay=0.0001,
                                        initialization='uniform-positive',
                                        loss_function=torch.nn.HuberLoss(reduction='none'),
 
@@ -148,8 +153,9 @@ if __name__ == '__main__':
         end = start + 200
         for i in range(n_components[0]):
             fig = plot_dist(
+                # H[i],
                 model.construct_single_component(0, i).detach().numpy()[
-                (W[i] / W.sum(0)) > 0.6, start:end],
+                (W[i] / W.sum(0)) > 0.4, start:end],
                 ax=ax, color=colors[i], mode='std', times=times)
         if j == 0:
             ax.legend()
@@ -161,5 +167,5 @@ if __name__ == '__main__':
         ax.set_title(cond)
 
     # %%
-    from ieeg.viz.mri import electrode_gradient
+    from ieeg.viz.mri import electrode_gradient, plot_on_average
     electrode_gradient(sub.subjects, W, idx, colors, mode='both')
