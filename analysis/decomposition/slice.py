@@ -6,15 +6,29 @@ import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
-from slicetca.core.helper_functions import huber_loss, to_sparse
 from functools import partial, reduce
-import pyvistaqt as pv
+from ieeg.calc.fast import mixup
+
 
 # ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
 # # Create a gridspec instance with 3 rows and 3 columns
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 #
+
+
+def dataloader(sub, idx, conds, metric='zscore', do_mixup=False):
+    reduced = sub[:, :, :, idx][:, conds,]
+    reduced.array = reduced.array.dropna()
+    std = np.nanstd(reduced.array[metric].__array__())
+    if do_mixup:
+        mixup(reduced.array[metric], 3)
+    combined = reduce(lambda x, y: x.concatenate(y, -1),
+                      [reduced.array[metric, c] for c in conds])
+    data = combined.combine((0, 2)).swapaxes(0, 1)
+    neural_data_tensor = torch.from_numpy(
+        (data.__array__() / std)).to(device)
+    return neural_data_tensor, data.labels
 
 
 # %% Load the data
@@ -25,42 +39,12 @@ if __name__ == '__main__':
     idx = sorted(list(sub.SM))
     aud_slice = slice(0, 175)
     conds = ['aud_ls', 'aud_lm', 'go_ls', 'resp']
-    reduced = sub[:, :, :, idx][:, conds,]
-    reduced.array = reduced.array.dropna()
-    # reduced = reduced.nan_common_denom(True, 10, True)
-    # idx = [i for i, l in enumerate(sub.array.labels[3]) if
-    #  l in reduced.array.labels[2]]
-    # transfer data to torch tensor
-
-    metric = 'zscore'
-    combined = reduce(lambda x, y: x.concatenate(y, -1),
-                      [reduced.array[metric, c] for c in conds])
-    # aud_go = LabeledArray(np.ascontiguousarray(aud_go.__array__()), aud_go.labels)
-    data = combined.combine((0, 2)).__array__()
-    # del sub
-
-    stitched = np.hstack([sub.signif['aud_ls', :, aud_slice],
-                          # sub.signif['aud_lm', :, aud_slice],
-                          sub.signif['resp', :]])
-
-    neural_data_tensor = torch.from_numpy(
-        (data / np.nanstd(data)).swapaxes(0, 1)).to(device)
-
-    # Assuming neural_data_tensor is your 3D tensor
-    # Remove NaN values
+    neural_data_tensor, labels = dataloader(sub, idx, conds)
     mask = ~torch.isnan(neural_data_tensor)
-    # mask = mask & torch.from_numpy(stitched[None, idx]).to(device, dtype=torch.bool)
-    # offset = torch.min(neural_data_tensor[mask]) - 1
-    # neural_data_tensor -= offset
-    # neural_data_tensor[~mask] = 0.
-    #
-    # # Convert to sparse tensor
-    # sparse_tensor = to_sparse(neural_data_tensor, mask)
-    # neural_data_tensor[mask == 0] = 0
-    # del data
+    neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = False
+    grid = True
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -73,11 +57,11 @@ if __name__ == '__main__':
         procs = 2
         torch.set_num_threads(2)
         threads = 2
-        min_ranks = [0, 1, 0]
+        min_ranks = [1]
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
-                                                    max_ranks = [0,8,0],
-                                                    sample_size=30,
+                                                    max_ranks = [8],
+                                                    sample_size=10,
                                                     mask_train=train_mask,
                                                     mask_test=test_mask,
                                                     processes_grid=procs,
@@ -87,9 +71,8 @@ if __name__ == '__main__':
                                                     learning_rate=5*10 ** -3,
                                                     max_iter=10 ** 4,
                                                     positive=True,
-                                                    batch_prop=0.2,
-                                                    batch_prop_decay=3,
-                                                    loss_function=partial(huber_loss, delta=1.0),)
+                                                    batch_dim=0,
+                                                    loss_function=torch.nn.HuberLoss(reduction='none'),)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
         slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -107,7 +90,7 @@ if __name__ == '__main__':
         n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
         best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
     else:
-        n_components = (5, 0)
+        n_components = (5,)
         best_seed = 123456
 
     # #
@@ -130,11 +113,13 @@ if __name__ == '__main__':
                                        learning_rate=5 * 10 ** -3,
                                        max_iter=10 ** 4,
                                        batch_dim=0,
+                                       batch_prop=0.2,
                                        # batch_prop_decay=3,
                                        mask=mask,
                                        initialization='uniform-positive',
-                                       loss_function=huber_loss,)
-                                       # verbose=True,)
+                                       loss_function=torch.nn.HuberLoss(reduction='none'),
+
+                                       )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
     # slicetca.invariance(model, L3 = None)
     # %% plot the losses
@@ -149,24 +134,32 @@ if __name__ == '__main__':
                          variables=('trial', 'neuron', 'time'),)
     colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
     W, H = model.get_components(numpy=True)[0]
-    fig, ax = plt.subplots(1, 1)
-    for i in range(W.shape[0]):
-        plot_dist(model.construct_single_component(0, i).detach().numpy()[(W[i] / W.sum(0)) > 0.1],
-                  ax=ax, color=colors[i])
+    # %% plot the components
+    colors = colors[:n_components[0]]
+    conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
+             'go_ls': (-0.5, 1.5),
+             'resp': (-1, 1)}
+    fig, axs = plt.subplots(1, 4)
+
+    # make a plot for each condition in conds as a subgrid
+    for j, (cond, times) in enumerate(conds.items()):
+        ax = axs[j]
+        start = 200 * j
+        end = start + 200
+        for i in range(n_components[0]):
+            fig = plot_dist(
+                model.construct_single_component(0, i).detach().numpy()[
+                (W[i] / W.sum(0)) > 0.6, start:end],
+                ax=ax, color=colors[i], mode='std', times=times)
+        if j == 0:
+            ax.legend()
+            ax.set_ylabel("Z-Score (V)")
+            ylims = ax.get_ylim()
+        elif j == 1:
+            ax.set_xlabel("Time(s)")
+        ax.set_ylim(ylims)
+        ax.set_title(cond)
 
     # %%
-    min_size = int(np.ceil(np.sqrt(W.shape[0])))
-    min_size = [int(np.ceil(np.sqrt(W.shape[0] / min_size))), min_size]
-    plotter = pv.BackgroundPlotter(shape=min_size)
-    size = W.copy()
-    size[size > 2] = 2
-    for i in range(W.shape[0]):
-        j, k = divmod(i, min_size[1])
-        plotter.subplot(j, k)
-        brain = sub.plot_groups_on_average([idx], size=list(size[i]), hemi='both',
-                                           colors=[colors[i]], show=False)
-        for actor in brain.plotter.actors.values():
-            plotter.add_actor(actor, reset_camera=False)
-        plotter.camera = brain.plotter.camera
-        plotter.camera_position = brain.plotter.camera_position
-    plotter.link_views()
+    from ieeg.viz.mri import electrode_gradient
+    electrode_gradient(sub.subjects, W, idx, colors, mode='both')
