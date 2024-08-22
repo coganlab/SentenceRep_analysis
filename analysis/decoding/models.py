@@ -164,30 +164,17 @@ class Transformer(L.LightningModule):
 
 
 class SimpleDecoder(L.LightningModule):
-    def __init__(self, in_channels, num_classes, d_model, kernel_size, stride=1, padding=0,
-                 learning_rate=1e-3, l2_reg=1e-5, criterion=nn.CrossEntropyLoss()):
+    def __init__(self, num_classes, d_model, learning_rate=1e-3, l2_reg=1e-5, criterion=nn.CrossEntropyLoss()):
         super(SimpleDecoder, self).__init__()
         self.num_classes = num_classes
-        self.temporal_conv = TemporalConv(in_channels, d_model, kernel_size, stride, padding)
         self.fc = nn.Linear(d_model, num_classes)
         self.learning_rate = learning_rate
         self.l2_reg = l2_reg
         self.criterion = criterion
 
     def forward(self, x):
-        # x is of shape (batch_size, n_timepoints, n_features) coming in
-        # x = x.permute(0, 2, 1)  # (batch_size, n_features, n_timepoints)
-        # x = self.temporal_conv(x)
-        # x = x.permute(0, 2, 1)  # (batch_size, n_timepoints, d_model)
-
-        ##### CHOOSE FROM 1 OF THE 3 BELOW PRIOR TO FC INPUT #####
-        # x = x.mean(dim=1)  # mean pooling, (batch_size, d_model)
-        # x, _ = torch.max(x, dim=1) # max pooling, (batch_size, d_model)
-        # x = x[:, -1, :]  # get the last timepoint, (batch_size, d_model)
-        x = x.reshape(x.size(0), -1).t()
-
-        x = self.fc(x)
-        return x.t()
+        x = self.fc(x.flatten(-2))
+        return x
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -221,9 +208,8 @@ class SimpleDecoder(L.LightningModule):
                                 weight_decay=self.l2_reg)
 
 
-
 def cmat_acc(y_hat, y, num_classes):
-    y_pred = torch.argmax(y_hat, dim=1)
+    y_pred = torch.argmax(y_hat, dim=-1)
     cmat = multiclass_confusion_matrix(y_pred, y, num_classes)
     acc_cmat = cmat.diag().sum() / cmat.sum()
     return acc_cmat
