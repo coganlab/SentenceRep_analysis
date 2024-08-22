@@ -116,15 +116,15 @@ neural_data_tensor = torch.from_numpy(
 # model parameters
 in_channels = data.shape[0]
 # num_classes = 4
-# d_model = data.shape[0] * data.shape[2]
-kernel_time = 25  # ms
+d_model = 12
+kernel_time = 50  # ms
 kernel_size = int(kernel_time * fs / 1000)  # kernel length in samples
-stride_time = 5 # ms
+stride_time = 10 # ms
 stride = int(stride_time * fs / 1000)  # stride length in samples
 padding = 0
-n_head = 6
-num_layers = 3
-dim_fc = 128
+n_head = 4
+num_layers = 2
+dim_fc = 24
 dropout = 0.3
 # learning_rate = 1e-5
 
@@ -149,9 +149,9 @@ target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
 
 
 # %% train the model
-def process_data(data, n_iters, n_folds, val_size,
-                 target_map, max_epochs, learning_rate = 1e-5):
-    d_model = data.shape[0] * data.shape[2]
+def process_data(data, n_iters, n_folds, val_size, d_model,
+                 target_map, max_epochs, learning_rate = 1e-4, verbose=False):
+
     dm = LabeledData(data, n_folds, val_size, target_map)
 
     iter_accs = []
@@ -179,8 +179,8 @@ def process_data(data, n_iters, n_folds, val_size,
                                 accelerator='auto',
                                 callbacks=callbacks,
                                 logger=False,
-                                enable_model_summary=False,
-                                enable_progress_bar=False,
+                                enable_model_summary=verbose,
+                                enable_progress_bar=verbose,
                                 enable_checkpointing=False
                                 )
             trainer.fit(model, dm)
@@ -198,6 +198,8 @@ def process_data(data, n_iters, n_folds, val_size,
     # print(iter_accs)
     return torch.as_tensor(iter_accs)
 
+# out = process_data(data, 1, n_folds, val_size, d_model, target_map, max_epochs, verbose=True)
+
 # %% windowed decoding
 from analysis.decoding import windower
 from joblib import Parallel, delayed
@@ -207,9 +209,10 @@ data_windowed.labels[1] = data.labels[0]
 data_windowed.labels[2] = data.labels[1]
 
 out = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
-    d, 5, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
+    d, 1, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
 
 # %% plot the results
 from ieeg.viz.ensemble import plot_dist
 plot = torch.stack(out).flatten(1).T
-fig = plot_dist(plot)
+fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4))
+fig.title.set_text("Decoding accuracy")
