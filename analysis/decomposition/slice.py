@@ -169,3 +169,25 @@ if __name__ == '__main__':
     # %%
     from ieeg.viz.mri import electrode_gradient, plot_on_average
     electrode_gradient(sub.subjects, W, idx, colors, mode='both')
+
+    # %% plot each component
+
+    for cond, times in conds.items():
+        fig, axs = plt.subplots(2, 5)
+        timings = {'aud_ls': range(0, 200), 'aud_lm': range(201, 400),
+         'go_ls': range(401, 600), 'resp': range(601, 800)}
+        data = neural_data_tensor.mean(0).detach().numpy()
+        ylims = [0, 0]
+        for i, ax in enumerate(axs[0]):
+            component = model.construct_single_component(0, i).detach().numpy()
+            trimmed = data[(W[i] / W.sum(0)) > 0.4][:, timings[cond]]
+            sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][::-1]
+            plot_dist(trimmed, ax=ax, color=colors[i], mode='std', times=times)
+            ylims[1] = max(ax.get_ylim()[1], ylims[1])
+            ylims[0] = min(ax.get_ylim()[0], ylims[0])
+
+            axs[1, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno')
+
+        for ax in axs[0]:
+            ax.set_ylim(ylims)
+        fig.suptitle(cond)
