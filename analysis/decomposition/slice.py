@@ -209,10 +209,12 @@ if __name__ == '__main__':
             temp = xi.clone().detach()
             # train the decoder briefly
             Trainer(max_epochs=40,
+                    accelerator=device,
                     enable_model_summary=False,
                     enable_progress_bar=False,
                     enable_checkpointing=False,
-                    precision=16).fit(decoder, (temp, targets))
+                    precision=16,
+                    limit_train_batches=1).fit(decoder, (temp, targets))
             y_hat = decoder(temp)
             results.append(decoder.criterion(y_hat, targets))
 
