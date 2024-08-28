@@ -9,6 +9,8 @@ from ieeg.viz.ensemble import plot_dist
 from functools import partial, reduce
 from ieeg.calc.fast import mixup
 from slicetca.invariance.iterative_invariance import within_invariance
+from lightning.pytorch import Trainer
+from analysis.decoding.models import SimpleDecoder
 
 
 # ## set up the figure
@@ -32,6 +34,7 @@ def dataloader(sub, idx, conds, metric='zscore', do_mixup=False, no_nan=False):
     neural_data_tensor = torch.from_numpy(
         (data.__array__() / std)).to(device)
     return neural_data_tensor, data.labels
+
 
 
 # %% Load the data
@@ -111,7 +114,7 @@ if __name__ == '__main__':
                                        positive=True,
                                        min_std=1e-5,
                                        iter_std=10,
-                                       learning_rate=5e-2,
+                                       learning_rate=5e-3,
                                        max_iter=10000,
                                        # batch_dim=0,
                                        batch_prop=0.2,
@@ -200,8 +203,19 @@ if __name__ == '__main__':
     targets = torch.tensor([target_map[x] for x in target_labels])
     # targets = torch.tensor([[target_map[x] for x in target_labels]] * 800)
     def loss(x: list[torch.Tensor]):
-        results = sorted([torch.nn.CrossEntropyLoss()(xi.flatten(1), targets)
-                                   for xi in x])
+        results = []
+        for xi in x:
+            decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
+            temp = xi.clone().detach()
+            # train the decoder briefly
+            Trainer(max_epochs=40,
+                    enable_model_summary=False,
+                    enable_progress_bar=False,
+                    enable_checkpointing=False,
+                    precision=16).fit(decoder, (temp, targets))
+            y_hat = decoder(temp)
+            results.append(decoder.criterion(y_hat, targets))
+
+        results.sort()
         return results[0]
-    with torch.autograd.detect_anomaly():
-        model_rot = within_invariance(model_rot, loss, maximize=True)
+    model_rot = within_invariance(model_rot, loss, maximize=False)
