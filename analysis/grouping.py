@@ -389,6 +389,9 @@ class GroupData:
 
         if isinstance(groups[0][0], int):
             groups = [[self.keys['channel'][idx] for idx in g] for g in groups]
+            groups = [
+                ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]])
+                for ch in group] for group in groups]
 
         itergroup = (g for g in groups)
         if isinstance(colors, tuple):

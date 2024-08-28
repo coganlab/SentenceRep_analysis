@@ -8,6 +8,7 @@ from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
 from functools import partial, reduce
 from ieeg.calc.fast import mixup
+from slicetca.invariance.iterative_invariance import within_invariance
 
 
 # ## set up the figure
@@ -56,36 +57,41 @@ if __name__ == '__main__':
         test_mask = torch.logical_and(test_mask, mask)
         train_mask = torch.logical_and(train_mask, mask)
 
-        procs = 2
-        torch.set_num_threads(2)
-        threads = 2
+        procs = 1
+        torch.set_num_threads(6)
+        threads = 1
         min_ranks = [1]
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
                                                     max_ranks = [8],
-                                                    sample_size=10,
+                                                    sample_size=4,
                                                     mask_train=train_mask,
                                                     mask_test=test_mask,
                                                     processes_grid=procs,
                                                     processes_sample=threads,
                                                     seed=1,
-                                                    min_std=10 ** -4,
-                                                    learning_rate=5*10 ** -3,
-                                                    max_iter=10 ** 4,
+                                                    # min_std=10 ** -4,
+                                                    # iter_std=10,
+                                                    init_bias=0.01,
+                                                    weight_decay=0.001,
+                                                    initialization='orthogonal',
+                                                    learning_rate=5e-2,
+                                                    max_iter=1e4,
                                                     positive=True,
-                                                    batch_dim=0,
-                                                    loss_function=torch.nn.HuberLoss(reduction='none'),)
+                                                    verbose=0,
+                                                    # batch_dim=0,
+                                                    loss_function=torch.nn.HuberLoss(reduction='sum'),)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
-        slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
+        # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
         # load the grid
         # with np.load('../loss_grid.npz') as data:
         #     loss_grid = data['loss_grid']
         #     seed_grid = data['seed_grid']
-        x_ticks = np.arange(0, 10)
-        x_data = np.repeat(x_ticks, 10)
+        x_ticks = np.arange(0, 8)
+        x_data = np.repeat(x_ticks, 1)
         y_data = loss_grid.flatten()
-        ax = plot_dist(np.squeeze(loss_grid).T)
+        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid).T))
         ax.scatter(x_data, y_data, c='k')
         plt.xticks(x_ticks, np.arange(1, 11))
 
@@ -97,33 +103,24 @@ if __name__ == '__main__':
 
     # #
     # %% decompose the optimal model
-    # n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([0, 1, 0, 0]))[:-1]
-    # best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
-    # with torch.autograd.profiler.profile(with_modules=True) as prof:
-    def loss(x, y):
-        # p = torch.nn.LogSoftmax(dim=1)(x)
-        # q = torch.nn.Softmax(dim=1)(y)
-        # return torch.nn.KLDivLoss(reduction='none')(p, q)
-        return (x - y) ** 2
 
     losses, model = slicetca.decompose(neural_data_tensor,
                                        n_components,
                                        # (0, n_components[0], 0),
                                        seed=best_seed,
                                        positive=True,
-                                       min_std=10 ** -6,
-                                       iter_std=100,
-                                       learning_rate=5 * 10 ** -3,
-                                       max_iter=10 ** 4,
-                                       batch_dim=0,
+                                       min_std=1e-5,
+                                       iter_std=10,
+                                       learning_rate=5e-2,
+                                       max_iter=10000,
+                                       # batch_dim=0,
                                        batch_prop=0.2,
                                        batch_prop_decay=3,
                                        mask=mask,
-                                       init_bias=0.001,
-                                       weight_decay=0.0001,
-                                       initialization='uniform-positive',
-                                       loss_function=torch.nn.HuberLoss(reduction='none'),
-
+                                       init_bias=0.01,
+                                       initialization='orthogonal',
+                                       loss_function=torch.nn.HuberLoss(reduction='sum'),
+                                       verbose=0
                                        )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
     # slicetca.invariance(model, L3 = None)
@@ -138,7 +135,7 @@ if __name__ == '__main__':
     axes = slicetca.plot(model,
                          variables=('trial', 'neuron', 'time'),)
     colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
-    W, H = model.get_components(numpy=True)[0]
+    T, W, H = model.get_components(numpy=True)[0]
     # %% plot the components
     colors = colors[:n_components[0]]
     conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
@@ -154,8 +151,8 @@ if __name__ == '__main__':
         for i in range(n_components[0]):
             fig = plot_dist(
                 # H[i],
-                model.construct_single_component(0, i).detach().numpy()[
-                (W[i] / W.sum(0)) > 0.4, start:end],
+                model.construct_single_component(0, i).detach().numpy()[:,
+                (W[i] / W.sum(0)) > 0.4, start:end].reshape(-1, 200),
                 ax=ax, color=colors[i], mode='std', times=times)
         if j == 0:
             ax.legend()
@@ -168,21 +165,23 @@ if __name__ == '__main__':
 
     # %%
     from ieeg.viz.mri import electrode_gradient, plot_on_average
-    electrode_gradient(sub.subjects, W, idx, colors, mode='both')
+    chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
+             ch in sub.array.labels[3][idx]]
+    electrode_gradient(sub.subjects, W, chans, colors, mode='both')
 
     # %% plot each component
-
+    n = W.shape[0]
     for cond, times in conds.items():
-        fig, axs = plt.subplots(2, 5)
-        timings = {'aud_ls': range(0, 200), 'aud_lm': range(201, 400),
-         'go_ls': range(401, 600), 'resp': range(601, 800)}
+        fig, axs = plt.subplots(2, n)
+        timings = {'aud_ls': range(0, 200), 'aud_lm': range(200, 400),
+         'go_ls': range(400, 600), 'resp': range(600, 800)}
         data = neural_data_tensor.mean(0).detach().numpy()
         ylims = [0, 0]
         for i, ax in enumerate(axs[0]):
             component = model.construct_single_component(0, i).detach().numpy()
             trimmed = data[(W[i] / W.sum(0)) > 0.4][:, timings[cond]]
             sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][::-1]
-            plot_dist(trimmed, ax=ax, color=colors[i], mode='std', times=times)
+            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='std', times=times)
             ylims[1] = max(ax.get_ylim()[1], ylims[1])
             ylims[0] = min(ax.get_ylim()[0], ylims[0])
 
@@ -191,3 +190,18 @@ if __name__ == '__main__':
         for ax in axs[0]:
             ax.set_ylim(ylims)
         fig.suptitle(cond)
+
+    # %% varimax rotation
+    # create a copy of the model
+    model_rot = model.copy()
+    # rotate the components
+    target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
+    target_labels = (x.split('-')[0] for x in labels[0])
+    targets = torch.tensor([target_map[x] for x in target_labels])
+    # targets = torch.tensor([[target_map[x] for x in target_labels]] * 800)
+    def loss(x: list[torch.Tensor]):
+        results = sorted([torch.nn.CrossEntropyLoss()(xi.flatten(1), targets)
+                                   for xi in x])
+        return results[0]
+    with torch.autograd.detect_anomaly():
+        model_rot = within_invariance(model_rot, loss, maximize=True)
