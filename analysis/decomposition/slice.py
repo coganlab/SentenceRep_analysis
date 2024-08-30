@@ -53,7 +53,7 @@ if __name__ == '__main__':
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = True
+    grid = False
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                                                     positive=True,
                                                     verbose=0,
                                                     # batch_dim=0,
-                                                    loss_function=torch.nn.MSELoss(reduction='sum'),)
+                                                    loss_function=torch.nn.MSELoss(),)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
         # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -121,12 +121,12 @@ if __name__ == '__main__':
                                        learning_rate=5e-3,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       # batch_prop=0.2,
+                                       batch_prop=0.2,
                                        batch_prop_decay=3,
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='orthogonal',
-                                       loss_function=torch.nn.MSELoss(reduction='sum'),
+                                       loss_function=torch.nn.HuberLoss(),
                                        verbose=0
                                        )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
