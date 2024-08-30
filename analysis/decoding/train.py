@@ -43,13 +43,9 @@ class LabeledData(L.LightningDataModule):
         self.val_idx = self._fold_idx[fold]["val"]
         self.test_idx = self._fold_idx[fold]["test"]
 
-    def setup(self, stage=None, rep=1):
-        cv = MinimumNaNSplit(self.folds, rep, which='test')
-        split = cv.split(self.data, self.targets)
-        while rep > 1:
-            for _ in range(self.folds):
-                next(split)
-            rep -= 1
+    def setup(self, stage=None):
+        cv = MinimumNaNSplit(self.folds, 1, which='test')
+        split = cv.split(self.data.cpu(), self.targets)
         self._fold_idx = {}
         for i, (train_idx, test_idx) in enumerate(split):
             train_idx = train_idx
@@ -77,7 +73,7 @@ class LabeledData(L.LightningDataModule):
 n_samples = 144
 n_timepoints = 200
 n_features = 111
-fs = 200
+fs = 100
 
 # create the data module
 batch_size = 32
@@ -149,7 +145,7 @@ target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
 
 
 # %% train the model
-def process_data(data, n_iters, n_folds, val_size, d_model,
+def process_data(data, n_iters, n_folds, val_size,
                  target_map, max_epochs, learning_rate = 1e-4, verbose=False):
 
     dm = LabeledData(data, n_folds, val_size, target_map)
@@ -158,25 +154,25 @@ def process_data(data, n_iters, n_folds, val_size, d_model,
     es_pat = max_epochs // 40
     num_classes = len(target_map)
     for i in range(n_iters):
-        dm.setup(rep=i + 1)
+        dm.setup()
 
         fold_accs = []
         for fold in range(n_folds):
             dm.set_fold(fold)
             # print(dm.current_fold)
-
+            d_model = data.shape[0] * data.shape[2]
             # instantiate the model
             # in_channels = dm.get_data_shape()[-1]
-            # model = SimpleDecoder(num_classes, d_model, learning_rate)
-            model = CNNTransformer(in_channels, num_classes, d_model, kernel_size, stride, padding,
-                                      n_head, num_layers, dim_fc, dropout, learning_rate)
+            model = SimpleDecoder(num_classes, d_model, learning_rate)
+            # model = CNNTransformer(in_channels, num_classes, d_model, kernel_size, stride, padding,
+            #                           n_head, num_layers, dim_fc, dropout, learning_rate)
             # model.current_fold = fold
             callbacks = [
                 EarlyStopping(monitor='val_loss', patience=es_pat, mode='min', min_delta=0.01
                               )]
             trainer = L.Trainer(max_epochs=max_epochs,
                                 # gradient_clip_val=gclip_val,
-                                accelerator='auto',
+                                accelerator=device,
                                 callbacks=callbacks,
                                 logger=False,
                                 enable_model_summary=verbose,
@@ -198,21 +194,21 @@ def process_data(data, n_iters, n_folds, val_size, d_model,
     # print(iter_accs)
     return torch.as_tensor(iter_accs)
 
-# out = process_data(data, 1, n_folds, val_size, d_model, target_map, max_epochs, verbose=True)
+out = process_data(data[..., :20], 1, n_folds, val_size, target_map, max_epochs, verbose=False)
 
-# %% windowed decoding
-from analysis.decoding import windower
-from joblib import Parallel, delayed
-
-data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))
-data_windowed.labels[1] = data.labels[0]
-data_windowed.labels[2] = data.labels[1]
-
-out = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
-    d, 1, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
-
-# %% plot the results
-from ieeg.viz.ensemble import plot_dist
-plot = torch.stack(out).flatten(1).T
-fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4))
-fig.title.set_text("Decoding accuracy")
+# # %% windowed decoding
+# from analysis.decoding import windower
+# from joblib import Parallel, delayed
+#
+# data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))
+# data_windowed.labels[1] = data.labels[0]
+# data_windowed.labels[2] = data.labels[1]
+#
+# out = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
+#     d, 1, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
+#
+# # %% plot the results
+# from ieeg.viz.ensemble import plot_dist
+# plot = torch.stack(out).flatten(1).T
+# fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4))
+# fig.title.set_text("Decoding accuracy")

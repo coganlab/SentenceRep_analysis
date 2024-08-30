@@ -173,16 +173,15 @@ class SimpleDecoder(L.LightningModule):
         self.criterion = criterion
 
     def forward(self, x):
-        x = self.fc(x.flatten(-2))
+        if len(x.shape) > 2:
+            x = x.flatten(-2)
+        x = self.fc(x)
         return x
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = self.criterion(y_hat, y)
-        acc = cmat_acc(y_hat, y, self.num_classes)
-        res = {'train_loss': loss, 'train_acc': acc}
-        self.log_dict(res, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
