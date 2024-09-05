@@ -7,8 +7,6 @@ dependencies:
   - matplotlib
   - tqdm
   - numpy<2.0
-  - lightning
   - nimfa
   - pip:
-    - -e ..\..\IEEG_Pipelines\. -v
-
+    - git+https://github.com/coganlab/IEEG_Pipelines.git@mri_explicit
