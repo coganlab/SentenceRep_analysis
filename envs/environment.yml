@@ -1,12 +1,12 @@
-name: analysis
-channels:
-  - conda-forge
+name: analysis2
 dependencies:
   - python
   - pip
   - matplotlib
   - tqdm
   - numpy<2.0
-  - nimfa
+  - notebook
+  - pillow
   - pip:
     - git+https://github.com/coganlab/IEEG_Pipelines.git@mri_explicit
+    - nimfa
