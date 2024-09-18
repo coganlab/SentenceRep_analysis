@@ -1,14 +1,17 @@
 name: analysis
 channels:
-  - conda-forge
+  - conda
 dependencies:
   - python
   - pip
   - matplotlib
   - tqdm
   - numpy<2.0
+  - pillow
+  - pytorch-nightly::pytorch
+  - pytorch-nightly::cpuonly
   - lightning
-  - nimfa
+  - conda-forge::nimfa
   - pip:
-    - -e ..\..\IEEG_Pipelines\. -v
+    - ..\..\IEEG_Pipelines\.
 
