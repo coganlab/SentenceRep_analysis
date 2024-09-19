@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
-from functools import partial, reduce
+from functools import reduce
 from ieeg.calc.fast import mixup
 from slicetca.invariance.iterative_invariance import within_invariance
 from lightning.pytorch import Trainer, utilities, loggers
@@ -116,13 +116,13 @@ if __name__ == '__main__':
                                        # (0, n_components[0], 0),
                                        seed=best_seed,
                                        positive=True,
-                                       min_std=1e-7,
-                                       iter_std=10,
-                                       learning_rate=5e-3,
+                                       min_std=1e-6,
+                                       iter_std=100,
+                                       learning_rate=1e-3,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       batch_prop=0.2,
-                                       batch_prop_decay=3,
+                                       batch_prop=0.4,
+                                       # batch_prop_decay=3,
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='orthogonal',
