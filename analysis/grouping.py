@@ -1,6 +1,8 @@
 import os
 import mne
 import numpy as np
+import sys
+sys.path.extend(['/Users/yuchaowang/Documents/git/SentenceRep_analysis'])
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
@@ -28,6 +30,7 @@ class GroupData:
                            folder: str = 'stats', **kwargs):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
+        
         sig = load_dict(layout, conds, "significance", True, folder)
         sig = combine(sig, (0, 2))
         pwr = load_dict(layout, conds, "power", False, folder)
@@ -127,8 +130,8 @@ class GroupData:
     def grey_matter(self):
         if not hasattr(self, 'atlas'):
             self.atlas = ".a2009s"
-        wm = get_grey_matter(self.subjects, self.subjects_dir, self.atlas)
-        return {i for i, ch in enumerate(self.keys['channel']) if ch in wm}
+        gm = get_grey_matter(self.subjects, self.subjects_dir, self.atlas)
+        return {i for i, ch in enumerate(self.keys['channel']) if ch in gm}
 
     @staticmethod
     def _set_conditions(conditions: dict[str, Doubles]):
@@ -570,7 +573,7 @@ def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None, atlas: st
 
 if __name__ == "__main__":
     from scipy import stats as st
-    fpath = os.path.expanduser("~/Box/CoganLab")
+    fpath = os.path.expanduser("~/Library/CloudStorage/Box-Box/CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
                                            folder='stats')
     conds = {"resp": (-1, 1),
@@ -620,4 +623,4 @@ if __name__ == "__main__":
     #
     ##
     fig = sub.plot_groups_on_average(rm_wm=False)
-    fig.save_image('ALL.png')
+    fig.show()

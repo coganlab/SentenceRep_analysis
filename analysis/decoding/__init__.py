@@ -278,7 +278,7 @@ def plot_all_scores(all_scores: dict[str, np.ndarray],
             if name is names[-1]:
                 ax.legend()
                 ax.set_title(cond)
-                ax.set_ylim(0.1, 0.7)
+                ax.set_ylim(0.1, 0.9)
 
     axs[0].set_ylabel("Accuracy (%)")
     if suptitle is not None:
