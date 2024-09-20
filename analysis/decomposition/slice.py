@@ -9,7 +9,7 @@ from ieeg.viz.ensemble import plot_dist
 from functools import reduce
 from ieeg.calc.fast import mixup
 from slicetca.invariance.iterative_invariance import within_invariance
-from lightning.pytorch import Trainer, utilities, loggers
+from lightning.pytorch import Trainer
 from analysis.decoding.models import SimpleDecoder
 import logging
 
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = False
+    grid = True
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -66,28 +66,31 @@ if __name__ == '__main__':
         procs = 1
         # torch.set_num_threads(6)
         threads = 1
-        min_ranks = [1]
+        min_ranks = [2]
+        max_ranks = [8]
         repeats = 10
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
-                                                    max_ranks = [8],
+                                                    max_ranks = max_ranks,
                                                     sample_size=repeats,
                                                     mask_train=train_mask,
                                                     mask_test=test_mask,
                                                     processes_grid=procs,
                                                     processes_sample=threads,
                                                     seed=1,
-                                                    # min_std=10 ** -5,
-                                                    # iter_std=100,
+                                                    batch_prop=0.5,
+                                                    batch_prop_decay=3,
+                                                    min_std=1e-6,
+                                                    iter_std=100,
                                                     init_bias=0.01,
-                                                    weight_decay=0.001,
+                                                    # weight_decay=1e-6,
                                                     initialization='orthogonal',
-                                                    learning_rate=5e-2,
+                                                    learning_rate=1e-2,
                                                     max_iter=10000,
                                                     positive=True,
                                                     verbose=0,
                                                     # batch_dim=0,
-                                                    loss_function=torch.nn.MSELoss(),)
+                                                    loss_function=torch.nn.L1Loss(reduction='sum'),)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
         # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -95,12 +98,12 @@ if __name__ == '__main__':
         # with np.load('../loss_grid.npz') as data:
         #     loss_grid = data['loss_grid']
         #     seed_grid = data['seed_grid']
-        x_ticks = np.arange(0, 8)
+        x_ticks = np.arange(max_ranks[0])
         x_data = np.repeat(x_ticks, repeats-1)
         y_data = loss_grid[:,1:].flatten()
         ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid[:,1:]).T))
         ax.scatter(x_data, y_data, c='k')
-        plt.xticks(x_ticks, np.arange(1, x_ticks[-1] + 2))
+        plt.xticks(x_ticks, np.arange(x_ticks[-1]) + min_ranks[0])
 
         n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
         best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
@@ -118,15 +121,15 @@ if __name__ == '__main__':
                                        positive=True,
                                        min_std=1e-6,
                                        iter_std=100,
-                                       learning_rate=1e-3,
+                                       learning_rate=1e-2,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       batch_prop=0.4,
-                                       # batch_prop_decay=3,
+                                       batch_prop=0.5,
+                                       batch_prop_decay=3,
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='orthogonal',
-                                       loss_function=torch.nn.HuberLoss(),
+                                       loss_function=torch.nn.L1Loss(reduction='sum'),
                                        verbose=0
                                        )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
@@ -174,7 +177,7 @@ if __name__ == '__main__':
     from ieeg.viz.mri import electrode_gradient, plot_on_average
     chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
              ch in sub.array.labels[3][idx]]
-    # electrode_gradient(sub.subjects, W, chans, colors, mode='both')
+    electrode_gradient(sub.subjects, W, chans, colors, mode='both')
 
     # %% plot each component
     n = W.shape[0]
@@ -198,63 +201,63 @@ if __name__ == '__main__':
             ax.set_ylim(ylims)
         fig.suptitle(cond)
 
-    # %% varimax rotation
-    # create a copy of the model
-    model_rot = model.copy()
-    # rotate the components
-    target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
-    target_labels = (x.split('-')[0] for x in labels[0])
-    targets = torch.tensor([target_map[x] for x in target_labels])
-    # targets = torch.tensor([[target_map[x] for x in target_labels]] * 800)
-    # decoders = [SimpleDecoder(4, len(labels[2]), 1e-4) for _ in range(n_components[0])]
-    logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
-    logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
-    def loss(x: list[torch.Tensor]):
-        results = []
-        decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
-        for decoder, xi in zip(decoders, x):
-            # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
-            # decoder = decoders[i]
-            temp = xi.clone().detach()
-            # train the decoder briefly
-            Trainer(max_epochs=400,
-                    devices=1,
-                    accelerator=device,
-                    barebones=True,
-                    # precision=32,
-                    limit_train_batches=1).fit(decoder, (temp, targets))
-            y_hat = decoder(xi)
-            results.append(decoder.criterion(y_hat, targets))
-
-        results.sort()
-        print([r.item() for r in results])
-        return results[0]
-    model_rot = within_invariance(model_rot, loss, maximize=False, max_iter=100, ignore=(1,))
-    T, W, H = model_rot.get_components(numpy=True)[0]
-
-    # %% plot the components
-    colors = colors[:n_components[0]]
-    conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
-             'go_ls': (-0.5, 1.5),
-             'resp': (-1, 1)}
-    fig, axs = plt.subplots(1, 4)
-
-    # make a plot for each condition in conds as a subgrid
-    for j, (cond, times) in enumerate(conds.items()):
-        ax = axs[j]
-        start = 200 * j
-        end = start + 200
-        for i in range(n_components[0]):
-            fig = plot_dist(
-                # H[i],
-                model.construct_single_component(0, i).detach().numpy()[:,
-                (W[i] / W.sum(0)) > 0.4, start:end].reshape(-1, 200),
-                ax=ax, color=colors[i], mode='std', times=times)
-        if j == 0:
-            ax.legend()
-            ax.set_ylabel("Z-Score (V)")
-            ylims = ax.get_ylim()
-        elif j == 1:
-            ax.set_xlabel("Time(s)")
-        ax.set_ylim(ylims)
-        ax.set_title(cond)
+    # # %% varimax rotation
+    # # create a copy of the model
+    # model_rot = model.copy()
+    # # rotate the components
+    # target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
+    # target_labels = (x.split('-')[0] for x in labels[0])
+    # targets = torch.tensor([target_map[x] for x in target_labels])
+    # # targets = torch.tensor([[target_map[x] for x in target_labels]] * 800)
+    # # decoders = [SimpleDecoder(4, len(labels[2]), 1e-4) for _ in range(n_components[0])]
+    # logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
+    # logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
+    # def loss(x: list[torch.Tensor]):
+    #     results = []
+    #     decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
+    #     for decoder, xi in zip(decoders, x):
+    #         # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
+    #         # decoder = decoders[i]
+    #         temp = xi.clone().detach()
+    #         # train the decoder briefly
+    #         Trainer(max_epochs=400,
+    #                 devices=1,
+    #                 accelerator=device,
+    #                 barebones=True,
+    #                 # precision=32,
+    #                 limit_train_batches=1).fit(decoder, (temp, targets))
+    #         y_hat = decoder(xi)
+    #         results.append(decoder.criterion(y_hat, targets))
+    #
+    #     results.sort()
+    #     print([r.item() for r in results])
+    #     return results[0]
+    # model_rot = within_invariance(model_rot, loss, maximize=False, max_iter=100, ignore=(1,))
+    # T, W, H = model_rot.get_components(numpy=True)[0]
+    #
+    # # %% plot the components
+    # colors = colors[:n_components[0]]
+    # conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
+    #          'go_ls': (-0.5, 1.5),
+    #          'resp': (-1, 1)}
+    # fig, axs = plt.subplots(1, 4)
+    #
+    # # make a plot for each condition in conds as a subgrid
+    # for j, (cond, times) in enumerate(conds.items()):
+    #     ax = axs[j]
+    #     start = 200 * j
+    #     end = start + 200
+    #     for i in range(n_components[0]):
+    #         fig = plot_dist(
+    #             # H[i],
+    #             model.construct_single_component(0, i).detach().numpy()[:,
+    #             (W[i] / W.sum(0)) > 0.4, start:end].reshape(-1, 200),
+    #             ax=ax, color=colors[i], mode='std', times=times)
+    #     if j == 0:
+    #         ax.legend()
+    #         ax.set_ylabel("Z-Score (V)")
+    #         ylims = ax.get_ylim()
+    #     elif j == 1:
+    #         ax.set_xlabel("Time(s)")
+    #     ax.set_ylim(ylims)
+    #     ax.set_title(cond)
