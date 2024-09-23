@@ -68,7 +68,7 @@ if __name__ == '__main__':
         threads = 1
         min_ranks = [2]
         max_ranks = [8]
-        repeats = 10
+        repeats = 1
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
                                                     max_ranks = max_ranks,
@@ -78,7 +78,7 @@ if __name__ == '__main__':
                                                     processes_grid=procs,
                                                     processes_sample=threads,
                                                     seed=1,
-                                                    batch_prop=0.5,
+                                                    batch_prop=0.3,
                                                     batch_prop_decay=3,
                                                     min_std=1e-6,
                                                     iter_std=100,
@@ -99,9 +99,9 @@ if __name__ == '__main__':
         #     loss_grid = data['loss_grid']
         #     seed_grid = data['seed_grid']
         x_ticks = np.arange(max_ranks[0])
-        x_data = np.repeat(x_ticks, repeats-1)
-        y_data = loss_grid[:,1:].flatten()
-        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid[:,1:]).T))
+        x_data = np.repeat(x_ticks, repeats)
+        y_data = loss_grid[:].flatten()
+        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid[:]).T))
         ax.scatter(x_data, y_data, c='k')
         plt.xticks(x_ticks, np.arange(x_ticks[-1]) + min_ranks[0])
 
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                                        learning_rate=1e-2,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       batch_prop=0.5,
+                                       batch_prop=0.25,
                                        batch_prop_decay=3,
                                        mask=mask,
                                        init_bias=0.01,
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # slicetca.invariance(model, L3 = None)
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(500, len(model.losses)), model.losses[500:], 'k')
+    plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
