@@ -48,10 +48,9 @@ class LabeledData(L.LightningDataModule):
         split = cv.split(self.data.cpu(), self.targets)
         self._fold_idx = {}
         for i, (train_idx, test_idx) in enumerate(split):
-            train_idx = train_idx
             val_idx = train_idx[torch.distributions.uniform.Uniform(
                 0, 1).sample((train_idx.shape[0],)) < self.val_size]
-            test_idx = test_idx
+            train_idx = np.setdiff1d(train_idx, val_idx)
             self._fold_idx[i] = {"train": train_idx, "val": val_idx, "test": test_idx}
 
         self.set_fold(0)
@@ -160,16 +159,17 @@ def process_data(data, n_iters, n_folds, val_size,
         for fold in range(n_folds):
             dm.set_fold(fold)
             # print(dm.current_fold)
-            d_model = data.shape[0] * data.shape[2]
+            # d_model = data.shape[0] * data.shape[2]
             # instantiate the model
             # in_channels = dm.get_data_shape()[-1]
-            model = SimpleDecoder(num_classes, d_model, learning_rate)
-            # model = CNNTransformer(in_channels, num_classes, d_model, kernel_size, stride, padding,
-            #                           n_head, num_layers, dim_fc, dropout, learning_rate)
+            model = SimpleDecoder(num_classes, data.shape[0] * data.shape[2],
+            learning_rate)
+            # model = CNNTransformer(in_channels, num_classes, d_model,
+            #                        kernel_size, stride, padding, n_head,
+            #                        num_layers, dim_fc, dropout, learning_rate)
             # model.current_fold = fold
             callbacks = [
-                EarlyStopping(monitor='val_loss', patience=es_pat, mode='min', min_delta=0.01
-                              )]
+                EarlyStopping(monitor='val_loss')]
             trainer = L.Trainer(max_epochs=max_epochs,
                                 # gradient_clip_val=gclip_val,
                                 accelerator=device,
@@ -179,9 +179,10 @@ def process_data(data, n_iters, n_folds, val_size,
                                 enable_progress_bar=verbose,
                                 enable_checkpointing=False
                                 )
-            trainer.fit(model, dm)
+            trainer.fit(model, train_dataloaders=dm.train_dataloader(),
+                        val_dataloaders=dm.val_dataloader())
             # print(trainer.logged_metrics)
-            trainer.test(model, dm, verbose=False)
+            trainer.test(model, dm.test_dataloader(), verbose=False)
             fold_accs.append(trainer.logged_metrics['test_acc'])
 
             # save loss information
@@ -194,21 +195,21 @@ def process_data(data, n_iters, n_folds, val_size,
     # print(iter_accs)
     return torch.as_tensor(iter_accs)
 
-out = process_data(data[..., :20], 1, n_folds, val_size, target_map, max_epochs, verbose=False)
+# out = process_data(data[..., :20], 1, n_folds, val_size, target_map, max_epochs, verbose=False)
 
-# # %% windowed decoding
-# from analysis.decoding import windower
-# from joblib import Parallel, delayed
-#
-# data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))
-# data_windowed.labels[1] = data.labels[0]
-# data_windowed.labels[2] = data.labels[1]
-#
-# out = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
-#     d, 1, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
-#
-# # %% plot the results
-# from ieeg.viz.ensemble import plot_dist
-# plot = torch.stack(out).flatten(1).T
-# fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4))
-# fig.title.set_text("Decoding accuracy")
+# %% windowed decoding
+from analysis.decoding import windower
+from joblib import Parallel, delayed
+
+data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))
+data_windowed.labels[1] = data.labels[0]
+data_windowed.labels[2] = data.labels[1]
+
+out = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
+    d, 10, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
+
+# %% plot the results
+from ieeg.viz.ensemble import plot_dist
+plot = torch.stack(out).flatten(1).T
+fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4))
+fig.title.set_text("Decoding accuracy")

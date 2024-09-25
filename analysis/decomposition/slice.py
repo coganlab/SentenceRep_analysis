@@ -53,7 +53,7 @@ if __name__ == '__main__':
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = True
+    grid = False
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -78,8 +78,8 @@ if __name__ == '__main__':
                                                     processes_grid=procs,
                                                     processes_sample=threads,
                                                     seed=1,
-                                                    batch_prop=0.3,
-                                                    batch_prop_decay=3,
+                                                    # batch_prop=0.3,
+                                                    # batch_prop_decay=3,
                                                     min_std=1e-6,
                                                     iter_std=100,
                                                     init_bias=0.01,
@@ -124,8 +124,8 @@ if __name__ == '__main__':
                                        learning_rate=1e-2,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       batch_prop=0.25,
-                                       batch_prop_decay=3,
+                                       # batch_prop=0.25,
+                                       # batch_prop_decay=3,
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='orthogonal',
