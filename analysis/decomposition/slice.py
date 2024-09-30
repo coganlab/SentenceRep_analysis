@@ -53,7 +53,7 @@ if __name__ == '__main__':
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = False
+    grid = True
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -66,9 +66,9 @@ if __name__ == '__main__':
         procs = 1
         # torch.set_num_threads(6)
         threads = 1
-        min_ranks = [2]
+        min_ranks = [1]
         max_ranks = [8]
-        repeats = 1
+        repeats = 10
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
                                                     max_ranks = max_ranks,
@@ -80,17 +80,17 @@ if __name__ == '__main__':
                                                     seed=1,
                                                     # batch_prop=0.3,
                                                     # batch_prop_decay=3,
-                                                    min_std=1e-6,
-                                                    iter_std=100,
+                                                    # min_std=1e-4,
+                                                    # iter_std=10,
                                                     init_bias=0.01,
-                                                    # weight_decay=1e-6,
-                                                    initialization='orthogonal',
+                                                    weight_decay=1e-3,
+                                                    initialization='uniform-positive',
                                                     learning_rate=1e-2,
                                                     max_iter=10000,
                                                     positive=True,
                                                     verbose=0,
                                                     # batch_dim=0,
-                                                    loss_function=torch.nn.L1Loss(reduction='sum'),)
+                                                    loss_function=torch.nn.HuberLoss(reduction='sum'),)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
         # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -98,12 +98,11 @@ if __name__ == '__main__':
         # with np.load('../loss_grid.npz') as data:
         #     loss_grid = data['loss_grid']
         #     seed_grid = data['seed_grid']
-        x_ticks = np.arange(max_ranks[0])
-        x_data = np.repeat(x_ticks, repeats)
-        y_data = loss_grid[:].flatten()
-        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid[:]).T))
+        x_data = np.repeat(np.arange(max_ranks[0]), repeats)
+        y_data = loss_grid.flatten()
+        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid).T))
         ax.scatter(x_data, y_data, c='k')
-        plt.xticks(x_ticks, np.arange(x_ticks[-1]) + min_ranks[0])
+        plt.xticks(np.arange(max_ranks[0]), np.arange(max_ranks[0]) + min_ranks[0])
 
         n_components = (np.unravel_index(loss_grid.argmin(), loss_grid.shape) + np.array([1, 0]))[:-1]
         best_seed = seed_grid[np.unravel_index(loss_grid.argmin(), loss_grid.shape)]
@@ -119,24 +118,25 @@ if __name__ == '__main__':
                                        # (0, n_components[0], 0),
                                        seed=best_seed,
                                        positive=True,
-                                       min_std=1e-6,
-                                       iter_std=100,
+                                       # min_std=5e-5,
+                                       # iter_std=1000,
                                        learning_rate=1e-2,
                                        max_iter=10000,
                                        # batch_dim=0,
-                                       # batch_prop=0.25,
+                                       # batch_prop=0.33,
                                        # batch_prop_decay=3,
+                                       weight_decay=1e-3,
                                        mask=mask,
                                        init_bias=0.01,
-                                       initialization='orthogonal',
-                                       loss_function=torch.nn.L1Loss(reduction='sum'),
+                                       initialization='uniform-positive',
+                                       loss_function=torch.nn.HuberLoss(reduction='sum'),
                                        verbose=0
                                        )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
     # slicetca.invariance(model, L3 = None)
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
+    plt.plot(np.arange(50, len(model.losses)), model.losses[50:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
@@ -148,21 +148,22 @@ if __name__ == '__main__':
     T, W, H = model.get_components(numpy=True)[0]
     # %% plot the components
     colors = colors[:n_components[0]]
-    conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
+    conds = {'aud_ls': (-0.5, 1.5),
              'go_ls': (-0.5, 1.5),
              'resp': (-1, 1)}
-    fig, axs = plt.subplots(1, 4)
+    timings = {'aud_ls': range(0, 200),
+               'go_ls': range(400, 600),
+               'resp': range(600, 800)}
+    fig, axs = plt.subplots(1, 3)
 
     # make a plot for each condition in conds as a subgrid
     for j, (cond, times) in enumerate(conds.items()):
         ax = axs[j]
-        start = 200 * j
-        end = start + 200
         for i in range(n_components[0]):
             fig = plot_dist(
                 # H[i],
-                model.construct_single_component(0, i).detach().cpu().numpy()[:,
-                (W[i] / W.sum(0)) > 0.4, start:end].reshape(-1, 200),
+                model.construct_single_component(0, i).detach().cpu().numpy()[:, (W[i] / W.sum(0)) > 0.4][
+                    ..., timings[cond]].reshape(-1, 200),
                 ax=ax, color=colors[i], mode='std', times=times)
         if j == 0:
             ax.legend()
@@ -181,25 +182,32 @@ if __name__ == '__main__':
 
     # %% plot each component
     n = W.shape[0]
-    for cond, times in conds.items():
+    for cond, times in timings.items():
         fig, axs = plt.subplots(2, n)
-        timings = {'aud_ls': range(0, 200), 'aud_lm': range(200, 400),
-         'go_ls': range(400, 600), 'resp': range(600, 800)}
+
         data = neural_data_tensor.mean(0).detach().cpu().numpy()
         ylims = [0, 0]
         for i, ax in enumerate(axs[0]):
             component = model.construct_single_component(0, i).detach().numpy()
-            trimmed = data[(W[i] / W.sum(0)) > 0.4][:, timings[cond]]
+            trimmed = data[(W[i] / W.sum(0)) > 0.4][:, times]
             sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][::-1]
-            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='std', times=times)
+            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='std', times=conds[cond])
+            ax.set_xticks([])
             ylims[1] = max(ax.get_ylim()[1], ylims[1])
             ylims[0] = min(ax.get_ylim()[0], ylims[0])
 
-            axs[1, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno')
+            scale = np.mean(sorted_trimmed) + 2 * np.std(sorted_trimmed)
+            axs[1, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno', vmin=0, vmax=scale,
+                             extent=[conds[cond][0], conds[cond][-1], 0, len(sorted_trimmed)])
+
+            if i > 0:
+                axs[0, i].set_yticks([])
+                axs[1, i].set_yticks([])
 
         for ax in axs[0]:
             ax.set_ylim(ylims)
         fig.suptitle(cond)
+        fig.tight_layout()
 
     # # %% varimax rotation
     # # create a copy of the model
