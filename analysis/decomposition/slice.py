@@ -281,7 +281,8 @@ if __name__ == '__main__':
     max_epochs = 500
     results = {str(i): None for i in range(n_components[0])}
     target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
-
+    logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
+    logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
     decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
     for i, decoder in enumerate(decoders):
         xi = model.construct_single_component(0, i).detach().cpu().numpy()
@@ -293,7 +294,14 @@ if __name__ == '__main__':
         data_windowed.labels[1] = labels[1]
         # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
         # train the decoder briefly
-        out = Parallel(n_jobs=6, verbose=40)(delayed(process_data)(
-            d, 10, n_folds, val_size, target_map, max_epochs) for d in
+        out = Parallel(n_jobs=1, verbose=40)(delayed(process_data)(
+            d, 4, n_folds, val_size, target_map, max_epochs) for d in
                                              data_windowed)
         results[str(i)] = out
+
+    # %% plot the results
+    fig, ax = plt.subplots(1, 1)
+    for i, res in results.items():
+        plot = torch.stack(res).flatten(1).T
+        fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4), ax=ax)
+        fig.title.set_text("Decoding accuracy")
