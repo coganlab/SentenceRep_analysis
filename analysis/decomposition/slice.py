@@ -11,6 +11,10 @@ from ieeg.calc.fast import mixup
 from slicetca.invariance.iterative_invariance import within_invariance
 from lightning.pytorch import Trainer
 from analysis.decoding.models import SimpleDecoder
+from analysis.decoding.train import process_data
+from ieeg.calc.mat import LabeledArray
+from analysis.decoding import windower
+from joblib import Parallel, delayed
 import logging
 
 import sys; print('Python %s on %s' % (sys.version, sys.platform))
@@ -47,13 +51,13 @@ if __name__ == '__main__':
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     idx = sorted(list(sub.SM))
     aud_slice = slice(0, 175)
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'resp']
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
     neural_data_tensor, labels = dataloader(sub, idx, conds)
     mask = ~torch.isnan(neural_data_tensor)
     neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
 
     ## set up the model
-    grid = True
+    grid = False
     if grid:
         train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
                                                     train_blocks_dimensions=(1, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
@@ -153,7 +157,7 @@ if __name__ == '__main__':
              'resp': (-1, 1)}
     timings = {'aud_ls': range(0, 200),
                'go_ls': range(400, 600),
-               'resp': range(600, 800)}
+               'resp': range(800, 1000)}
     fig, axs = plt.subplots(1, 3)
 
     # make a plot for each condition in conds as a subgrid
@@ -217,18 +221,18 @@ if __name__ == '__main__':
     # target_labels = (x.split('-')[0] for x in labels[0])
     # targets = torch.tensor([target_map[x] for x in target_labels])
     # # targets = torch.tensor([[target_map[x] for x in target_labels]] * 800)
-    # # decoders = [SimpleDecoder(4, len(labels[2]), 1e-4) for _ in range(n_components[0])]
+    # decoders = [SimpleDecoder(4, len(labels[2]), 1e-4) for _ in range(n_components[0])]
     # logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
     # logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
     # def loss(x: list[torch.Tensor]):
     #     results = []
-    #     decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
+    #     # decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
     #     for decoder, xi in zip(decoders, x):
     #         # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
-    #         # decoder = decoders[i]
+    #         decoder = decoders[i]
     #         temp = xi.clone().detach()
     #         # train the decoder briefly
-    #         Trainer(max_epochs=400,
+    #         Trainer(max_epochs=1000,
     #                 devices=1,
     #                 accelerator=device,
     #                 barebones=True,
@@ -245,7 +249,7 @@ if __name__ == '__main__':
     #
     # # %% plot the components
     # colors = colors[:n_components[0]]
-    # conds = {'aud_ls': (-0.5, 1.5), 'aud_lm': (-0.5, 1.5),
+    # conds = {'aud_ls': (-0.5, 1.5),
     #          'go_ls': (-0.5, 1.5),
     #          'resp': (-1, 1)}
     # fig, axs = plt.subplots(1, 4)
@@ -259,7 +263,7 @@ if __name__ == '__main__':
     #         fig = plot_dist(
     #             # H[i],
     #             model.construct_single_component(0, i).detach().numpy()[:,
-    #             (W[i] / W.sum(0)) > 0.4, start:end].reshape(-1, 200),
+    #             (W[i] / W.sum(0)) > 0.3, start:end].reshape(-1, 200),
     #             ax=ax, color=colors[i], mode='std', times=times)
     #     if j == 0:
     #         ax.legend()
@@ -269,3 +273,27 @@ if __name__ == '__main__':
     #         ax.set_xlabel("Time(s)")
     #     ax.set_ylim(ylims)
     #     ax.set_title(cond)
+
+    # %% windowed decoding aud
+
+    n_folds = 5
+    val_size = 1/n_folds
+    max_epochs = 500
+    results = {str(i): None for i in range(n_components[0])}
+    target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
+
+    decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[0])]
+    for i, decoder in enumerate(decoders):
+        xi = model.construct_single_component(0, i).detach().cpu().numpy()
+        ls = xi[..., :200]
+        lm = xi[..., 200:400]
+        stacked = np.concatenate([ls, lm], axis=0).swapaxes(0, 1)
+        data_windowed = LabeledArray(windower(stacked, 20, 2).swapaxes(0, -1))
+        data_windowed.labels[2] = np.concatenate([labels[0], labels[0]])
+        data_windowed.labels[1] = labels[1]
+        # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
+        # train the decoder briefly
+        out = Parallel(n_jobs=6, verbose=40)(delayed(process_data)(
+            d, 10, n_folds, val_size, target_map, max_epochs) for d in
+                                             data_windowed)
+        results[str(i)] = out
