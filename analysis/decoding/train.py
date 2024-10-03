@@ -190,7 +190,7 @@ if __name__ == '__main__':
         # %% Train the model with kfold
         # instantiate the trainer
         n_folds = 5
-        max_epochs = 500
+        max_epochs = 1000
 
         callbacks = [
                      EarlyStopping(monitor='val_loss', patience=3, mode='min',min_delta=0.0001
@@ -211,17 +211,20 @@ if __name__ == '__main__':
         from analysis.decoding import windower
         from joblib import Parallel, delayed
 
-        data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))[::10]
+        data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))[::4]
         data_windowed.labels[1] = data.labels[0]
         data_windowed.labels[2] = data.labels[1]
 
-        data = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
-            d, 1, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
-        out[name] = [d.tolist() for d in data]
+        out[name] = Parallel(n_jobs=4, verbose=40)(delayed(process_data)(
+            d, 10, n_folds, val_size, target_map, max_epochs) for d in data_windowed)
+
 
     with open('decoding_results_aud.pkl', 'wb') as f:
         pickle.dump(out, f)
     # %% plot the results
-    plot = torch.stack(out).flatten(1).T
-    fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4), mode='std')
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1, 1)
+    for i, (name, idx) in enumerate(idxs.items()):
+        plot = torch.stack(out[name]).flatten(1).T
+        fig = plot_dist(plot.detach().numpy(), times=(-0.4, 1.4), mode='std', ax=ax, color=colors[i], label=name)
     fig.title.set_text("Decoding accuracy")
