@@ -1,17 +1,20 @@
 name: analysis
 channels:
-  - conda
+  - defaults
+  - pytorch-nightly
+  - nvidia
 dependencies:
   - python
   - pip
   - matplotlib
   - tqdm
-  - numpy<2.0
+  - numpy
   - pillow
-  - pytorch-nightly::pytorch
-  - pytorch-nightly::cpuonly
-  - lightning
+  - pytorch
+  - pytorch-cuda
+  - conda-forge::lightning
   - conda-forge::nimfa
   - pip:
-    - ..\..\IEEG_Pipelines\.
+    - -e ../../IEEG_Pipelines
+    - -e ../../slicetca
 
