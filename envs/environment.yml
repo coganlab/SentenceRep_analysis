@@ -1,15 +1,13 @@
 name: analysis
 channels:
-  - defaults
   - pytorch-nightly
   - nvidia
 dependencies:
   - python
   - pip
-  - matplotlib
-  - tqdm
   - numpy
-  - pillow
+  - torchvision
+  - torchaudio
   - pytorch
   - pytorch-cuda
   - conda-forge::lightning
