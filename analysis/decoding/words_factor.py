@@ -6,12 +6,12 @@ import os
 
 from analysis.grouping import GroupData
 from analysis.data import dataloader
-from analysis.utils.plotting import plot_horizontal_bars
 from ieeg.calc.stats import time_perm_cluster
-from analysis.decoding import (Decoder, get_scores, plot_all_scores, plot_dist_bound)
+from analysis.decoding import (Decoder, get_scores, plot_all_scores)
 import torch
+import matplotlib.pyplot as plt
 import slicetca
-from ieeg.calc.mat import LabeledArray
+from ieeg.viz.ensemble import plot_dist
 
 
 def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
@@ -97,8 +97,35 @@ if __name__ == '__main__':
                                        verbose=0
                                        )
 
-    W, H = model.get_components(numpy=True)[0]
+    colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
+    T, W, H = model.get_components(numpy=True)[0]
+    # %% plot the components
+    colors = colors[:n_components[0]]
+    conds = {'aud_ls': (-0.5, 1.5),
+             'go_ls': (-0.5, 1.5),
+             'resp': (-1, 1)}
+    timings = {'aud_ls': range(0, 200),
+               'go_ls': range(400, 600),
+               'resp': range(800, 1000)}
+    fig, axs = plt.subplots(1, 3)
 
+    # make a plot for each condition in conds as a subgrid
+    for j, (cond, times) in enumerate(conds.items()):
+        ax = axs[j]
+        for i in range(n_components[0]):
+            fig = plot_dist(
+                # H[i],
+                model.construct_single_component(0, i).detach().cpu().numpy()[:, (W[i] / W.sum(0)) > 0.4][
+                    ..., timings[cond]].reshape(-1, 200),
+                ax=ax, color=colors[i], mode='std', times=times)
+        if j == 0:
+            ax.legend()
+            ax.set_ylabel("Z-Score (V)")
+            ylims = ax.get_ylim()
+        elif j == 1:
+            ax.set_xlabel("Time(s)")
+        ax.set_ylim(ylims)
+        ax.set_title(cond)
     idxs = [torch.tensor(idx)[(W[i] / W.sum(0)) > 0.4].tolist() for i in range(5) ]
 
     # %% Time Sliding decoding for word tokens
