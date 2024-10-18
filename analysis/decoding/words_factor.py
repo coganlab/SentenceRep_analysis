@@ -5,6 +5,7 @@ import numpy as np
 import os
 
 from analysis.grouping import GroupData
+from analysis.data import dataloader
 from analysis.utils.plotting import plot_horizontal_bars
 from ieeg.calc.stats import time_perm_cluster
 from analysis.decoding import (Decoder, get_scores, plot_all_scores, plot_dist_bound)
@@ -58,64 +59,53 @@ def score2(categories, test_size, method, n_splits, n_repeats, sub, idxs,
 
 if __name__ == '__main__':
 
-    # %% Imports
-    box = os.path.expanduser(os.path.join("~","Box"))
-    fpath = os.path.join(box, "CoganLab")
-    subjects_dir = os.path.join(box, "ECoG_Recon")
-    sub = GroupData.from_intermediates(
-        "SentenceRep", fpath, folder='stats', subjects_dir=subjects_dir)
-    all_data = []
-    colors = ['b', 'r', 'g', 'y', 'k', 'c', 'm']
-    scores = {'Sensory-Motor': None}
-    scores2 = {'Sensory-Motor': None}
-    idxs = [sub.SM]
-    idxs = [list(idx) for idx in idxs]
-    names = list(scores.keys())
-    conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+    fpath = os.path.expanduser("~/Box/CoganLab")
+    sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
+    idx = sorted(list(sub.SM))
+    aud_slice = slice(0, 175)
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
+    neural_data_tensor, labels = dataloader(sub, idx, conds)
+    mask = ~torch.isnan(neural_data_tensor)
+    neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
+
+    n_components = (5,)
+    best_seed = 123457
     window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
                     'average_repetitions': False}
+    scores = {'Sensory-Motor': None}
 
-    # %%
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
-    zscore = np.nanmean(sub['zscore'].array, axis=(-4, -2))
-    aud_slice = slice(0, 175)
-    trainz = np.hstack([zscore['aud_ls', :, aud_slice],
-                        zscore['aud_lm',:, aud_slice],
-                        zscore['go_ls'],
-                        zscore['resp']])
-    data = trainz[idxs[0]]
-    neural_data_tensor = torch.from_numpy(data
-                                          / np.nanstd(data)
-                                          ).to(device)
+    # #
+    # %% decompose the optimal model
 
-    losses, model = slicetca.decompose(
-        neural_data_tensor,
-        [5],
-        seed=123456,
-        positive=True,
-        min_std=10 ** -6,
-        learning_rate=5 * 10 ** -4,
-        max_iter=10 ** 4,
-        batch_prop=0.2,
-        batch_prop_decay=5,
-        initialization='uniform-positive',
-        init_bias=0.001,
-        loss_function=torch.nn.HuberLoss(reduction='none'))
+    losses, model = slicetca.decompose(neural_data_tensor,
+                                       n_components,
+                                       # (0, n_components[0], 0),
+                                       seed=best_seed,
+                                       positive=True,
+                                       # min_std=5e-5,
+                                       # iter_std=1000,
+                                       learning_rate=1e-2,
+                                       max_iter=10000,
+                                       # batch_dim=0,
+                                       # batch_prop=0.33,
+                                       # batch_prop_decay=3,
+                                       weight_decay=1e-3,
+                                       mask=mask,
+                                       init_bias=0.01,
+                                       initialization='uniform-positive',
+                                       loss_function=torch.nn.HuberLoss(reduction='sum'),
+                                       verbose=0
+                                       )
 
     W, H = model.get_components(numpy=True)[0]
-    sm_labels = zscore[:, idxs[0]].labels[1]
-    W = LabeledArray(W, [np.arange(W.shape[0]), sm_labels])
 
-    idxs = [[(sub.array.labels[3] == s).nonzero()[0][0] for s in W.labels[1][np.argmax(W,0) == i]] for i in range(5) ]
+    idxs = [torch.tensor(idx)[(W[i] / W.sum(0)) > 0.4].tolist() for i in range(5) ]
 
     # %% Time Sliding decoding for word tokens
 
-    scores = score1({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, conds,
-                               W, window_kwargs, scores, shuffle=False)
+    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
+                                window_kwargs, scores, shuffle=False)
     dict_to_structured_array(scores, 'true_scores.npy')
-
-    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, idxs, conds,
-                                window_kwargs, scores2, shuffle=False)
 
     # %% Plotting
     data_dir = ''

@@ -1,13 +1,12 @@
 import torch
 from analysis.grouping import GroupData
+from analysis.data import dataloader
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
-from functools import reduce
-from ieeg.calc.fast import mixup
 from slicetca.invariance.iterative_invariance import within_invariance
 from lightning.pytorch import Trainer
 from analysis.decoding.models import SimpleDecoder
@@ -24,24 +23,6 @@ sys.path.extend(['C:\\Users\\Jakda\\git'])
 fpath = os.path.expanduser("~/Box/CoganLab")
 # # Create a gridspec instance with 3 rows and 3 columns
 #
-
-
-def dataloader(sub, idx, conds, metric='zscore', do_mixup=False, no_nan=False):
-    reduced = sub[:, :, :, idx][:, conds,]
-    reduced.array = reduced.array.dropna()
-    if no_nan:
-        reduced.nan_common_denom(True, 10, True)
-    std = np.nanstd(reduced.array[metric].__array__())
-    if do_mixup:
-        mixup(reduced.array[metric], 3)
-    combined = reduce(lambda x, y: x.concatenate(y, -1),
-                      [reduced.array[metric, c] for c in conds])
-    data = combined.combine((0, 2)).swapaxes(0, 1)
-    neural_data_tensor = torch.from_numpy(
-        (data.__array__() / std))
-    return neural_data_tensor, data.labels
-
-
 
 # %% Load the data
 
@@ -69,13 +50,13 @@ if __name__ == '__main__':
     threads = 2
     min_ranks = [1]
     max_ranks = [8]
-    repeats = 4
+    repeats = 2
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks = min_ranks,
                                                 max_ranks = max_ranks,
                                                 sample_size=repeats,
-                                                mask_train=train_mask,
-                                                mask_test=test_mask,
+                                                mask_train=mask,
+                                                mask_test=None,
                                                 processes_grid=procs,
                                                 processes_sample=threads,
                                                 seed=1,
@@ -85,7 +66,7 @@ if __name__ == '__main__':
                                                 # iter_std=10,
                                                 init_bias=0.01,
                                                 # weight_decay=1e-3,
-                                                initialization='uniform-positive',
+                                                initialization='orthogonal',
                                                 learning_rate=1e-2,
                                                 max_iter=10000,
                                                 positive=True,
