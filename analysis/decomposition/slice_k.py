@@ -7,17 +7,7 @@ import matplotlib.pyplot as plt
 import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
-from slicetca.invariance.iterative_invariance import within_invariance
-from lightning.pytorch import Trainer
-from analysis.decoding.models import SimpleDecoder
-from analysis.decoding.train import process_data
-from ieeg.calc.mat import LabeledArray
-from analysis.decoding import windower
-from joblib import Parallel, delayed
-import logging
 
-import sys; print('Python %s on %s' % (sys.version, sys.platform))
-sys.path.extend(['C:\\Users\\Jakda\\git'])
 
 # ## set up the figure
 fpath = os.path.expanduser("~/Box/CoganLab")
@@ -45,12 +35,13 @@ if __name__ == '__main__':
     test_mask = torch.logical_and(test_mask, mask)
     train_mask = torch.logical_and(train_mask, mask)
 
-    procs = 2
+    procs = 1
     # torch.set_num_threads(6)
-    threads = 2
+    threads = 1
     min_ranks = [1]
-    max_ranks = [8]
-    repeats = 2
+    max_ranks = [10]
+    repeats = 10
+    os.environ["USE_LIBUV"] = "0"
     loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                 min_ranks = min_ranks,
                                                 max_ranks = max_ranks,
@@ -59,9 +50,9 @@ if __name__ == '__main__':
                                                 mask_test=None,
                                                 processes_grid=procs,
                                                 processes_sample=threads,
-                                                seed=1,
-                                                # batch_prop=0.33,
-                                                # batch_prop_decay=3,
+                                                seed=3,
+                                                batch_prop=0.2,
+                                                batch_prop_decay=3,
                                                 # min_std=1e-4,
                                                 # iter_std=10,
                                                 init_bias=0.01,
@@ -89,3 +80,6 @@ if __name__ == '__main__':
     import pickle
     with open('results_grid.pkl', 'wb') as f:
         pickle.dump({'loss': loss_grid.tolist(), 'seed': seed_grid.tolist()}, f)
+
+    n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
+    best_seed = seed_grid[n_components - 1, np.argmin(loss_grid[n_components - 1])]
