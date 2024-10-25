@@ -3,7 +3,13 @@ from ieeg import Signal
 import pandas as pd
 import dataclasses
 import itertools
-
+from ieeg.viz.ensemble import chan_grid
+from ieeg.timefreq.multitaper import spectrogram
+from ieeg.calc.scaling import rescale
+from ieeg.timefreq.utils import crop_pad
+from ieeg.navigate import channel_outlier_marker, trial_ieeg, outliers_to_nan, crop_empty_data
+from ieeg.viz.parula import parula_map
+import numpy as np
 
 @dataclasses.dataclass(frozen=True, order=True, slots=True)
 class Event:
@@ -69,12 +75,12 @@ class Trial:
         """Validates the identity of each event based on the description."""
         events = [('start', ['Listen', ':=:'], "Start event"),
                   ('stim', ['Audio'], "Stim event"),
-                  ('go', ['GoCue'], "Go event"),
+                  ('go', ['Speak'], "Go event"),
                   ('response', ['Response'], "Response event")]
 
         for event_name, valid_descriptions, error_message in events:
             event = getattr(self, event_name)
-            if event_name != 'response' or event is not None:
+            if event is not None:
                 description = event.description.replace("bad ", "").split("/")
                 if not any(i in description for i in valid_descriptions):
                     raise ValueError(f"{error_message} {event} is not a "
@@ -135,7 +141,7 @@ class Trial:
         elif 'Listen' in self.start.description:
             if 'Mime' in self.go.description:
                 return "LM"
-            elif 'Speak' in self.go.description:
+            elif 'Speak' in self.go.description: #when applied to phoneme seq, this should make all Trial.condition = "LS"
                 return "LS"
             else:
                 raise ValueError("Condition could not be determined")
@@ -169,7 +175,7 @@ class Trial:
                 starts.append(event)
             elif 'Audio' in event.description:
                 stims.append(event)
-            elif 'GoCue' in event.description:
+            elif 'Speak' in event.description:
                 gos.append(event)
             elif 'Response' in event.description:
                 responses.append(event)
@@ -293,48 +299,86 @@ if __name__ == "__main__":
 
     HOME = os.path.expanduser("~")
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    layout = get_data("SentenceRep", root=LAB_root)
+    layout = get_data("Phoneme_sequencing", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) != 30:
+        if subj != subjects[15]:
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
         filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
-                               extension='.edf', desc='clean', preload=False)
-        try:
-            # raise ValueError("This is a test")
-            fixed = fix(raw.copy())
-            fixed.annotations._orig_time = filt.annotations.orig_time
-            filt.set_annotations(fixed.annotations)
-            _, ids = mne.events_from_annotations(filt, regexp='.*')
+                               extension='.edf', desc='clean', preload=True)
 
-            files = layout.derivatives['clean'].get(subject=subj, suffix='events',
-                                    extension='.tsv', desc='clean')
+        #fixed = fix(raw.copy())
+        # fixed.annotations._orig_time = fixed.annotations.orig_time
+        # fixed.set_annotations(fixed.annotations)
+        _, ids = mne.events_from_annotations(raw, regexp='.*')
 
-            i = 0
-            data = []
-            offset = 0
-            for f in files:
-                events = f.get_df()
-                for j, event in events.iterrows():
-                    if 'boundary' in event['trial_type']:
-                        if event['trial_type'] == 'BAD boundary':
-                            continue
-                        offset = filt.annotations.onset[i] - event['onset']
-                        i += 1
-                        continue
-                    diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
-                    if diff > 0.15:
-                        raise ValueError(
-                            f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
-                    events.loc[j, 'trial_type'] = filt.annotations.description[i]
-                    events.loc[j, 'value'] = ids[filt.annotations.description[i]]
-                    i += 1
-                data.append(events)
-            for f, events in zip(files, data):
-                events.to_csv(f.path, sep='\t', index=False)
-        except Exception as e:
-            print(f"Skipping {subj} due to {e}")
-            raise e
+        ## Crop raw data to minimize processing time
+        good = crop_empty_data(raw, ).copy()
+
+        good.info['bads'] = channel_outlier_marker(good, 3, 2)
+        good.drop_channels(good.info['bads'])
+        good.load_data()
+
+
+        # CAR
+        # ch_type = good.get_channel_types(only_data_chs=True)[0]
+        # good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
+        #
+        # freq = np.arange(10, 200., 6.)
+        # base = trial_ieeg(good, 'Listen', (-1, 0.5), preload=True)
+        # outliers_to_nan(base, outliers=10)
+        # trials = trial_ieeg(good, 'Response', (-1.2, 1.2), preload=True)
+        # outliers_to_nan(trials, outliers=10)
+        #
+        # kwargs = dict(average=False, n_jobs=20, freqs=freq, return_itc=False,
+        #               n_cycles=freq / 2, time_bandwidth=10,
+        #               # n_fft=int(trials.info['sfreq'] * 2.75),
+        #               decim=20, )
+        #
+        # spectra = trials.compute_tfr(method="multitaper", **kwargs)
+        # base_spectra = base.compute_tfr(method="multitaper", **kwargs)
+        # del trials
+        # base = base_spectra.crop(-0.5, 0).average(lambda x: np.nanmean(x, axis=0), copy=True)
+        #
+        # spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+        # rescale(spectra._data, base._data, mode='ratio', axis=-1)
+        # crop_pad(spectra, "0.5s")
+        # chan_grid(spectra, vlim=(0.7, 1.4), cmap=parula_map)
+
+
+        # wrapper that doesn't work
+        # spectra = spectrogram(raw, freq, 'Response', -1.2, 1.2, 'Listen', -0.5, 0.,
+        #                       n_jobs=-2, verbose=40, time_bandwidth=10, n_cycles=freq / 2)
+
+        ## OLD CODE to check potential annotation issues, now no longer used as bad boundary checked in class method
+        # files = layout.derivatives['clean'].get(subject=subj, suffix='events',
+        #                         extension='.tsv', desc='clean')
+        #     raise ValueError("This is a test")
+        #     i = 0
+        #     data = []
+        #     offset = 0
+        #     for f in files: # this gets all runs for the subject
+        #     events = f.get_df() # this gets df of onset, duration, trial_type, value?, and sample
+        #         for j, event in events.iterrows():
+        #             if 'boundary' in event['trial_type']:
+        #                 if event['trial_type'] == 'BAD boundary':
+        #                     continue
+        #                 offset = filt.annotations.onset[i] - event['onset']
+        #                 i += 1
+        #                 continue
+        #             diff = abs(event['onset'] - filt.annotations.onset[i] + offset)
+        #             if diff > 0.15:
+        #                 raise ValueError(
+        #                     f"{filt.annotations[i]} is not aligned with {event}, diff={diff}")
+        #             events.loc[j, 'trial_type'] = filt.annotations.description[i]
+        #             events.loc[j, 'value'] = ids[filt.annotations.description[i]]
+        #             i += 1
+        #         data.append(events)
+        #     for f, events in zip(files, data):
+        #         events.to_csv(f.path, sep='\t', index=False)
+        # except Exception as e:
+        #     print(f"Skipping {subj} due to {e}")
+        #     raise e

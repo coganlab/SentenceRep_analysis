@@ -1,4 +1,4 @@
-name: analysis2
+name: analysis
 dependencies:
   - python
   - pip

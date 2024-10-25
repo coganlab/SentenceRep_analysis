@@ -71,7 +71,7 @@ for sub in subjects:
             # base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
             base = spectra.copy().crop(-0.5, 0)
 
-        # spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+        # spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True) # average over trials with outliers removed, which is marked as NAN
         rescale(spectra._data, base._data, mode='ratio', axis=-1)
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         spectra.info['subject_info']['files'] = tuple(fnames)

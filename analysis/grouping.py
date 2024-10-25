@@ -2,7 +2,7 @@ import os
 import mne
 import numpy as np
 import sys
-sys.path.extend(['/Users/yuchaowang/Documents/git/SentenceRep_analysis'])
+
 from ieeg import PathLike, Doubles
 from ieeg.io import get_data
 from ieeg.viz.mri import plot_on_average
@@ -573,7 +573,7 @@ def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None, atlas: st
 
 if __name__ == "__main__":
     from scipy import stats as st
-    fpath = os.path.expanduser("~/Library/CloudStorage/Box-Box/CoganLab")
+    fpath = os.path.expanduser("~\\Box\\CoganLab")
     sub = GroupData.from_intermediates("SentenceRep", fpath,
                                            folder='stats')
     conds = {"resp": (-1, 1),
