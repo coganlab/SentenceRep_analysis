@@ -20,13 +20,15 @@ if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     groups = ['AUD', 'SM', 'PROD']
+    torch.set_float32_matmul_precision('medium')
     for group in groups:
         idx = sorted(list(set(getattr(sub, group))))
         aud_slice = slice(0, 175)
         conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
         neural_data_tensor, labels = dataloader(sub, idx, conds)
         mask = ~torch.isnan(neural_data_tensor)
-        neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
+        neural_data_tensor, _ = dataloader(sub, idx, conds, do_mixup=True)
+        neural_data_tensor = neural_data_tensor.to(torch.float32)
 
         ## set up the model
 
@@ -43,7 +45,7 @@ if __name__ == '__main__':
         min_ranks = [0, 1, 0]
         max_ranks = [0, 8, 0]
         repeats = 4
-        os.environ["USE_LIBUV"] = "0"
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = min_ranks,
                                                     max_ranks = max_ranks,
@@ -66,6 +68,7 @@ if __name__ == '__main__':
                                                     verbose=0,
                                                     # batch_dim=0,
                                                     loss_function=torch.nn.HuberLoss(reduction='mean'),)
+                                                    # compile=True)
         # np.savez('../loss_grid.npz', loss_grid=loss_grid, seed_grid=seed_grid,
         #          idx=idx)
         # slicetca.plot_grid(loss_grid, min_ranks=(0, 1, 0))
@@ -74,13 +77,15 @@ if __name__ == '__main__':
         #     loss_grid = data['loss_grid']
         #     seed_grid = data['seed_grid']
         try:
-            x_data = np.repeat(np.arange(max_ranks[0]), repeats)
+            max_r = max(max_ranks)
+            min_r = min(min_ranks)
+            x_data = np.repeat(np.arange(max_r), repeats)
             y_data = loss_grid.flatten()
             ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid).T))
             ax.scatter(x_data, y_data, c='k')
-            plt.xticks(np.arange(max_ranks[0]), np.arange(max_ranks[0]) + min_ranks[0])
+            plt.xticks(np.arange(max_r), np.arange(max_r) + min_r)
             plt.title(f"Loss for {group}")
-            plt.savefig(f"results_grid_{group}.png")
+            plt.savefig(f"loss_dist_{group}.png")
         except:
             pass
 
