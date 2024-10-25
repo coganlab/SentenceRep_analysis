@@ -10,18 +10,22 @@ from ieeg.viz.ensemble import plot_dist
 from itertools import product
 
 
-# ## set up the figure
-fpath = os.path.expanduser("~/Box/CoganLab")
+# ## set up the task
+if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+    LAB_root = os.path.join("~", "workspace", "CoganLab")
+    n = int(os.environ['SLURM_ARRAY_TASK_ID'])
+else:  # if not then set box directory
+    LAB_root = os.path.join("~", "Box", "CoganLab")
+    n = 1
+
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
-# # Create a gridspec instance with 3 rows and 3 columns
-#
 
 # %% Load the data
 
 if __name__ == '__main__':
     freeze_support()
-    sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
+    sub = GroupData.from_intermediates("SentenceRep", LAB_root, folder='stats')
     param_grid = {'ranks': [{'min': [0, 1, 0], 'max': [0, 8, 0]},
                             {'min': [1], 'max': [8]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
@@ -36,6 +40,9 @@ if __name__ == '__main__':
 
     for ranks, group, is_mask in product(
             param_grid['ranks'], param_grid['groups'], param_grid['masks']):
+        if n > 1:
+            n -= 1
+            continue
         idx = sorted(list(set(getattr(sub, group))))
         neural_data_tensor, labels = dataloader(sub, idx, conds)
         mask = ~torch.isnan(neural_data_tensor)
@@ -94,6 +101,9 @@ if __name__ == '__main__':
         plt.savefig(f"loss_dist_{file_id}.png")
         with open(f"results_grid_{file_id}.pkl", 'wb') as f:
             pickle.dump({'loss': loss_grid.tolist(), 'seed': seed_grid.tolist()}, f)
+
+        if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+            break
 
         # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
         # best_seed = seed_grid[n_components - 1, np.argmin(loss_grid[n_components - 1])]
