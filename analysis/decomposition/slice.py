@@ -66,7 +66,7 @@ if __name__ == '__main__':
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.L1Loss(reduction='none'),
+                                       loss_function=torch.nn.HuberLoss(reduction='mean'),
                                        verbose=0
                                        )
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
