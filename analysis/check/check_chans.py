@@ -47,8 +47,9 @@ for subj in subjects:
         if not os.path.exists(fig_path):
             os.makedirs(fig_path)
         for i, f in enumerate(figs):
-            f.savefig(os.path.join(fig_path, f'{subj}_{cond}_{i + 1}.jpg'), bbox_inches='tight')
-            plt.close(f)
+            f.show()
+            # f.savefig(os.path.join(fig_path, f'{subj}_{cond}_{i + 1}.jpg'), bbox_inches='tight')
+            # plt.close(f)
 
         ## save bad channels
         # update(spec, layout, "muscle")

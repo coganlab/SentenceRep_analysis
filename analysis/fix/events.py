@@ -303,7 +303,7 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if subj != subjects[15]:
+        if subj != subjects[5]:
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
