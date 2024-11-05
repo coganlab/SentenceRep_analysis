@@ -10,20 +10,22 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
 layout = get_data("Phoneme_sequencing", root=LAB_root)
 subjects = layout.get(return_type="id", target="subject")
+matdir = os.path.join(LAB_root, 'D_Data', 'Phoneme_Sequencing')
+matfname = 'muscleChannelWavelet.mat'
 
 # %% Inspect raw/clean timeseries
 from ieeg.navigate import channel_outlier_marker, crop_empty_data
 import mne
+import matplotlib.pyplot as plt
+plt.switch_backend('Qt5Agg')
 
 for subj in subjects:
-    if subj != subjects[15]:
+    if int(subj[1:]) != 61:
         continue
     raw = raw_from_layout(layout, subject=subj, extension=".edf",
                           desc=None, preload=True)
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
-                           extension='.edf', desc='clean', preload=False)
-
-    _, ids = mne.events_from_annotations(raw, regexp='.*')
+                           extension='.edf', desc='clean', preload=True)
 
     ## Crop raw data to minimize processing time
     good = crop_empty_data(raw, ).copy()
@@ -62,26 +64,25 @@ from ieeg.io import get_data, raw_from_layout, save_derivative
 from ieeg.navigate import crop_empty_data
 
 for subj in subjects:
-    if (int(subj[1:]) <61):
-            #[19,22,23,25,31,35]): 59 unable to save
-        continue # skip D31 for now because no event file for run1
+    if (int(subj[1:]) in [19,22,23,25,31,35]):
+        continue
     else:
         raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None, preload=True)
-        raw = crop_empty_data(raw, ) # crops until 10s empty space to save memory
+        #DO NOT CROP before line_filter as additional run time is helpful for the line noise estimation
         line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
                 filter_length='700ms', freqs=[60], notch_widths=20)
-        line_filter(raw, mt_bandwidth=10., n_jobs=12, copy=False, verbose=10,
-                    filter_length='20s', freqs=[60, 120, 180, 240],
-                    notch_widths=20)
+        # line_filter(raw, mt_bandwidth=10., n_jobs=12, copy=False, verbose=10,
+        #             filter_length='20s', freqs=[60, 120, 180, 240],
+        #             notch_widths=20)
 
     try:
         fixed = fix(raw)
-        # fixed.drop_channels('Trigger')
         del raw
+        fixed = crop_empty_data(fixed)
+        # fixed.drop_channels('Trigger')
         save_derivative(fixed, layout, "clean", True)
     except Exception as e:
         print(f"Error in {subj}: {e}")
-        # fixed = raw
 
 
 
@@ -90,10 +91,11 @@ from ieeg.navigate import trial_ieeg, outliers_to_nan, crop_empty_data
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
 import matplotlib.pyplot as plt
+from analysis.check.chan_utils import get_muscle_chans
 from ieeg.timefreq import gamma
 
 for subj in subjects:
-    if (int(subj[1:]) != 29):
+    if (int(subj[1:]) != 61):
             #in [19, 22, 23, 25, 31]):
         continue
     else:
@@ -101,10 +103,9 @@ for subj in subjects:
                                extension=".edf", desc='clean', preload=False)
         if "Trigger" in filt.ch_names:
             filt.drop_channels(["Trigger"])
-        ## Crop raw data to minimize processing time
-        filt = crop_empty_data(filt, )
         # Exclude bad channels
-        good = filt.copy().drop_channels(filt.info['bads'])
+        good = filt.drop_channels(filt.info['bads'])
+        good = good.drop_channels(get_muscle_chans(matdir, matfname, subj))
         good.load_data()
         # CAR
         ch_type = good.get_channel_types(only_data_chs=True)[0]
