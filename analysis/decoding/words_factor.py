@@ -98,7 +98,7 @@ if __name__ == '__main__':
     #                                    loss_function=torch.nn.HuberLoss(reduction='sum'),
     #                                    verbose=0
     #                                    )
-    model = torch.load('model.pt')
+    model = torch.load('model1.pt')
 
     T, W, H = model.get_components(numpy=True)[0]
     # %% plot the components
@@ -131,7 +131,7 @@ if __name__ == '__main__':
 
     # %% Time Sliding decoding for word tokens
     decode_conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, decode_conds,
+    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.9, 'lda', 5, 10, sub, idxs, decode_conds,
                                 window_kwargs, scores, shuffle=False)
     dict_to_structured_array(scores, 'true_scores.npy')
 
@@ -155,17 +155,17 @@ if __name__ == '__main__':
         # remove legend
         ax.legend().remove()
 
-    # %% Time Sliding decoding significance
-
-    shuffle_score = np.load(data_dir + 'shuffle_score_short.npy', allow_pickle=True)[0]
-    shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
-    signif = {}
-    for cond, score in scores.items():
-        true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
-        shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
-        signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
-
-
+    # # %% Time Sliding decoding significance
+    #
+    # shuffle_score = np.load(data_dir + 'shuffle_score_short.npy', allow_pickle=True)[0]
+    # shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
+    # signif = {}
+    # for cond, score in scores.items():
+    #     true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
+    #     shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
+    #     signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+    #
+    #
     # # %% Plot significance
     # for cond, ax in zip(conds, axs):
     #     bars = []

@@ -7,14 +7,6 @@ import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
 from analysis.data import dataloader
-from slicetca.invariance.iterative_invariance import within_invariance
-from lightning.pytorch import Trainer
-from analysis.decoding.models import SimpleDecoder
-from analysis.decoding.train import process_data
-from ieeg.calc.mat import LabeledArray
-from analysis.decoding import windower
-from joblib import Parallel, delayed
-import logging
 import pickle
 
 import sys; print('Python %s on %s' % (sys.version, sys.platform))
@@ -40,35 +32,40 @@ if __name__ == '__main__':
     neural_data_tensor, _ = dataloader(sub, sm_idx, conds, do_mixup=True)
     neural_data_tensor = neural_data_tensor.to(torch.float32)
     torch.set_float32_matmul_precision('medium')
-    # with open('results_grid_SM.pkl', 'rb') as f:
-    #     results = pickle.load(f)
-    # loss_grid = results['loss']
-    # seed_grid = results['seed']
-    n_components = (5,)
+    with open(r'C:\Users\ae166\Downloads\results2\results_grid_SM_3ranks_HuberLoss_0.001_1.0.pkl', 'rb') as f:
+        results = pickle.load(f)
+    loss_grid = np.array(results['loss']).squeeze()
+    seed_grid = np.array(results['seed']).squeeze()
+    n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
+    n_components = 5
+    best_seed = seed_grid[n_components - 1, np.argmin(loss_grid[n_components - 1])]
+    n_components = (0, 5, 0)
+
     n = np.argmax(n_components)
-    best_seed = 123456
+    # best_seed = 123458
     # #
     # %% decompose the optimal model
-
+    # neural_data_tensor.to('cuda')
     losses, model = slicetca.decompose(neural_data_tensor,
                                        n_components,
-                                       # (0, n_components[0], 0),
+                                       # (0, n_components, 0),
                                        seed=best_seed,
                                        positive=True,
                                        # min_std=5e-5,
                                        # iter_std=1000,
-                                       learning_rate=1e-2,
-                                       max_iter=10000,
+                                       learning_rate=5e-5,
+                                       max_iter=1000000,
                                        # batch_dim=0,
-                                       batch_prop=0.33,
-                                       # batch_prop_decay=1,
-                                       # weight_decay=5e-4,
+                                       # batch_prop=0.33,
+                                       # batch_prop_decay=5,
+                                       weight_decay=1e-5,
                                        mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.HuberLoss(reduction='mean'),
+                                       loss_function=torch.nn.HuberLoss(reduction='none'),
                                        verbose=0
                                        )
+    # model = torch.load('model1.pt')
     # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
     # slicetca.invariance(model, L3 = None)
     # %% plot the losses
@@ -82,7 +79,7 @@ if __name__ == '__main__':
     axes = slicetca.plot(model,
                          variables=('trial', 'neuron', 'time'),)
     colors = ['orange', 'y', 'k', 'c', 'm']
-    T, W, H = model.get_components(numpy=True)[n]
+    W, H = model.get_components(numpy=True)[n]
     # %% plot the components
     colors = colors[:n_components[n]]
     conds = {'aud_ls': (-0.5, 1.5),
@@ -101,7 +98,7 @@ if __name__ == '__main__':
                 # H[i],
                 model.construct_single_component(n, i).detach().cpu().numpy()[:, (W[i] / W.sum(0)) > 0.4][
                     ..., timings[cond]].reshape(-1, 200),
-                ax=ax, color=colors[i], mode='std', times=times, label=f"Component {colors[i]}")
+                ax=ax, color=colors[i], mode='sem', times=times, label=f"Component {colors[i]}")
         if j == 0:
             ax.legend()
             ax.set_ylabel("Z-Score (V)")
@@ -128,7 +125,7 @@ if __name__ == '__main__':
             component = model.construct_single_component(n, i).detach().cpu().numpy()
             trimmed = data[(W[i] / W.sum(0)) > 0.4][:, times]
             sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][::-1]
-            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='std', times=conds[cond])
+            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='sem', times=conds[cond])
             ax.set_xticks([])
             ylims[1] = max(ax.get_ylim()[1], ylims[1])
             ylims[0] = min(ax.get_ylim()[0], ylims[0])
@@ -149,14 +146,17 @@ if __name__ == '__main__':
     # %% plot the region membership
     from ieeg.viz.mri import gen_labels, subject_to_info, BN_2_roi
 
-    colors = ['WM', 'Late Prod', 'Instructional', 'Feedback', 'Early Prod']
-    rois = ['mtg', 'astg', 'pstg', 'heschl', 'sts', 'itg', 'ipc', 'angular', 'supramarginal', 'ifg', 'opercular',
-            'triangular', 'ifs', 'ifj', 'mfg', 'insula', 'sma', 'smc', 'spl', 'pcl', 'occ', 'hipp', 'bg', 'sfg']
-    groups = {r: [] for r in rois}
-    fig, axs = plt.subplots(1, n_comp)
-    idxs = [torch.tensor(sm_idx)[(W[i] / W.sum(0)) > 0.5].tolist() for i in range(n_comp)]
+    colors = ['Late Prod', 'WM', 'Feedback', 'Instructional', 'Early Prod']
+    rois = ['mtg', 'stg', 'heschl', 'sts', 'itg', 'ipc', 'angular', 'supramarginal', 'ifg', 'opercular',
+            'triangular', 'ifs',  'mfg', 'insula', 'sma', 'smc', 'spl', 'pcl', 'occ', 'hipp', 'bg', 'sfg']
+    fig, axs = plt.subplots(n_comp, 1)
+    idxs = [torch.tensor(sm_idx)[
+                (W[i] / W.sum(0)) > 0.4
+            # W.argmax(0) == i
+            ].tolist() for i in range(n_comp)]
     ylims = [0, 0]
     for c, ax, idx in zip(colors, axs, idxs):
+        groups = {r: [] for r in rois}
         sm_elecs = sub.array[:, :, :, idx].labels[3]
         for subj in sub.subjects:
             subj_old = f"D{int(subj[1:])}"
@@ -172,17 +172,35 @@ if __name__ == '__main__':
         # plot the histogram, with
         ax.bar(groups_num.keys(), groups_num.values())
         # make x axis labels sideways
-        plt.setp(ax.get_xticklabels(), rotation=90, ha='left')
-        ax.set_title(f"Component {c}")
+        plt.sca(ax)
+        if ax is axs[-1]:
+            plt.xticks(rotation=45)
+        else:
+            plt.xticks([])
+        ax.set_ylabel(f"{c}")
         ylim = ax.get_ylim()
         ylims[1] = max(ylim[1], ylims[1])
         ylims[0] = min(ylim[0], ylims[0])
     for ax in axs:
         ax.set_ylim(ylims)
+
+    # check every bar plot and remove roi names that are not present in the any data
+    bars = [[] for _ in range(n_comp)]
+    for ax in axs:
+        for roi, bar in zip(rois, ax.patches):
+            if bar.get_height() > 0:
+                bars.append(bar)
+    for i, bar in enumerate(bars):
+        roi = rois[i]
+        if not any(roi in bar for bar in bars):
+            for ax in axs:
+                ax.patches.remove(bar)
+
+
     plt.tight_layout()
 
     # %% save the model
-    torch.save(model, 'model.pt')
+    torch.save(model, 'model1.pt')
 
     # # %% varimax rotation
     # # create a copy of the model
@@ -245,42 +263,42 @@ if __name__ == '__main__':
     #     ax.set_ylim(ylims)
     #     ax.set_title(cond)
 
-    # %% windowed decoding aud
-
-    n_folds = 5
-    val_size = 1/n_folds
-    max_epochs = 5000
-    results = {str(i): None for i in range(n_components[n])}
-    target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
-    logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
-    logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
-    decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[n])]
-    for i, decoder in enumerate(decoders):
-        # xi = model.construct_single_component(0, i).detach().cpu().numpy().swapaxes(0, 1)
-        xi = neural_data_tensor.clone().detach().cpu().numpy().swapaxes(0, 1)
-        trimmed = xi[(W[i] / W.sum(0)) > 0.4]
-        sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][
-                         ::-1]
-        ls = sorted_trimmed[..., :200]
-        lm = sorted_trimmed[..., 200:400]
-        stacked = np.concatenate([ls, lm], axis=1)
-        data_windowed = LabeledArray(windower(stacked, 20, 2).swapaxes(0, -1))[::5]
-        data_windowed.labels[2] = np.concatenate([labels[0], labels[0]])
-        data_windowed.labels[1] = labels[1]
-        # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
-        # train the decoder briefly
-        out = Parallel(n_jobs=-2, verbose=40)(delayed(process_data)(
-            d, 5, n_folds, val_size, target_map, max_epochs) for d in
-                                             data_windowed)
-        results[str(i)] = [o.tolist() for o in out]
-
-    # %% plot the results
-    fig, ax = plt.subplots(1, 1)
-    for i, res in results.items():
-        plot = torch.tensor(res).flatten(1).T
-        fig = plot_dist(plot.detach().cpu().numpy(), times=(-0.4, 1.4), ax=ax)
-        fig.title.set_text("Decoding accuracy")
-
-    import pickle
-    with open('results2.pkl', 'wb') as f:
-        pickle.dump(results, f)
+    # # %% windowed decoding aud
+    #
+    # n_folds = 5
+    # val_size = 1/n_folds
+    # max_epochs = 5000
+    # results = {str(i): None for i in range(n_components[n])}
+    # target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
+    # logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
+    # logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
+    # decoders = [SimpleDecoder(4, len(labels[2]), 5e-4) for _ in range(n_components[n])]
+    # for i, decoder in enumerate(decoders):
+    #     # xi = model.construct_single_component(0, i).detach().cpu().numpy().swapaxes(0, 1)
+    #     xi = neural_data_tensor.clone().detach().cpu().numpy().swapaxes(0, 1)
+    #     trimmed = xi[(W[i] / W.sum(0)) > 0.4]
+    #     sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][
+    #                      ::-1]
+    #     ls = sorted_trimmed[..., :200]
+    #     lm = sorted_trimmed[..., 200:400]
+    #     stacked = np.concatenate([ls, lm], axis=1)
+    #     data_windowed = LabeledArray(windower(stacked, 20, 2).swapaxes(0, -1))[::5]
+    #     data_windowed.labels[2] = np.concatenate([labels[0], labels[0]])
+    #     data_windowed.labels[1] = labels[1]
+    #     # decoder = SimpleDecoder(4, xi.shape[1] * xi.shape[2], 5e-3)
+    #     # train the decoder briefly
+    #     out = Parallel(n_jobs=-2, verbose=40)(delayed(process_data)(
+    #         d, 5, n_folds, val_size, target_map, max_epochs) for d in
+    #                                          data_windowed)
+    #     results[str(i)] = [o.tolist() for o in out]
+    #
+    # # %% plot the results
+    # fig, ax = plt.subplots(1, 1)
+    # for i, res in results.items():
+    #     plot = torch.tensor(res).flatten(1).T
+    #     fig = plot_dist(plot.detach().cpu().numpy(), times=(-0.4, 1.4), ax=ax)
+    #     fig.title.set_text("Decoding accuracy")
+    #
+    # import pickle
+    # with open('results2.pkl', 'wb') as f:
+    #     pickle.dump(results, f)

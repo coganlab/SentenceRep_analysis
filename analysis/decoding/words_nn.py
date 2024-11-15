@@ -1,9 +1,36 @@
+import torch
+import numpy as np
+import os
+from analysis.decoding.models import SimpleDecoder
+from analysis.decoding.train import process_data
+from ieeg.calc.mat import LabeledArray
+from analysis.decoding import windower
+from joblib import Parallel, delayed
+import logging
+import matplotlib.pyplot as plt
+from analysis.grouping import GroupData
+from analysis.data import dataloader
+
+
+model = torch.load('model1.pt')
+n_components = 5
+
 # %% windowed decoding aud
+
+# load the data
+fpath = os.path.expanduser("~/Box/CoganLab")
+sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
+sm_idx = sorted(list(sub.SM))
+aud_slice = slice(0, 175)
+conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
+neural_data_tensor, labels = dataloader(sub, sm_idx, conds)
+mask = ~torch.isnan(neural_data_tensor)
+neural_data_tensor, _ = dataloader(sub, sm_idx, conds, do_mixup=True)
 
 n_folds = 5
 val_size = 1 / n_folds
 max_epochs = 500
-results = {str(i): None for i in range(n_components[0])}
+results = {str(i): None for i in range(n_components)}
 target_map = {'heat': 0, 'hut': 1, 'hot': 2, 'hoot': 3}
 logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.WARNING)
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
