@@ -47,7 +47,7 @@ def get_preferred_ch_label(channels, sub_dir, hot_words, pct_thresh):
         channel_label.append(labels[ch])
     return channel_label
 
-def get_muscle_chans(matdir, matfname, subj):
+def get_muscle_chans(matdir: str, matfname: str, subj: str):
     import scipy.io
     try:
         subj = 'D' + str(int(subj[1:]))  # removing leading 0 to match folder name
