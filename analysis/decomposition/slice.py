@@ -25,8 +25,8 @@ if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
     for idx_name, n_components in zip(('SM', 'PROD', 'AUD', 'sig_chans'), (5, 6, 2, 11)):
-        if idx_name not in ('SM', 'AUD', 'PROD'):
-            continue
+        # if idx_name not in ('SM', 'AUD', 'PROD'):
+        #     continue
         sm_idx = sorted(list(getattr(sub, idx_name)))
         aud_slice = slice(0, 175)
         conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
@@ -36,57 +36,57 @@ if __name__ == '__main__':
         neural_data_tensor = neural_data_tensor.to(torch.float32)
         torch.set_float32_matmul_precision('medium')
         with open(r'C:\Users\ae166\Downloads\results\results_grid_'
-                  f'{idx_name}_3ranks_test_HuberLoss_0.001_0.01_none.pkl', 'rb') as f:
+                  f'{idx_name}_1ranks_HuberLoss_0.01_0.01_none.pkl', 'rb') as f:
             results = pickle.load(f)
         loss_grid = np.array(results['loss']).squeeze()
         seed_grid = np.array(results['seed']).squeeze()
         # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
         # n_components = 6
         best_seed = seed_grid[n_components - 1, np.argmin(loss_grid[n_components - 1])]
-        n_components = (0, n_components, 0)
+        n_components = (n_components,)
 
         n = np.argmax(n_components)
         # best_seed = 123458
         # #
         # %% decompose the optimal model
         # neural_data_tensor.to('cuda')
-        # losses, model = slicetca.decompose(neural_data_tensor,
-        #                                    n_components,
-        #                                    # (0, n_components, 0),
-        #                                    seed=best_seed,
-        #                                    positive=True,
-        #                                    # min_std=5e-5,
-        #                                    # iter_std=1000,
-        #                                    learning_rate=5e-4,
-        #                                    max_iter=1000000,
-        #                                    # batch_dim=0,
-        #                                    # batch_prop=0.33,
-        #                                    # batch_prop_decay=5,
-        #                                    weight_decay=1e-4,
-        #                                    mask=mask,
-        #                                    init_bias=0.01,
-        #                                    initialization='uniform-positive',
-        #                                    loss_function=torch.nn.HuberLoss(reduction='none'),
-        #                                    verbose=0
-        #                                    )
-        # torch.save(model, f'model_{idx_name}.pt')
-        model = torch.load(f'model_{idx_name}.pt')
-        losses = model.losses
+        losses, model = slicetca.decompose(neural_data_tensor,
+                                           n_components,
+                                           # (0, n_components, 0),
+                                           seed=best_seed,
+                                           positive=True,
+                                           # min_std=5e-5,
+                                           # iter_std=1000,
+                                           learning_rate=5e-4,
+                                           max_iter=1000000,
+                                           # batch_dim=0,
+                                           # batch_prop=0.33,
+                                           # batch_prop_decay=5,
+                                           weight_decay=1e-4,
+                                           mask=mask,
+                                           init_bias=0.01,
+                                           initialization='uniform-positive',
+                                           loss_function=torch.nn.HuberLoss(reduction='none'),
+                                           verbose=0
+                                           )
+        torch.save(model, f'model_{idx_name}1.pt')
+        # model = torch.load(f'model_{idx_name}1.pt')
+        # losses = model.losses
         # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
         # slicetca.invariance(model, L3 = None)
-        # %% plot the losses
-        plt.figure(figsize=(4, 3), dpi=100)
-        plt.plot(np.arange(1000, len(model.losses)), model.losses[1000:], 'k')
-        plt.xlabel('iterations')
-        plt.ylabel('mean squared error')
-        plt.xlim(0, len(model.losses))
-        plt.tight_layout()
+        # # %% plot the losses
+        # plt.figure(figsize=(4, 3), dpi=100)
+        # plt.plot(np.arange(1000, len(model.losses)), model.losses[1000:], 'k')
+        # plt.xlabel('iterations')
+        # plt.ylabel('mean squared error')
+        # plt.xlim(0, len(model.losses))
+        # plt.tight_layout()
         # %% plot the model
         axes = slicetca.plot(model,
-                             variables=('trial', 'neuron', 'time'),)
+                             variables=('trial', 'channel', 'time'),)
         colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
                   'darkorange', 'lime', 'blue', 'red', 'purple']
-        W, H = model.get_components(numpy=True)[n]
+        T, W, H = model.get_components(numpy=True)[n]
         # %% plot the components
         colors = colors[:n_components[n]]
         conds = {'aud_ls': (-0.5, 1.5),
@@ -128,40 +128,51 @@ if __name__ == '__main__':
 
         # %% plot each component
         n_comp = W.shape[0]
-        for cond, times in timings.items():
-            fig, axs = plt.subplots(2, n_comp)
+        fig, axs = plt.subplots(6, n_comp)
+        for j, (cond, times) in enumerate(timings.items()):
+            j *= 2
 
             data = neural_data_tensor.mean(0).detach().cpu().numpy()
             ylims = [0, 0]
-            for i, ax in enumerate(axs[0]):
+            for i, ax in enumerate(axs[0 + j]):
                 component = model.construct_single_component(n, i).detach().cpu().numpy()
                 trimmed = data[(W[i] / W.sum(0)) > 0.4][:, times]
                 sorted_trimmed = trimmed[np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][::-1]
                 plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i], mode='sem', times=conds[cond])
                 ax.set_xticks([])
+                ax.set_xticklabels([])
                 ylims[1] = max(ax.get_ylim()[1], ylims[1])
                 ylims[0] = min(ax.get_ylim()[0], ylims[0])
 
                 scale = np.mean(sorted_trimmed) + 2 * np.std(sorted_trimmed)
-                axs[1, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno', vmin=0, vmax=scale,
+                axs[1 + j, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno', vmin=0, vmax=scale,
                                  extent=[conds[cond][0], conds[cond][-1], 0, len(sorted_trimmed)])
 
                 if i > 0:
-                    axs[0, i].set_yticks([])
-                    axs[1, i].set_yticks([])
+                    axs[0 + j, i].set_yticks([])
+                    axs[0 + j, i].set_yticklabels([])
+                    axs[1 + j, i].set_yticks([])
+                    axs[1 + j, i].set_yticklabels([])
+                else:
+                    axs[0 + j, i].set_ylabel("Z-Score (V)")
+                    axs[1 + j, i].set_ylabel("Channels")
+                if i == n_components[1] // 2:
+                    axs[0 + j, i].set_title(f"{cond}")
 
-            for ax in axs[0]:
+            for ax in axs[0 + j]:
                 ax.set_ylim(ylims)
-            fig.suptitle(cond)
+            # fig.suptitle(cond)
             fig.tight_layout()
 
         # %% plot the region membership
-        from ieeg.viz.mri import gen_labels, subject_to_info, BN_2_roi
+        from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
 
         # colors = ['Late Prod', 'WM', 'Feedback', 'Instructional', 'Early Prod']
-        rois = ['mtg', 'stg', 'heschl', 'sts', 'itg', 'ipc', 'angular', 'supramarginal', 'ifg', 'opercular',
-            'triangular', 'ifs', 'mfg', 'insula', 'sma', 'smc', 'spl', 'pcl', 'occ', 'hipp', 'cingulate gyrus',
-            'fusiform gyrus', 'bg', 'sfg', 'thalamus', 'precentral', 'postcentral']
+        rois = ['IFG', 'Tha', 'PoG', 'Amyg', 'PhG', 'MVOcC', 'ITG', 'PrG', 'PCL', 'IPL', 'MFG', 'CG', 'Pcun', 'BG',
+                'INS', 'FuG', 'LOcC', 'STG', 'OrG', 'MTG', 'pSTS', 'Hipp', 'SFG', 'SPL']
+        names = ['orange', 'yellow', 'black', 'cyan', 'magenta', 'deeppink',
+                  'darkorange', 'lime', 'blue', 'red', 'purple']
+        atlas = Atlas()
         fig, axs = plt.subplots(n_comp, 1)
         idxs = [torch.tensor(sm_idx)[
                     (W[i] / W.sum(0)) > 0.4
@@ -179,7 +190,15 @@ if __name__ == '__main__':
                 for key, value in ch_labels.items():
                     item = subj + '-' + key
                     if item in sm_elecs:
-                        area = BN_2_roi(value.split("_")[0])
+                        roi = value.split("_")[0]
+                        try:
+                            area = atlas[value.split("_")[0]].gyrus
+                        except KeyError as e:
+                            if value.split("_")[0] == 'TE1.0/TE1.2':
+                                area = 'STG'
+                            else:
+                                print(e)
+                                continue
                         if area in groups.keys():
                             groups[area].append(subj + '-' + key)
             groups_num = {key: len(value) for key, value in groups.items()}
@@ -188,13 +207,16 @@ if __name__ == '__main__':
 
         filtered_groups_num = [{} for _ in range(n_comp)]
         for roi in rois:
+            # new_roi = atlas.abbreviations[roi]
+            new_roi = roi
             if any(group[roi] > 0 for group in all_groups):
                 for i, group in enumerate(all_groups):
-                    filtered_groups_num[i][roi] = group[roi]
-        for i, (c, ax) in enumerate(zip(colors, axs)):
+                    filtered_groups_num[i][new_roi] = group[roi]
+        for i, (c, ax) in enumerate(zip(names, axs)):
             ax.bar(filtered_groups_num[i].keys(), filtered_groups_num[i].values())
             plt.sca(ax)
-            if ax is axs[-1]:
+            # if ax is axs[-1]:
+            if True:
                 plt.xticks(rotation=45)
             else:
                 plt.xticks([])
