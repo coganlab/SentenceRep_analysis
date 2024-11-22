@@ -23,7 +23,11 @@ def regen_ch_label(sub_ch: str, sub_dir: str):
     info = mri.subject_to_info(f"D{sub_num}", sub_dir)
     labels = mri.gen_labels(info, sub=f"D{sub_num}", subj_dir=sub_dir,
                     atlas=".BN_atlas")
-    ch_label = labels[ch]
+    try:
+        ch_label = labels[ch]
+    except KeyError:
+        ch_label = 'ERROR'
+        print(f'Error reading {sub_ch}')
     return ch_label
 
 def get_ch_label(channels, sub_dir):
@@ -40,11 +44,15 @@ def get_preferred_ch_label(channels, sub_dir, hot_words, pct_thresh):
     from ieeg.viz import mri
     channel_label = []
     for sub_ch in channels:
-        sub_num, ch = sep_sub_ch(sub_ch)
-        info = mri.subject_to_info(f"D{sub_num}", sub_dir)
-        labels = mri.find_labels(info, sub=f"D{sub_num}", subj_dir=sub_dir,
-                    atlas=".BN_atlas", hot_words=hot_words, pct_thresh=pct_thresh)
-        channel_label.append(labels[ch])
+        try:
+            sub_num, ch = sep_sub_ch(sub_ch)
+            info = mri.subject_to_info(f"D{sub_num}", sub_dir)
+            labels = mri.find_labels(info, sub=f"D{sub_num}", subj_dir=sub_dir,
+                        atlas=".BN_atlas", hot_words=hot_words, pct_thresh=pct_thresh)
+            channel_label.append(labels[ch])
+        except KeyError:
+            channel_label.append('ERROR')
+            print(f'Error reading {sub_ch}')
     return channel_label
 
 def get_muscle_chans(matdir: str, matfname: str, subj: str):

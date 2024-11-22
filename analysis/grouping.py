@@ -71,7 +71,7 @@ class GroupData:
                 self._set_data(pvals, 'p_vals')
             keys = self.signif.labels
             if all(cond in keys[0] for cond in
-                   ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "resp"]):
+                   ["aud_ls", "aud_lm", "aud_jl", "aud", "go_ls", "go_lm", "go", "resp"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                     self.signif, keys[1], keys[0], wide=wide)
@@ -190,9 +190,9 @@ class GroupData:
         """Remove trials with NaNs from all channels"""
         trials_idx = self._categories.index('trial')
         ch_idx = self._categories.index('channel')
-        others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx]
+        others = [i for i in range(len(self._categories)) if ch_idx != i != trials_idx] # length of dimensions that are NOT trial OR channel
         isn = np.isnan(self.array)
-        nan_trials = np.any(isn, axis=tuple(others))
+        nan_trials = np.any(isn, axis=tuple(others)) # get channelxtrial dimension
 
         # Sort the trials by whether they are nan or not
         if sort:
