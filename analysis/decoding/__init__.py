@@ -30,13 +30,13 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
     def cv_cm(self, x_data: np.ndarray, labels: np.ndarray,
               normalize: str = None, obs_axs: int = -2, n_jobs: int = 1,
               average_repetitions: bool = True, window: int = None,
-              shuffle: bool = False, oversample: bool = True) -> np.ndarray:
+              shuffle: bool = False, oversample: bool = True, step: int = 1) -> np.ndarray:
         """Cross-validated confusion matrix"""
         n_cats = len(set(labels))
         out_shape = (self.n_repeats, self.n_splits, n_cats, n_cats)
         if window is not None:
-            out_shape = (x_data.shape[-1] - window + 1,) + out_shape
-        mats = np.zeros(out_shape, dtype=np.uint8)
+            out_shape = ((x_data.shape[-1] - window) // step + 1,) + out_shape
+        mats = np.zeros(out_shape, dtype=np.int16)
         data = x_data.swapaxes(0, obs_axs)
 
         if shuffle:
@@ -62,7 +62,11 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
 
         def proc(train_idx, test_idx, l):
             x_stacked, y_train, y_test = sample_fold(train_idx, test_idx, data, l, 0, oversample)
-            windowed = windower(x_stacked, window, axis=-1)
+            if window is None:
+                x_flat = x_stacked.reshape(x_stacked.shape[0], -1)
+                x_train, x_test = np.split(x_flat, [train_idx.shape[0]], 0)
+                return self.fit_predict(x_train, x_test, y_train, y_test)
+            windowed = windower(x_stacked, window, axis=-1)[::step]
             out = np.zeros((windowed.shape[0], n_cats, n_cats), dtype=np.uint8)
             for i, x_window in enumerate(windowed):
                 x_flat = x_window.reshape(x_window.shape[0], -1)
@@ -82,7 +86,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         # Collect the results
         for i, result in enumerate(results):
             rep, fold = divmod(i, self.n_splits)
-            mats[:, rep, fold] = result
+            mats[..., rep, fold, :, :] = result
 
         # average the repetitions
         if average_repetitions:

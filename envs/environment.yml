@@ -1,12 +1,17 @@
 name: analysis
+channels:
+  - pytorch-nightly
+  - nvidia
 dependencies:
   - python
   - pip
-  - matplotlib
-  - tqdm
-  - numpy<2.0
-  - notebook
-  - pillow
+  - numpy
+  - torchvision
+  - torchaudio
+  - pytorch
+  - pytorch-cuda
+  - conda-forge::lightning
+  - conda-forge::nimfa
   - pip:
-    - git+https://github.com/coganlab/IEEG_Pipelines.git@mri_explicit
-    - nimfa
+    - -e ../../IEEG_Pipelines
+    - -e ../../slicetca

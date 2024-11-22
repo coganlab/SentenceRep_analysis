@@ -68,7 +68,7 @@ for sub in subjects:
         del trials
         crop_pad(spectra, "0.5s")
         if name == "start":
-            # base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
+            base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
             base = spectra.copy().crop(-0.5, 0)
 
         # spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True) # average over trials with outliers removed, which is marked as NAN
