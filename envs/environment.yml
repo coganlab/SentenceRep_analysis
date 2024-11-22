@@ -15,4 +15,3 @@ dependencies:
   - pip:
     - -e ../../IEEG_Pipelines
     - -e ../../slicetca
-

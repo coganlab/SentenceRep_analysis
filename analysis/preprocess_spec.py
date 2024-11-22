@@ -2,7 +2,7 @@ from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
 from ieeg.calc import stats
-from ieeg.viz.utils import chan_grid
+from ieeg.viz.ensemble import chan_grid
 from ieeg.viz.parula import parula_map
 from joblib import Parallel, delayed
 import os

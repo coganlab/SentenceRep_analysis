@@ -1,0 +1,12 @@
+name: analysis2
+channels:
+  - conda
+dependencies:
+  - python
+  - pip
+  - matplotlib
+  - tqdm
+  - numpy<2.0
+  - pillow
+  - conda-forge::nimfa
+  - spyder

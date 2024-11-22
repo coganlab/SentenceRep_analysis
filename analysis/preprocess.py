@@ -131,6 +131,6 @@ for subj in subjects:
     base.save(save_dir + f"/{subj}_base-epo.fif", overwrite=True)
     del data
 
-    ## Plot
-    # import matplotlib.pyplot as plt  # noqa E402
-    # plt.imshow(mask['go_ls'])#[:, None])
+    # Plot
+    import matplotlib.pyplot as plt  # noqa E402
+    plt.imshow(mask['go_ls'])#[:, None])

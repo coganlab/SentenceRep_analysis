@@ -1,0 +1,68 @@
+env: analysis
+USE environment.yml 
+pip uninstall matplotlib
+conda uninstall matplotlib
+conda install matplotlib 
+- cannot edit ieeg/files 
+pip uninstall ieeg 
+pip install -e . 
+- failed to build editable version 
+ Generating code
+      Finished generating code
+      copying C:\Users\yw722\AppData\Local\Temp\tmp5segcqtw.build-lib\ieeg/calc/_fast\concat.cp312-win_amd64.pyd -> .\ieeg/calc/_fast
+      Traceback (most recent call last):
+        File "C:\Users\yw722\AppData\Local\Temp\pip-build-env-mx4xnhhf\overlay\Lib\site-packages\setuptools\_distutils\file_util.py", line 34, in _copy_file_contents
+          os.unlink(dst)
+      PermissionError: [WinError 5] Access is denied: '.\\ieeg/calc/_fast\\concat.cp312-win_amd64.pyd'
+
+      During handling of the above exception, another exception occurred:
+
+      Traceback (most recent call last):
+        File "C:\Users\yw722\AppData\Local\Temp\pip-build-env-mx4xnhhf\overlay\Lib\site-packages\setuptools\command\editable_wheel.py", line 138, in run
+          self._create_wheel_file(bdist_wheel)
+        File "C:\Users\yw722\AppData\Local\Temp\pip-build-env-mx4xnhhf\overlay\Lib\site-packages\setuptools\command\editable_wheel.py", line 341, in _create_wheel_file
+          files, mapping = self._run_build_commands(dist_name, unpacked, lib, tmp)
+
+env: analysis2
+conda install pandas
+pip install mne 
+pip install bids
+pip install mne-bids
+conda install -c conda-forge pyvistaqt
+pip install joblib 
+- still error loading ufunc in ieeg.calc._fast
+
+env: analysis3 -- THIS WORKS! -- nope, can't plot mri.py with qt5
+conda create -n "analysis3" python pip matplotlib tqdm numpy<2.0 pillow pandas conda-forge::nimfa
+pip install -e .\Documents\git\IEEG_Pipelines\
+- failed building editable environment 
+Building wheels for collected packages: ieeg, mne-bids
+  Building editable for ieeg (pyproject.toml) ... error
+  error: subprocess-exited-with-error
+
+  × Building editable for ieeg (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [86 lines of output]
+      running editable_wheel
+   !!
+        cmd_obj.run()
+      error: Microsoft Visual C++ 14.0 or greater is required. Get it with "Microsoft C++ Build Tools": https://visualstudio.microsoft.com/visual-cpp-build-tools/
+      [end of output]
+
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  ERROR: Failed building editable for ieeg
+pip install ieeg 
+- failed 
+Download https://visualstudio.microsoft.com/visual-cpp-build-tools/ and install first c++ command line 
+pip install -e .\Documents\git\IEEG_Pipelines\ 
+- works 
+conda install sklearn
+pip uninstall fsspec
+conda install fsspec
+pip uninstall pyqt5 
+pip install qt5
+conda uninstall matplotlib 
+conda install matplotlib
+
+
+

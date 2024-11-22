@@ -182,7 +182,7 @@ def extract(sub: GroupData, conds: list[str], idx: list[int] = slice(None), comm
     reduced = sub[:, conds][:, :, :, idx]
     reduced.array = reduced.array.dropna()
     # also sorts the trials by nan or not
-    reduced = reduced.nan_common_denom(True, common, crop_nan)
+    # reduced = reduced.nan_common_denom(True, common, crop_nan) # temporarily exclude as the cropping logic doesn't apply to phoneme seq
     comb = reduced.combine(('epoch', 'trial'))[datatype]
     return (comb.array.dropna()).combine((0, 2))
 
@@ -234,10 +234,13 @@ def get_scores(subjects, decoder, idxs: list[list[int]], conds: list[str],
                 X = x_data[:, cond]
 
             cats, labels = classes_from_labels(X.labels[1], crop=slice(0, 4))
+            cats = {k: i for i, k in cats.items()}
+            stim_labels = [cats[l] for l in labels]
+            decoder_labels = np.array([decoder.categories[s] for s in stim_labels])
 
             # Decoding
             if weights is None:
-                score = decoder.cv_cm(X.__array__(), labels, **decoder_kwargs)
+                score = decoder.cv_cm(X.__array__(), decoder_labels, **decoder_kwargs)
                 yield "-".join([names[i], cond]), score
             else:
                 for j, weight in enumerate(weights):

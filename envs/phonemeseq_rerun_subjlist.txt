@@ -1,0 +1,6 @@
+Phoneme sequencing subjects rerun for trigger timing 
+- 19 (trigger channel flat?), 22 (flat/noisy trigger without obvious onsets), 23, 25, 31 (missing run1 tsv), ?35 (unsure, trigger line trains), 76 (raw tsv format inconsistent)
+
+of note but no need to reprocess
+- 28 (trigger trains before listen trigger)
+- 52 (high freq noise throughout but line noise filtered good)

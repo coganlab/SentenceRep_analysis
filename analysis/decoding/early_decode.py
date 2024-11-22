@@ -122,9 +122,9 @@ fig, axs = plot_all_scores(plots, conds, pos, colors, "Individual Decoding")
     #
     # fig, axs = plot_all_scores(result, conds, dict(All=idx), colors, "Word Decoding")
 
-# # %% Plot the results
-#     bad_subjects = [n[:5] for n in bad.keys()]
-#     data = sub.array['zscore', 'aud_ls'].combine((0, 2))
-#     idx = set(np.where([n[:5] not in bad_subjects for n in sub.array.labels[3]])[0])
-#     bad_data = data[idx & sub.SM,]
-#     plot_channels(bad_data, sub.signif["aud_ls", idx & sub.SM])
+# %% Plot the results
+bad_subjects = [n[:5] for n in bad.keys()]
+data = sub.array['zscore', 'aud_ls'].combine((0, 2))
+idx = set(np.where([n[:5] not in bad_subjects for n in sub.array.labels[3]])[0])
+bad_data = data[idx & sub.SM,]
+plot_channels(bad_data, sub.signif["aud_ls", idx & sub.SM])
