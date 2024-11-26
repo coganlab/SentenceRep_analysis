@@ -1,6 +1,7 @@
 import os
 import scipy.io
 import numpy as np
+from ieeg.calc.mat import LabeledArray
 from ieeg.io import get_data, raw_from_layout
 
 def sep_sub_ch(sub_ch:str):
@@ -79,6 +80,17 @@ def get_muscle_chans(matdir: str, matfname: str, subj: str):
         print(f"Error reading {subj} mat file: {e}")
         return list()
 
+def remove_min_nan_ch(X: LabeledArray, stim_labels: np.ndarray, min_nan: int = 3):
+    nonnan_trials = np.array(~np.any(np.isnan(X.__array__()), axis=2)) #ch * trial collapsed over timepoints
+    stim_types = len(set(stim_labels))
+    good_ch = []
+    for ch in range(X.shape[0]):
+        unique_values, counts = np.unique(stim_labels[nonnan_trials[ch,:]], return_counts=True)
+        # if either missing categories, or trials within a category is fewer than min_nan, discard channel
+        if len(unique_values) < stim_types or np.any(counts < min_nan):
+            continue
+        good_ch.append(ch)
+    return X.take(good_ch, axis = 0), good_ch
 
 if __name__ == "__main__":
     HOME = os.path.expanduser("~")

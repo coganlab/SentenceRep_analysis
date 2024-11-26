@@ -136,6 +136,9 @@ def sample_fold(train_idx: np.ndarray, test_idx: np.ndarray,
         # existing train data trials (mixup)
         idx[axis] = y_train == i
         out = x_train[tuple(idx)]
+        check = tuple(i for i in range(out.ndim) if i != axis)
+        # if (~np.isnan(out).any(check)).astype(int).sum() < 2:
+        #     raise ValueError("class split didn't work!")
         mixup(out, axis)
         x_train[tuple(idx)] = out
 
@@ -182,7 +185,7 @@ def extract(sub: GroupData, conds: list[str], idx: list[int] = slice(None), comm
     reduced = sub[:, conds][:, :, :, idx]
     reduced.array = reduced.array.dropna()
     # also sorts the trials by nan or not
-    # reduced = reduced.nan_common_denom(True, common, crop_nan) # temporarily exclude as the cropping logic doesn't apply to phoneme seq
+    reduced = reduced.nan_common_denom(True, common, crop_nan) # temporarily exclude as the cropping logic doesn't apply to phoneme seq
     comb = reduced.combine(('epoch', 'trial'))[datatype]
     return (comb.array.dropna()).combine((0, 2))
 
