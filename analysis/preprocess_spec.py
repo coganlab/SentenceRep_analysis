@@ -2,10 +2,12 @@ from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
 from ieeg.calc import stats
-from ieeg.viz.utils import chan_grid
+from ieeg.viz.ensemble import chan_grid
 from ieeg.viz.parula import parula_map
 from joblib import Parallel, delayed
+import mne
 import os
+import os.path as op
 from itertools import product
 from tqdm import tqdm
 import numpy as np
@@ -30,74 +32,32 @@ for subj in subjects:
         continue
     # Load the data
     TASK = "SentenceRep"
-    filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
-                           extension='.edf', desc='clean', preload=False)
-
     # %%
-    new = crop_empty_data(filt, )
-    # Mark channel outliers as bad
-    # new.info['bads'] = channel_outlier_marker(new, 4)
-    # Exclude bad channels
-    good = new.copy().drop_channels(filt.info['bads'])
-    good.load_data()
-    # CAR
-    ch_type = filt.get_channel_types(only_data_chs=True)[0]
-    good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
-    # Remove intermediates from mem
-    del new
+    save_dir = op.join(layout.root, "derivatives", "stats_freq")
+    if not op.isdir(save_dir):
+        os.mkdir(save_dir)
+    mask = dict()
+    data = []
+    nperm = 10000
+    spec_type = 'hilbert'
+    for name, window in zip(
+            ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
+            ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
+            # (*((0, 0.5),) * 5, *((0.25, 0.75),) * 3)):  # ave
 
-    # %%
-    out = []
-    for epoch, t in zip(("Start", "Start", "Word"),
-                        ((-0.5, 0), (-0.5, 0.5), (-1, 1.5))):
-        times = [None, None]
-        times[0] = t[0] - 0.5
-        times[1] = t[1] + 0.5
-        trials = trial_ieeg(good, epoch, times, preload=True
-                            , reject_by_annotation=False)
-        trials.filenames = good.filenames
-        out.append(trials)
-        # if len(out) == 2:
-        #     break
-    base = wavelet_scaleogram(out.pop(0), n_jobs=n_jobs, decim=int(
-            good.info['sfreq'] / 100))
-    crop_pad(base, "0.5s")
-    # power = scaling.rescale(out[1], out[0], copy=True, mode='mean')
-    # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
+        filename = os.path.join(layout.root, 'derivatives',
+                                    'spec', spec_type, subj, f'{name}-tfr.h5')
+        epoch = mne.time_frequency.read_tfrs(filename)
+        if name == "start":
+            sig2 = epoch.get_data(tmin=window[0], tmax=0)
+        sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
 
-    # %%
-    masks = []
-    out2 = []
-    labels = (out[0]["Start"],) + tuple(out[1][e] for e in ["Response"] + list(
-                map("/".join, product(["Audio", "Go"], ["LS", "LM", "JL"]))))
-    names = ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
-             "go_jl")
-    for (epoch, name, t) in tqdm(zip(
-            labels, names, ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)),
-            total=len(labels)):
-        # if name != 'resp':
-        #     continue
-        times = [None, None]
-        times[0] = t[0] - 0.5
-        times[1] = t[1] + 0.5
-        outliers_to_nan(epoch, outliers=10)
-        spec = wavelet_scaleogram(epoch, n_jobs=n_jobs, decim=int(
-            good.info['sfreq'] / 100))
-        crop_pad(spec, "0.5s")
-        base_fixed = stats.make_data_same(base._data, spec._data.shape)
-        mask = spec.average(lambda x: np.nanmean(x, axis=0), copy=True)
-
-        diff = stats.shuffle_test(spec._data, base_fixed, 1000)
-        obs = stats.mean_diff(spec._data, base_fixed, axis=0)
-        mask._data = np.mean(diff < obs, axis=0)
-        # mask = stats.time_perm_cluster(spec._data, base._data,
-        #                                p_thresh=0.05,
-        #                                ignore_adjacency=1,
-        #                                n_jobs=n_jobs,
-        #                                # ignore channel adjacency
-        #                                n_perm=2000)
-        out2.append(spec)
-        masks.append(mask)
+        # time-perm
+        mask[name], p_act = stats.time_perm_cluster(
+            sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
+            ignore_adjacency=1)
+        epoch_mask = mne.time_frequency.AverageTFRArray(
+            epoch.average().info, mask[name], epoch.times, epoch.freqs, nave=1)
 
         # Plot the Time-Frequency Clusters
         # --------------------------------
