@@ -5,6 +5,7 @@ from ieeg.viz.parula import parula_map
 from ieeg.io import get_data, update, get_bad_chans
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -31,6 +32,8 @@ for subj in subjects:
                                 'spec', spec_type, subj, f'{cond}-tfr.h5')
         try:
             spec = mne.time_frequency.read_tfrs(filename)
+            if isinstance(spec, mne.time_frequency.tfr.EpochsTFR):
+                spec.average(lambda x: np.nanmean(x, axis=0), copy=False)
         except OSError:
             print(f"Skipping {subj} {cond}")
             continue
