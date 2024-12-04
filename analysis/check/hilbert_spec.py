@@ -22,17 +22,19 @@ else:  # if not then set box directory
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
 
+n_jobs = 7
+
 for sub in subjects:
     # if sub != "D0029":
     #     continue
     # Load the data
-    filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
-                           extension='.edf', desc='clean', preload=False)
+    filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
+                           extension='.edf', desc='notch', preload=False)
 
     ## Crop raw data to minimize processing time
     good = crop_empty_data(filt,).copy()
 
-    good.info['bads'] = channel_outlier_marker(good, 3, 2)
+    # good.info['bads'] = channel_outlier_marker(good, 3, 2)
     good.drop_channels(good.info['bads'])
     good.load_data()
 
@@ -60,8 +62,8 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
-        spec = hilbert_spectrogram(trials, Wn=(0.5, 1024), n_jobs=-2, decim=int(
-            good.info['sfreq'] / 100))
+        spec = hilbert_spectrogram(trials, Wn=(30, 500), n_jobs=n_jobs,
+                                   decim=int(good.info['sfreq'] / 100))
         crop_pad(spec, "0.5s")
         if epoch == "Start":
             base = spec.copy().crop(-0.5, 0)

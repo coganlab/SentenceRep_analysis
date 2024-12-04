@@ -1,6 +1,6 @@
 name: analysis
 channels:
-  - pytorch-nightly
+  - pytorch
   - nvidia
 dependencies:
   - python

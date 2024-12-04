@@ -13,7 +13,7 @@ if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
-    subject = 81
+    subject = 30
 
 
 # Load the data
@@ -23,10 +23,10 @@ subjects = layout.get(return_type="id", target="subject")
 conds = ["start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_jl", "go_ls", "go_lm"]
 
 for subj in subjects:
-    if int(subj[1:]) != subject:
-        continue
+    # if int(subj[1:]) <= subject:
+    #     continue
     for cond in conds:
-        spec_type = 'wavelet'
+        spec_type = 'hilbert'
         filename = os.path.join(layout.root, 'derivatives',
                                 'spec', spec_type, subj, f'{cond}-tfr.h5')
         try:
@@ -42,7 +42,7 @@ for subj in subjects:
         import matplotlib as mpl
         figs = chan_grid(spec, size=(20, 10),
                          vlim=(-0.5, 1),
-                         cmap=parula_map, show=False, yscale="log")
+                         cmap=parula_map, show=False, yscale='log')
         fig_path = os.path.join(layout.root, 'derivatives', 'spec', spec_type, 'figs')
         if not os.path.exists(fig_path):
             os.makedirs(fig_path)
