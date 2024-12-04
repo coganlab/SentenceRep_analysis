@@ -285,36 +285,35 @@ analysisfolder = 'SentenceRep_analysis\\analysis'
 #         plt.savefig(f'SigChans_{subj}.png')
 #         plt.close()
 #
-# #%% save ch names
-# # To regenerate channel label and save as channel_label.pkl
-# from analysis.grouping import GroupData
-# from analysis.check.chan_utils import get_ch_label, get_preferred_ch_label
-#
-# sub = GroupData.from_intermediates("Phoneme_sequencing", LAB_root, {'aud': (-0.5,1), 'go': (-0.5,1), 'resp': (-0.5,1)}, folder='stats', subjects_dir=RECON_root)
-# # get sig chans across 3 windows, across 150 timepoints
-# sub.sig_chans = np.where(np.any(sub.signif == 1, axis=(0,2)))[0].tolist()
-# sub_channels = sub.keys.get('channel',[])
-# orig_ch_label = get_ch_label(sub_channels, RECON_root)
-# maxhipp_ch_label = get_preferred_ch_label(sub_channels, RECON_root, "Hipp", 0.1) # at least 10% 10mm-radius sphere overlap with hippocampus
-# with open(f'{analysisfolder}\\sub_channel_phonemeseq.pkl', 'wb') as f:
-#     pickle.dump(sub_channels, f)
-# with open(f'{analysisfolder}\\channel_label_phonemeseq.pkl', 'wb') as f:
-#     pickle.dump(orig_ch_label, f)
-# with open(f'{analysisfolder}\\maxhipp_channel_label_phonemeseq.pkl', 'wb') as f:
-#     pickle.dump(maxhipp_ch_label, f)
-#
-# #%%  read ch names
-# #from analysis.decoding.words import dict_to_structured_array
-#
-# # sub.plot_groups_on_average([idx_maxhipp, idx_maxhippsig, idx_hipp,  idx_hippsig],
-# # colors = ['blue', 'yellow',  'red', 'orange'])
-#
-#
-# colors = ['orange', 'yellow']
-# scores = {'Hipp&Sig': None, 'MaxHipp&Sig': None}
-# idxs = [idx_hippsig, idx_maxhippsig]
-# names = list(scores.keys())
-# conds = ['aud', 'go', 'resp']
+#%% save ch names
+# To regenerate channel label and save as channel_label.pkl
+from analysis.grouping import GroupData
+from analysis.check.chan_utils import get_ch_label, get_preferred_ch_label
+
+sub = GroupData.from_intermediates("Phoneme_sequencing", LAB_root, {'aud': (-0.5,1), 'go': (-0.5,1), 'resp': (-0.5,1)}, folder='stats', subjects_dir=RECON_root)
+# get sig chans across 3 windows, across 150 timepoints
+sub.sig_chans = np.where(np.any(sub.signif == 1, axis=(0,2)))[0].tolist()
+sub_channels = sub.keys.get('channel',[])
+orig_ch_label = get_ch_label(sub_channels, RECON_root)
+maxhipp_ch_label = get_preferred_ch_label(sub_channels, RECON_root, "Hipp", 0.1) # at least 10% 10mm-radius sphere overlap with hippocampus
+with open(f'{analysisfolder}\\sub_channel_phonemeseq.pkl', 'wb') as f:
+    pickle.dump(sub_channels, f)
+with open(f'{analysisfolder}\\channel_label_phonemeseq.pkl', 'wb') as f:
+    pickle.dump(orig_ch_label, f)
+with open(f'{analysisfolder}\\maxhipp_channel_label_phonemeseq.pkl', 'wb') as f:
+    pickle.dump(maxhipp_ch_label, f)
+
+#%%  read ch names
+#from analysis.decoding.words import dict_to_structured_array
+
+sub.plot_groups_on_average([idx_hippsig], colors = ['blue'])
+
+
+colors = ['orange', 'yellow']
+scores = {'Hipp&Sig': None, 'MaxHipp&Sig': None}
+idxs = [idx_hippsig, idx_maxhippsig]
+names = list(scores.keys())
+conds = ['aud', 'go', 'resp']
 
 
 
@@ -372,9 +371,34 @@ idx_maxhipp = [i for i, label in enumerate(maxhipp_ch_label) if 'Hipp' in label]
 idx_maxhippsig = [i for i in idx_maxhipp if i in sig_idx_union]
 
 
+#%%test
+from analysis.decoding import classes_from_labels
+from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
+import numpy as np
+
+with open(f'{analysisfolder}\\zscores_test.pkl', 'rb') as f:
+    zscores_test = pickle.load(f)
+
+true_cat = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
+                 'aeba':2, 'aebi':2, 'aebu':2, 'aega':2, 'aeka':2, 'aepi':2,
+                 'ibu':3, 'ika':3, 'ikae':3, 'ipu':3, 'iva':3, 'ivu':3,
+                 'uba':4, 'uga':4, 'ugae':4, 'ukae':4, 'upi':4, 'upu':4, 'uvae':4, 'uvi':4,
+                 'bab':5, 'baek':5, 'bak':5, 'bup':5,
+                 'gab':6, 'gaeb':6, 'gaev':6, 'gak':6, 'gav':6, 'gig':6, 'gip':6, 'gub':6,
+                 'kab':7, 'kaeg':7, 'kub':7, 'kug':7,
+                 'paek':8, 'paep':8, 'paev':8, 'puk':8, 'pup':8,
+                 'vaeg':9, 'vaek':9, 'vip':9, 'vug':9, 'vuk':9}
+decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
+cats, labels = classes_from_labels(zscores_test.labels[1], crop=slice(0, 4)) #this get out repetitions of same stims
+flipped_cats = {v:k for k,v in cats.items()}
+new_labels = np.array([true_cat[flipped_cats[l]] for l in labels]) #convert to true categories
+zscoresLA_cond_idx, _ = remove_min_nan_ch(zscores_test, new_labels, min_non_nan=10)
+zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10, upper_limit=10)
+
+
 # %% Time sliding decoding for reconstruction
 from analysis.decoding import classes_from_labels
-from analysis.check.chan_utils import remove_min_nan_ch
+from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
 
 window_kwargs = {'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
                 'average_repetitions': False}
@@ -391,22 +415,26 @@ decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
 
 score_out = dict()
 for i_cond, cond in enumerate(conds.keys()):
+    if i_cond != 0:
+        continue
     zscoresLA_cond = zscoresLA.take(i_cond, axis=0)
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=10)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
     new_labels = np.array([true_cat[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
-    zscoresLA_cond_idx, picks = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_nan=3)
-    scores_out = decoder.cv_cm(zscoresLA_cond_idx.__array__(), new_labels,
-                                        **window_kwargs, oversample=True)
+    zscoresLA_cond_idx, _ = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10)
+    zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10, upper_limit=10)
+    zscores_cropped, labels_cropped = left_adjust_by_stim(zscoresLA_cond_idx_reduced, new_labels, crop=True)
+    scores_out = decoder.cv_cm(zscores_cropped.__array__(), labels_cropped,
+                                        **window_kwargs, oversample=False)
 
     score_mean = np.mean(scores_out, axis=0)
 
 #%% plot
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-cax = ax.imshow(score_mean, cmap='viridis', vmin=0, vmax=1)
+cax = ax.imshow(score_mean, cmap='viridis', vmin=0, vmax=0.6)
 
 ax.set_xticks(np.arange(9))
 ax.set_yticks(np.arange(9))
@@ -417,24 +445,3 @@ for i in range(score_mean.shape[0]):
 fig.colorbar(cax)
 plt.tight_layout()
 plt.show()
-
-# %% Plotting
-data_dir = ''
-# true_scores = np.load(data_dir + 'true_scores_short.npy', allow_pickle=True)[0]
-# true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
-
-decode_conds = [lcs(*conds) for conds in decode_conds]
-plots = {}
-for key, values in scores3.items():
-    if values is None:
-        continue
-    keys = key.split('-')
-    keys.insert(2, keys.pop(-1))
-    key = '-'.join(keys)
-    plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-fig, axs = plot_all_scores(plots, decode_conds, {n: i for n, i in zip(colors, idxs)}, colors, "Word Decoding")
-
-for ax in fig.axes:
-    ax.axhline(0.25, color='k', linestyle='--')
-    # remove legend
-    ax.legend().remove()

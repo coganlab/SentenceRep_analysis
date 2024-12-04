@@ -80,17 +80,80 @@ def get_muscle_chans(matdir: str, matfname: str, subj: str):
         print(f"Error reading {subj} mat file: {e}")
         return list()
 
-def remove_min_nan_ch(X: LabeledArray, stim_labels: np.ndarray, min_nan: int = 3):
+def remove_min_nan_ch(X: LabeledArray, stim_labels: np.ndarray, min_non_nan: int = 3):
+    """
+    remove channels with fewer than min_nan valid trials in any category in stim_labels
+    """
     nonnan_trials = np.array(~np.any(np.isnan(X.__array__()), axis=2)) #ch * trial collapsed over timepoints
     stim_types = len(set(stim_labels))
     good_ch = []
     for ch in range(X.shape[0]):
         unique_values, counts = np.unique(stim_labels[nonnan_trials[ch,:]], return_counts=True)
         # if either missing categories, or trials within a category is fewer than min_nan, discard channel
-        if len(unique_values) < stim_types or np.any(counts < min_nan):
+        if len(unique_values) < stim_types or np.any(counts < min_non_nan):
             continue
         good_ch.append(ch)
     return X.take(good_ch, axis = 0), good_ch
+
+def equal_valid_trials_ch(X: LabeledArray, stim_labels: np.ndarray, min_non_nan: int=3, upper_limit: int = None):
+    """
+    randomly sub-select equal count of valid trials per category per channel, with conditional of min trials per category >= min_nan
+    i.e. undersampling and fill in NaNs for additional valid trials.
+    If upper_limit is provided, sets the maximum number of valid trials per category per channel.
+    NB. X_out is fed to cv_cm and then sample_fold where mixup is run. I.e. this limits the VALID data fed into LDA but does NOT
+    balance the trials by category (which is determined in stim_labels)
+    """
+    X_out = X.copy()
+    nonnan_trials = np.array(~np.any(np.isnan(X.__array__()), axis=2)) #ch * trial collapsing over timepoints
+    stim_count = len(set(stim_labels))
+    stim_set = set(stim_labels)
+    for ch in range(X.shape[0]):
+        nonnan_labels_ch = stim_labels[nonnan_trials[ch,:]]
+        unique_values, counts = np.unique(nonnan_labels_ch, return_counts=True)
+        # if either missing categories, or trials within a category is fewer than min_nan, raise Error
+        if len(unique_values) < stim_count or np.any(counts < min_non_nan):
+            raise ValueError('input LabeledArray with channels missing categories or with trials<min_non_nan, run remove_min_nan_ch first')
+        min_count = np.min(counts) # get the least number of valid trials in all categories to undersample to
+        if upper_limit is not None:
+            min_count = upper_limit
+        for s in stim_set:
+            stim_in_ch = np.array(np.where(stim_labels == s))
+            valid_trials = stim_in_ch[nonnan_trials[ch, stim_in_ch]] # mask out invalid trials
+            if len(valid_trials)-min_count == 0: #no need to further drop trials
+                continue
+            trials_to_nan = np.random.choice(valid_trials, len(valid_trials)-min_count, replace=False)
+            X_out[ch, trials_to_nan, :] = np.nan
+            #print(f'for ch:{ch}, stim:{s}, got valid trials:{len(valid_trials)}, undersampled: {len(trials_to_nan)}')
+    return X_out
+
+def left_adjust_by_stim(X: LabeledArray, stim_labels: np.ndarray, crop: bool = False):
+    X_out = X.copy()
+    labels_out = stim_labels.copy()
+    nonnan_trials = np.array(~np.any(np.isnan(X.__array__()), axis=2)) # channel * trial boolean array
+    stim_set = np.unique(stim_labels) # preserve order just in case
+    nonnan_count_ch = np.zeros((X.shape[0], len(stim_set))).astype(int) # ch * token valid trials count
+    for ch in range(X.shape[0]):
+        for i,s in enumerate(stim_set):
+            nonnan_count_ch[ch,i] = np.sum(nonnan_trials[ch, stim_labels == s])
+    if crop:
+        for s in range(len(stim_set)):
+            if len(np.unique(nonnan_count_ch[:,s])) > 1:
+                raise ValueError('Error with cropping: make sure nonnan_count per class is consistent across channels')
+        X_out = X_out.take(range(sum(nonnan_count_ch[0,:])), axis = 1) # crop X_out size to the right trial dimension
+        labels_out = np.zeros(sum(nonnan_count_ch[0,:]))
+    for i,s in enumerate(stim_set):
+        stim_in_ch = np.array(np.where(stim_labels == s)[0])
+        for ch in range(X.shape[0]):
+            nonnan_data = X[ch, stim_in_ch[nonnan_trials[ch, stim_in_ch]],:]
+            if not crop:
+                X_out[ch, stim_in_ch[:nonnan_count_ch[ch,i]],:] = nonnan_data # put valid data on the left
+                X_out[ch, stim_in_ch[nonnan_count_ch[ch,i]:],:] = np.nan # nan out remaining trials
+            else:
+                smin = 0 + sum(nonnan_count_ch[ch,0:i])
+                smax = smin + nonnan_count_ch[ch,i]
+                X_out[ch,smin:smax,:] = nonnan_data
+                labels_out[smin:smax] = s
+    return X_out, labels_out
 
 if __name__ == "__main__":
     HOME = os.path.expanduser("~")

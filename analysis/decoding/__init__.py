@@ -37,7 +37,7 @@ class Decoder(PcaLdaClassification, MinimumNaNSplit):
         if window is not None:
             out_shape = ((x_data.shape[-1] - window) // step + 1,) + out_shape
         mats = np.zeros(out_shape, dtype=np.int16)
-        data = x_data.swapaxes(0, obs_axs)
+        data = x_data.swapaxes(0, obs_axs) # now as stim_label*channel*timepoints
 
         if shuffle:
             # shuffled label pool
