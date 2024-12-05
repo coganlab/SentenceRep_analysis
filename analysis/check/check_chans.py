@@ -33,17 +33,18 @@ for subj in subjects:
         try:
             spec = mne.time_frequency.read_tfrs(filename)
             if isinstance(spec, mne.time_frequency.tfr.EpochsTFR):
-                spec.average(lambda x: np.nanmean(x, axis=0), copy=False)
+                spec_a = spec.average(lambda x: np.nanmean(x, axis=0))
+            else:
+                spec_a = spec
         except OSError:
             print(f"Skipping {subj} {cond}")
             continue
-        info_file = os.path.join(layout.root, spec.info['subject_info']['files'][0])
+        info_file = os.path.join(layout.root, spec_a.info['subject_info']['files'][0])
         all_bad = get_bad_chans(info_file)
-        spec.info.update(bads=[b for b in all_bad if b in spec.ch_names])
+        spec_a.info.update(bads=[b for b in all_bad if b in spec_a.ch_names])
 
         ## plotting
-        import matplotlib as mpl
-        figs = chan_grid(spec, size=(20, 10),
+        figs = chan_grid(spec_a, size=(20, 10),
                          vlim=(-0.5, 1),
                          cmap=parula_map, show=False, yscale='log')
         fig_path = os.path.join(layout.root, 'derivatives', 'spec', spec_type, 'figs')
