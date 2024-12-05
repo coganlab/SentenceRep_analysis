@@ -70,7 +70,8 @@ for subj in subjects:
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
 
         # Calculate the p-value
-        p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act, tmin=window[0])
+        p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,
+                                                    epoch.times, epoch.freqs)
         # p_vals = epoch_mask.copy()
         data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(),
                      p_vals.copy()))
