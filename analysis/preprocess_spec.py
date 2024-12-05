@@ -77,10 +77,8 @@ for subj in subjects:
                      p_vals.copy()))
 
     for name, epoch_mask, power, z_score, p_vals in data:
-        power.save(save_dir + f"/{subj}_{name}_power-epo.h5", overwrite=True,
-                   fmt='double')
-        z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.h5", overwrite=True,
-                     fmt='double')
+        power.save(save_dir + f"/{subj}_{name}_power-epo.h5", overwrite=True)
+        z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.h5", overwrite=True)
         epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.h5", overwrite=True)
         p_vals.save(save_dir + f"/{subj}_{name}_pval-ave.h5", overwrite=True)
 
