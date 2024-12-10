@@ -126,6 +126,23 @@ def equal_valid_trials_ch(X: LabeledArray, stim_labels: np.ndarray, min_non_nan:
             #print(f'for ch:{ch}, stim:{s}, got valid trials:{len(valid_trials)}, undersampled: {len(trials_to_nan)}')
     return X_out
 
+def equal_stims_per_class(X: LabeledArray, stim_labels: np.ndarray, keep_trials: int = 16):
+    """
+    randomly sub-select equal count of trials per class
+    """
+    X_out = X.copy()
+    labels_out = np.empty(0).astype(int)
+    stim_set = set(stim_labels)
+    take_array = np.empty(0).astype(int)
+    for s in stim_set:
+        stim_in_trials = np.array(np.where(stim_labels == s))
+        trials_to_keep = np.random.choice(*stim_in_trials, keep_trials, replace=False)
+        take_array = np.append(take_array, trials_to_keep)
+        labels_out = np.append(labels_out, np.repeat(s, keep_trials))
+        #print(f'for ch:{ch}, stim:{s}, got valid trials:{len(valid_trials)}, undersampled: {len(trials_to_nan)}')
+    X_out = X_out.take(take_array, axis = 1)
+    return X_out, labels_out
+
 def left_adjust_by_stim(X: LabeledArray, stim_labels: np.ndarray, crop: bool = False):
     X_out = X.copy()
     labels_out = stim_labels.copy()
@@ -134,7 +151,7 @@ def left_adjust_by_stim(X: LabeledArray, stim_labels: np.ndarray, crop: bool = F
     nonnan_count_ch = np.zeros((X.shape[0], len(stim_set))).astype(int) # ch * token valid trials count
     for ch in range(X.shape[0]):
         for i,s in enumerate(stim_set):
-            nonnan_count_ch[ch,i] = np.sum(nonnan_trials[ch, stim_labels == s])
+            nonnan_count_ch[ch,i] = np.sum(nonnan_trials[ch, stim_labels == s]).astype(int)
     if crop:
         for s in range(len(stim_set)):
             if len(np.unique(nonnan_count_ch[:,s])) > 1:
@@ -144,10 +161,13 @@ def left_adjust_by_stim(X: LabeledArray, stim_labels: np.ndarray, crop: bool = F
     for i,s in enumerate(stim_set):
         stim_in_ch = np.array(np.where(stim_labels == s)[0])
         for ch in range(X.shape[0]):
-            nonnan_data = X[ch, stim_in_ch[nonnan_trials[ch, stim_in_ch]],:]
+            if len(stim_in_ch[:nonnan_count_ch[ch, i]]) > 0:
+                nonnan_data = X[ch, stim_in_ch[nonnan_trials[ch, stim_in_ch]],:]
             if not crop:
-                X_out[ch, stim_in_ch[:nonnan_count_ch[ch,i]],:] = nonnan_data # put valid data on the left
-                X_out[ch, stim_in_ch[nonnan_count_ch[ch,i]:],:] = np.nan # nan out remaining trials
+                if len(stim_in_ch[:nonnan_count_ch[ch, i]]) > 0:
+                    X_out[ch, stim_in_ch[:nonnan_count_ch[ch,i]],:] = nonnan_data # put valid data on the left
+                if len(stim_in_ch[nonnan_count_ch[ch,i]:]) >0:
+                    X_out[ch, stim_in_ch[nonnan_count_ch[ch,i]:],:] = np.nan # nan out remaining trials
             else:
                 smin = 0 + sum(nonnan_count_ch[ch,0:i])
                 smax = smin + nonnan_count_ch[ch,i]

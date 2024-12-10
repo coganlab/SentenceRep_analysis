@@ -303,19 +303,8 @@ with open(f'{analysisfolder}\\channel_label_phonemeseq.pkl', 'wb') as f:
 with open(f'{analysisfolder}\\maxhipp_channel_label_phonemeseq.pkl', 'wb') as f:
     pickle.dump(maxhipp_ch_label, f)
 
-#%%  read ch names
-#from analysis.decoding.words import dict_to_structured_array
-
+#%%  plot
 sub.plot_groups_on_average([idx_hippsig], colors = ['blue'])
-
-
-colors = ['orange', 'yellow']
-scores = {'Hipp&Sig': None, 'MaxHipp&Sig': None}
-idxs = [idx_hippsig, idx_maxhippsig]
-names = list(scores.keys())
-conds = ['aud', 'go', 'resp']
-
-
 
 #%% Prep data to labeledarray
 from ieeg.calc.mat import LabeledArray, combine
@@ -369,7 +358,10 @@ idx_hipp = [i for i, label in enumerate(orig_ch_label) if 'Hipp' in label]
 idx_hippsig = [i for i in idx_hipp if i in sig_idx_union]
 idx_maxhipp = [i for i, label in enumerate(maxhipp_ch_label) if 'Hipp' in label]
 idx_maxhippsig = [i for i in idx_maxhipp if i in sig_idx_union]
-
+sig_idx_aud = list(set(sig_idx['aud']))
+idx_gmsig_aud = [i for i in idx_gm if i in sig_idx_aud]
+sig_idx_resp = list(set(sig_idx['resp']))
+idx_gmsig_resp = [i for i in idx_gm if i in sig_idx_resp]
 
 #%%test
 from analysis.decoding import classes_from_labels
@@ -398,9 +390,9 @@ zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_label
 
 # %% Time sliding decoding for reconstruction
 from analysis.decoding import classes_from_labels
-from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
+from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim, equal_stims_per_class
 
-window_kwargs = {'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
+window_kwargs = {'obs_axs': 1, 'normalize': 'true', 'n_jobs': 10,
                 'average_repetitions': False}
 true_cat = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
                  'aeba':2, 'aebi':2, 'aebu':2, 'aega':2, 'aeka':2, 'aepi':2,
@@ -412,8 +404,7 @@ true_cat = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
                  'paek':8, 'paep':8, 'paev':8, 'puk':8, 'pup':8,
                  'vaeg':9, 'vaek':9, 'vip':9, 'vug':9, 'vuk':9}
 decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
-
-score_out = dict()
+iter_num = 10
 for i_cond, cond in enumerate(conds.keys()):
     if i_cond != 0:
         continue
@@ -423,18 +414,33 @@ for i_cond, cond in enumerate(conds.keys()):
     flipped_cats = {v:k for k,v in cats.items()}
     new_labels = np.array([true_cat[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
-    zscoresLA_cond_idx, _ = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10)
-    zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10, upper_limit=10)
-    zscores_cropped, labels_cropped = left_adjust_by_stim(zscoresLA_cond_idx_reduced, new_labels, crop=True)
-    scores_out = decoder.cv_cm(zscores_cropped.__array__(), labels_cropped,
-                                        **window_kwargs, oversample=False)
+    zscoresLA_cond_idx = zscoresLA_cond_idx.take(np.arange(50)+49, axis = 2) #take only onset to 500ms
+    zscoresLA_cond_idx, _ = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_non_nan=15)
+    scores_out = np.zeros((iter_num, len(decoder_cat), len(decoder_cat)), dtype = np.float16)
+    for iter_i in range(iter_num):
+        zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=15, upper_limit=15)
+        zscores_cropped, labels_cropped = left_adjust_by_stim(zscoresLA_cond_idx_reduced, new_labels, crop=True)
+        scores_iter = decoder.cv_cm(zscores_cropped.__array__(), labels_cropped,
+                                            **window_kwargs, oversample=False)
+        scores_out[iter_i] = np.mean(scores_iter, axis=0)
+    score_mean = np.mean(scores_out, axis=0)
 
+#%% balanced cats
+    scores_out = np.zeros((iter_num, len(decoder_cat), len(decoder_cat)), dtype = np.float16)
+    for iter_i in range(iter_num):
+        # ignore valid or not, just randomly select from trials to balance out class and use mixup
+        zscoresLA_cond_idx_balanced, labels_balanced = equal_stims_per_class(zscoresLA_cond_idx, new_labels, keep_trials=16)
+        zscoresLA_cond_idx_balanced, _ = remove_min_nan_ch(zscoresLA_cond_idx_balanced, labels_balanced, min_non_nan=3)
+        zscores_cropped, labels_cropped = left_adjust_by_stim(zscoresLA_cond_idx_balanced, labels_balanced, crop=False)
+        scores_iter = decoder.cv_cm(zscores_cropped.__array__(), labels_cropped,
+                                    **window_kwargs, oversample=True)
+        scores_out[iter_i] = np.mean(scores_iter, axis=0)
     score_mean = np.mean(scores_out, axis=0)
 
 #%% plot
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-cax = ax.imshow(score_mean, cmap='viridis', vmin=0, vmax=0.6)
+cax = ax.imshow(score_mean, cmap='viridis', vmin=0, vmax=0.4)
 
 ax.set_xticks(np.arange(9))
 ax.set_yticks(np.arange(9))
