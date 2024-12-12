@@ -18,13 +18,13 @@ def load_intermediates(layout: BIDSLayout, conds: dict[str, Doubles],
     match value_type:
         case "zscore":
             reader = lambda f: mne.read_epochs(f, False, preload=True)
-            suffix = "zscore-epo"
+            suffix = "zscore-epo.fif"
         case "power":
             reader = lambda f: mne.read_epochs(f, False, preload=True)
-            suffix = "power-epo"
+            suffix = "power-epo.fif"
         case "significance":
             reader = mne.read_evokeds
-            suffix = "mask-ave"
+            suffix = "mask-ave.fif"
         case _:
             raise ValueError(f"value_type must be one of {allowed}, instead"
                              f" got {value_type}")
@@ -76,24 +76,24 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
     for cond in conds.keys():
         out[cond] = OrderedDict()
         try:
-            fname = os.path.join(folder, f"{subject}_{cond}_{suffix}.fif")
+            fname = os.path.join(folder, f"{subject}_{cond}_{suffix}")
             epoch = reader(fname)
-        except FileNotFoundError as e:
+        except (FileNotFoundError, OSError) as e:
             mne.utils.logger.warn(e)
             return
 
         sig = epoch
         times = conds[cond]
-        if suffix.endswith("epo"):
+        if suffix.split('.')[0].endswith("epo") or isinstance(sig, mne.time_frequency.EpochsTFR):
             if avg:
                 sig = sig.average(method=lambda x: np.nanmean(x, axis=0))
-        else:
+        elif isinstance(sig, list) :
             sig = sig[0]
         mat = sig.get_data(tmin=times[0], tmax=times[1])
 
         # get_data calls are expensive!!!!
         for i, ch in enumerate(sig.ch_names):
-            if suffix.endswith("epo"):
+            if suffix.split('.')[0].endswith("epo") or isinstance(sig, mne.time_frequency.EpochsTFR):
                 for ev, id in sig.event_id.items():
                     ev = ev.split('/')[-1]
                     out[cond].setdefault(ev, {}).setdefault(ch, {})
@@ -105,23 +105,45 @@ def load_dict_async(subject: str, suffix: str, reader: callable,
 
 def load_dict(layout: BIDSLayout, conds: dict[str, Doubles],
               value_type: str = "zscore", avg: bool = True,
-              derivatives_folder: PathLike = 'stats'
+              derivatives_folder: PathLike = 'stats', ext: str = '.fif'
               ) -> dict[str: dict[str: dict[str: np.ndarray]]]:
 
     allowed = ["zscore", "power", "significance", "pval"]
+    assert ext in ('.fif', '.h5'), "ext must be one of ('.fif', '.h5')"
+
     match value_type:
         case "zscore":
-            reader = lambda f: mne.read_epochs(f, False, preload=True)
-            suffix = "zscore-epo"
+            suffix = "zscore"
+            if ext == ".fif":
+                suffix += "-epo" + ext
+                reader = lambda f: mne.read_epochs(f, False, preload=True)
+            else:
+                suffix += "-tfr" + ext
+                reader = mne.time_frequency.read_tfrs
         case "power":
-            reader = lambda f: mne.read_epochs(f, False, preload=True)
-            suffix = "power-epo"
+            suffix = "power"
+            if ext == ".fif":
+                suffix += "-epo" + ext
+                reader = lambda f: mne.read_epochs(f, False, preload=True)
+            else:
+                suffix += "-tfr" + ext
+                reader = mne.time_frequency.read_tfrs
         case "significance":
-            reader = mne.read_evokeds
-            suffix = "mask-ave"
+            suffix = "mask"
+            if ext == ".fif":
+                suffix += "-ave" + ext
+                reader = mne.read_evokeds
+            else:
+                suffix += "-tfr" + ext
+                reader = mne.time_frequency.read_tfrs
         case "pval":
-            reader = mne.read_evokeds
-            suffix = "pval-ave"
+            suffix = "pval"
+            if ext == ".fif":
+                suffix += "-ave" + ext
+                reader = mne.read_evokeds
+            else:
+                suffix += "-tfr" + ext
+                reader = mne.time_frequency.read_tfrs
         case _:
             raise ValueError(f"value_type must be one of {allowed}, instead"
                              f" got {value_type}")
