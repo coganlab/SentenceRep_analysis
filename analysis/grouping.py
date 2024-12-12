@@ -7,7 +7,7 @@ from ieeg.viz.mri import plot_on_average
 from ieeg.viz.ensemble import plot_dist
 from ieeg.calc.mat import LabeledArray, combine
 from collections.abc import Sequence
-from analysis.utils.mat_load import load_dict
+from analysis.utils.mat_load import DataLoader
 from ieeg.viz.mri import subject_to_info, gen_labels, get_sub, pick_no_wm
 import matplotlib.pyplot as plt
 
@@ -28,13 +28,13 @@ class GroupData:
                            folder: str = 'stats', **kwargs):
         layout = get_data(task, root=root)
         conds = cls._set_conditions(conds)
-        sig = load_dict(layout, conds, "significance", True, folder)
+        sig = DataLoader(layout, conds, "significance", True, folder).load_dict()
         sig = combine(sig, (0, 2))
-        pwr = load_dict(layout, conds, "power", False, folder)
-        zscore = load_dict(layout, conds, "zscore", False, folder)
+        pwr = DataLoader(layout, conds, "power", False, folder).load_dict()
+        zscore = DataLoader(layout, conds, "zscore", False, folder).load_dict()
         data = combine(dict(power=pwr, zscore=zscore), (1, 4))
         # subjects = tuple(data['power'].keys())
-        pvals = load_dict(layout, conds, "pval", True, folder)
+        pvals = DataLoader(layout, conds, "pval", True, folder).load_dict()
         if pvals:
             kwargs['pvals'] = combine(pvals, (0, 2))
 
@@ -139,6 +139,13 @@ class GroupData:
                     "go_jl": (-0.5, 1.5)}
         else:
             return conditions
+
+    @staticmethod
+    def _set_categories(categories: Sequence[str]):
+        if categories is None:
+            return ('dtype', 'epoch', 'stim', 'channel', 'trial', 'time')
+        else:
+            return
 
     @staticmethod
     def _find_sig_chans(sig: np.ndarray) -> list[int]:
@@ -521,7 +528,7 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
             else:
                 t_idx = slice(75, 125)
 
-            if np.any(all_sig[cond, idx, t_idx] == 1):
+            if np.any(all_sig[cond, idx, ..., t_idx] == 1):
                 sig_chans |= {i}
                 break
 
@@ -538,12 +545,12 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
             aud_slice = slice(50, 100)
             go_slice = slice(75, 125)
 
-        audls_is = np.any(all_sig['aud_ls', idx, aud_slice] == 1)
-        audlm_is = np.any(all_sig['aud_lm', idx, aud_slice] == 1)
-        audjl_is = np.any(all_sig['aud_jl', idx, aud_slice] == 1)
-        mime_is = np.any(all_sig['go_lm', idx, go_slice] == 1)
-        resp_is = np.any(all_sig['resp', idx, go_slice] == 1)
-        speak_is = np.any(all_sig['go_ls', idx, go_slice] == 1)
+        audls_is = np.any(all_sig['aud_ls', idx, ..., aud_slice] == 1)
+        audlm_is = np.any(all_sig['aud_lm', idx, ..., aud_slice] == 1)
+        audjl_is = np.any(all_sig['aud_jl', idx, ..., aud_slice] == 1)
+        mime_is = np.any(all_sig['go_lm', idx, ..., go_slice] == 1)
+        resp_is = np.any(all_sig['resp', idx, ..., go_slice] == 1)
+        speak_is = np.any(all_sig['go_ls', idx, ..., go_slice] == 1)
 
         if audls_is and audlm_is and mime_is and (speak_is or resp_is):
             SM |= {i}
