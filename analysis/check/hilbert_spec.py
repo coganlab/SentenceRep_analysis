@@ -62,15 +62,24 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
-        spec = hilbert_spectrogram(trials, Wn=(30, 500), n_jobs=n_jobs,
-                                   decim=int(good.info['sfreq'] / 100))
+        freq = np.geomspace(60, 300, num=40)
+        kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
+                      n_cycles=freq / 2, time_bandwidth=4, )
+
+        spec= trials.compute_tfr(method="multitaper", **kwargs)
+        if int(spec.info['sfreq']) > 100:
+            new_sfreq = 100
+            decim = spec.info['sfreq'] // new_sfreq
+            offset = spec.info['sfreq'] % new_sfreq
+            spec.decimate(decim, offset)
+        del trials
         crop_pad(spec, "0.5s")
-        if epoch == "Start":
-            base = spec.copy().crop(-0.5, 0)
-        spec_a = rescale(spec, base, copy=True, mode='zscore')
+        # if epoch == "Start":
+        #     base = spec.copy().crop(-0.5, 0)
+        # spec_a = rescale(spec, base, copy=True, mode='zscore')
         # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        spec_a.info['subject_info']['files'] = tuple(fnames)
-        spec_a.info['bads'] = good.info['bads']
+        spec.info['subject_info']['files'] = tuple(fnames)
+        spec.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
+        mne.time_frequency.write_tfrs(filename, spec, overwrite=True)
