@@ -20,21 +20,23 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = 27
+    subject = 32
 
-def resample_tfr(tfr, sfreq, copy=False):
+def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
     """Resample a TFR object to a new sampling frequency"""
     if copy:
         tfr = tfr.copy()
-    sfreq = int(sfreq)
-    o_sfreq = int(tfr.info["sfreq"])
+
+    if o_sfreq is None:
+        # o_sfreq = len(tfr.times) / (tfr.tmax - tfr.tmin)
+        o_sfreq = tfr.info["sfreq"]
 
     tfr._data = resample(tfr._data, o_sfreq, sfreq, axis=-1)
     lowpass = tfr.info.get("lowpass")
     lowpass = np.inf if lowpass is None else lowpass
     with tfr.info._unlock():
-        tfr.info["lowpass"] = min(lowpass, sfreq / 2.0)
-        tfr.info["sfreq"] = float(sfreq)
+        tfr.info["lowpass"] = min(lowpass, sfreq / 2)
+        tfr.info["sfreq"] = sfreq
     new_times = resample(tfr.times, o_sfreq, sfreq, axis=-1)
     # adjust indirectly affected variables
     tfr._set_times(new_times)
@@ -42,8 +44,7 @@ def resample_tfr(tfr, sfreq, copy=False):
     tfr._update_first_last()
     return tfr
 
-n_jobs = -1
-
+n_jobs = 4
 for sub in subjects:
     if int(sub[1:]) <= subject:
         continue
@@ -55,7 +56,8 @@ for sub in subjects:
     good = crop_empty_data(filt,).copy()
 
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    good.drop_channels(good.info['bads'])
+    bads = good.info['bads']
+    good.drop_channels(bads)
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
@@ -83,20 +85,40 @@ for sub in subjects:
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
         freq = np.geomspace(60, 300, num=40)
+        decim = int(trials.info['sfreq']) // 100
         kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-                      n_cycles=freq / 2, time_bandwidth=4, decim=8)
+                      n_cycles=freq / 2, time_bandwidth=4,
+                      decim=4)
 
         spec = trials.compute_tfr(method="multitaper", **kwargs)
-        del trials
         crop_pad(spec, "0.5s")
-        if spec.sfreq > 100:
-            resample_tfr(spec, 100)
+        # spec = spec.decimate(2, 1)
+        del trials
+
+        # if spec.sfreq % 100 == 0:
+        #     factor = spec.sfreq // 100
+        #     offset = len(spec.times) % factor
+        #     spec = spec.decimate(factor, offset)
+        resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
+        # if spec.sfreq > 100:
+        #     # factor = min(2, spec.sfreq // 100)
+        #     # offset = len(spec.times) % 100
+        #     # spec = spec.decimate(factor, offset)
+        #     resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
+            # if name == "start":
+            #     resample_tfr(spec, 100, spec.times.shape[0])
+            # else:
+            #     resample_tfr(spec, 200, spec.times.shape[0])
+            #     resample_tfr(spec, 100, 100)
+
         # if epoch == "Start":
         #     base = spec.copy().crop(-0.5, 0)
         # spec_a = rescale(spec, base, copy=True, mode='zscore')
         # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        spec.info['subject_info']['files'] = tuple(fnames)
-        spec.info['bads'] = good.info['bads']
+        #spec.info['subject_info']['files'] = tuple(fnames)
+        # spec.info['bads'] = bads
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        mne.time_frequency.write_tfrs(filename, spec, overwrite=True)
+        # mne.time_frequency.write_tfrs(filename, spec, overwrite=True)
+
+        spec.save(filename, overwrite=True, verbose=True)

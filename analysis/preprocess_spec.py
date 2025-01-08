@@ -13,22 +13,24 @@ from tqdm import tqdm
 import numpy as np
 
 
-n_jobs = 11
-
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     LAB_root = os.path.join(HOME, "workspace", "CoganLab")
     sid = int(os.environ['SLURM_ARRAY_TASK_ID'])
-    subjects = [f"D{sid:04}"]
     layout = get_data("SentenceRep", root=LAB_root)
-    print(f"Running subject {subjects[0]}")
+    subjects = layout.get(return_type="id", target="subject")
+    subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-for subj in subjects:
-    if int(subj[1:]) not in (29,):
+    subject = 5
+
+n_jobs = 10
+
+for sub in subjects:
+    if int(sub[1:]) == subject:
         continue
     # Load the data
     TASK = "SentenceRep"
@@ -38,10 +40,10 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 10000
+    nperm = 5000
     spec_type = 'hilbert'
     filename = os.path.join(layout.root, 'derivatives',
-                            'spec', spec_type, subj, f'start-tfr.h5')
+                            'spec', spec_type, sub, f'start-tfr.h5')
     base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0)
     sig2 = base.get_data()
     for name, window in zip(
@@ -50,7 +52,7 @@ for subj in subjects:
             # (*((0, 0.5),) * 5, *((0.25, 0.75),) * 3)):  # ave
 
         filename = os.path.join(layout.root, 'derivatives',
-                                    'spec', spec_type, subj, f'{name}-tfr.h5')
+                                    'spec', spec_type, sub, f'{name}-tfr.h5')
         epoch = mne.time_frequency.read_tfrs(filename)
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
 
@@ -73,13 +75,13 @@ for subj in subjects:
         p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,
                                                     epoch.times, epoch.freqs)
         # p_vals = epoch_mask.copy()
-        data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(),
-                     p_vals.copy()))
+        # data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(),
+        #              p_vals.copy()))
 
-    for name, epoch_mask, power, z_score, p_vals in data:
-        power.save(save_dir + f"/{subj}_{name}_power-epo.h5", overwrite=True)
-        z_score.save(save_dir + f"/{subj}_{name}_zscore-epo.h5", overwrite=True)
-        epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.h5", overwrite=True)
-        p_vals.save(save_dir + f"/{subj}_{name}_pval-ave.h5", overwrite=True)
+        # for name, epoch_mask, power, z_score, p_vals in data:
+        power.save(save_dir + f"/{sub}_{name}_power-tfr.h5", overwrite=True)
+        z_score.save(save_dir + f"/{sub}_{name}_zscore-tfr.h5", overwrite=True)
+        epoch_mask.save(save_dir + f"/{sub}_{name}_mask-tfr.h5", overwrite=True)
+        p_vals.save(save_dir + f"/{sub}_{name}_pval-tfr.h5", overwrite=True)
 
-    base.save(save_dir + f"/{subj}_base-epo.h5", overwrite=True)
+    base.save(save_dir + f"/{sub}_base-tfr.h5", overwrite=True)
