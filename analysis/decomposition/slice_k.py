@@ -11,11 +11,12 @@ from itertools import product
 
 
 # ## set up the task
+HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
-    LAB_root = os.path.join("~", "workspace", "CoganLab")
+    LAB_root = os.path.join(HOME, "workspace", "CoganLab")
     n = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
-    LAB_root = os.path.join("~", "Box", "CoganLab")
+    LAB_root = os.path.join(HOME, "Box", "CoganLab")
     n = 1
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -26,20 +27,24 @@ os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
 if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", LAB_root, folder='stats')
-    param_grid = {'ranks': [{'min': [0, 1, 0], 'max': [0, 8, 0]},
-                            {'min': [1], 'max': [8]},],
+    param_grid = {'ranks': [{'min': [0, 1, 0], 'max': [0, 12, 0]},
+                            {'min': [1], 'max': [12]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
                   'masks': [{'train': False, 'test': False},
-                            {'train': True, 'test': True},]
+                            {'train': True, 'test': True},],
+                  'loss': ['L1Loss','HuberLoss'],
+                  'lr': [1e-3, 1e-4],
+                  'decay': [0.33, 1., 0.2]
                     }
-    procs = 2
-    threads = 2
-    repeats = 10
+    procs = 1
+    threads = 1
+    repeats = 20
     conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
     aud_slice = slice(0, 175)
 
-    for ranks, group, is_mask in product(
-            param_grid['ranks'], param_grid['groups'], param_grid['masks']):
+    for ranks, group, is_mask, loss, lr, decay in product(
+            param_grid['ranks'], param_grid['groups'], param_grid['masks'],
+            param_grid['loss'], param_grid['lr'], param_grid['decay']):
         if n > 1:
             n -= 1
             continue
@@ -70,20 +75,20 @@ if __name__ == '__main__':
                                                     processes_grid=procs,
                                                     processes_sample=threads,
                                                     seed=3,
-                                                    batch_prop=0.33,
-                                                    batch_prop_decay=3,
+                                                    batch_prop=decay,
+                                                    batch_prop_decay=5 if decay < 1 else 1,
                                                     # min_std=1e-4,
                                                     # iter_std=10,
                                                     init_bias=0.01,
-                                                    # weight_decay=1e-3,
+                                                    # weight_decay=decay,
                                                     initialization='uniform-positive',
-                                                    learning_rate=1e-2,
-                                                    max_iter=10000,
+                                                    learning_rate=lr,
+                                                    max_iter=1000000,
                                                     positive=True,
                                                     verbose=0,
                                                     # batch_dim=0,
-                                                    loss_function=torch.nn.HuberLoss(reduction='mean'),)
-                                                    # compile=True)
+                                                    loss_function=getattr(torch.nn, loss)(reduction='mean'),
+                                                    compile=True)
 
         max_r = max(ranks['max'])
         min_r = min(ranks['min'])
@@ -98,6 +103,9 @@ if __name__ == '__main__':
         file_id = group
         file_id += f"_{len(ranks['min'])}ranks"
         file_id += "_test" if is_mask['test'] else ""
+        file_id += f"_{loss}"
+        file_id += f"_{lr}"
+        file_id += f"_{decay}"
         plt.savefig(f"loss_dist_{file_id}.png")
         with open(f"results_grid_{file_id}.pkl", 'wb') as f:
             pickle.dump({'loss': loss_grid.tolist(), 'seed': seed_grid.tolist()}, f)

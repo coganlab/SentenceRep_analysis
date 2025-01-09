@@ -24,26 +24,30 @@ device = ('cuda' if torch.cuda.is_available() else 'cpu')
 if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
-    for idx_name, n_components in zip(('SM', 'PROD', 'AUD', 'sig_chans'), (5, 6, 2, 11)):
-        # if idx_name not in ('SM', 'AUD', 'PROD'):
-        #     continue
+    for idx_name, n_components in zip(('SM', 'PROD', 'AUD', 'sig_chans'), (3, 2, 2, 11)):
+        if idx_name not in ('SM',):
+            continue
         sm_idx = sorted(list(getattr(sub, idx_name)))
-        aud_slice = slice(0, 175)
         conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
         neural_data_tensor, labels = dataloader(sub, sm_idx, conds)
         mask = ~torch.isnan(neural_data_tensor)
         neural_data_tensor, _ = dataloader(sub, sm_idx, conds, do_mixup=True)
         neural_data_tensor = neural_data_tensor.to(torch.float32)
         torch.set_float32_matmul_precision('medium')
-        with open(r'C:\Users\ae166\Downloads\results\results_grid_'
-                  f'{idx_name}_1ranks_HuberLoss_0.01_0.01_none.pkl', 'rb') as f:
-            results = pickle.load(f)
+        try:
+            with open(r'C:\Users\ae166\Downloads\results\results_grid_'
+                      f'{idx_name}_1ranks_HuberLosshsrtj_0.01_0.01_none.pkl', 'rb') as f:
+                results = pickle.load(f)
+        except FileNotFoundError:
+            with open(r'C:\Users\ae166\Downloads\results\results_grid_'
+                      f'{idx_name}_3ranks_test_HuberLoss_0.01_0.01_none.pkl', 'rb') as f:
+                results = pickle.load(f)
         loss_grid = np.array(results['loss']).squeeze()
         seed_grid = np.array(results['seed']).squeeze()
         # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
         # n_components = 6
         best_seed = seed_grid[n_components - 1, np.argmin(loss_grid[n_components - 1])]
-        n_components = (n_components,)
+        n_components = (0, n_components, 0)
 
         n = np.argmax(n_components)
         # best_seed = 123458
@@ -62,16 +66,16 @@ if __name__ == '__main__':
                                            # batch_dim=0,
                                            # batch_prop=0.33,
                                            # batch_prop_decay=5,
-                                           weight_decay=1e-4,
+                                           weight_decay=1e-2,
                                            mask=mask,
                                            init_bias=0.01,
                                            initialization='uniform-positive',
                                            loss_function=torch.nn.HuberLoss(reduction='none'),
                                            verbose=0
                                            )
-        torch.save(model, f'model_{idx_name}1.pt')
-        # model = torch.load(f'model_{idx_name}1.pt')
-        # losses = model.losses
+        torch.save(model, f'model_{idx_name}.pt')
+        # model = torch.load(f'model_{idx_name}.pt')
+        losses = model.losses
         # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
         # slicetca.invariance(model, L3 = None)
         # # %% plot the losses
@@ -86,7 +90,7 @@ if __name__ == '__main__':
                              variables=('trial', 'channel', 'time'),)
         colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
                   'darkorange', 'lime', 'blue', 'red', 'purple']
-        T, W, H = model.get_components(numpy=True)[n]
+        W, H = model.get_components(numpy=True)[n]
         # %% plot the components
         colors = colors[:n_components[n]]
         conds = {'aud_ls': (-0.5, 1.5),
@@ -156,7 +160,7 @@ if __name__ == '__main__':
                 else:
                     axs[0 + j, i].set_ylabel("Z-Score (V)")
                     axs[1 + j, i].set_ylabel("Channels")
-                if i == n_components[1] // 2:
+                if i == n_components[n] // 2:
                     axs[0 + j, i].set_title(f"{cond}")
 
             for ax in axs[0 + j]:
@@ -175,7 +179,7 @@ if __name__ == '__main__':
         atlas = Atlas()
         fig, axs = plt.subplots(n_comp, 1)
         idxs = [torch.tensor(sm_idx)[
-                    (W[i] / W.sum(0)) > 0.4
+                    (W[i] / W.sum(0)) > 0.6
                 # W.argmax(0) == i
                 ].tolist() for i in range(n_comp)]
         ylims = [0, 0]
@@ -226,7 +230,6 @@ if __name__ == '__main__':
             ylims[0] = min(ylim[0], ylims[0])
         for ax in axs:
             ax.set_ylim(ylims)
-        plt.tight_layout()
 
     # # %% varimax rotation
     # # create a copy of the model
