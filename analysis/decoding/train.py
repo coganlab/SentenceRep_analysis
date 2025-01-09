@@ -4,10 +4,10 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from analysis.data import LabeledData
 import torch
 import numpy as np
-from analysis.decoding.models import CNNTransformer, SimpleDecoder
+from analysis.decoding.models import SimpleDecoder
 from analysis.grouping import GroupData
 import os
-from ieeg.calc.mat import Labels, LabeledArray
+from ieeg.arrays.label import Labels, LabeledArray
 from ieeg.viz.ensemble import plot_dist
 import pickle
 
@@ -147,7 +147,7 @@ if __name__ == '__main__':
         # out = process_data(data[..., :20], 1, n_folds, val_size, target_map, max_epochs, verbose=False)
 
         # %% windowed decoding
-        from analysis.decoding import windower, Decoder
+        from analysis.decoding import windower
         from joblib import Parallel, delayed
 
         data_windowed = LabeledArray(windower(data, 20, 2).swapaxes(0, -1))[::4]

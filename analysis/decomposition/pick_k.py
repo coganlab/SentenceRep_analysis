@@ -8,13 +8,12 @@ matplotlib.use('Qt5Agg')
 
 from analysis.grouping import GroupData
 from ieeg.viz.ensemble import plot_dist, plot_weight_dist, subgrids
-from ieeg.calc.mat import LabeledArray
+from ieeg.arrays.label import LabeledArray
 import sklearn.decomposition as skd
 import sys
 from scipy.sparse import csr_matrix, issparse, linalg as splinalg
 import scipy.stats as st
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
-from sklearn.model_selection import cross_val_score
 from joblib import Parallel, delayed
 import nimfa as nf
 

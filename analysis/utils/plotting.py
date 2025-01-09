@@ -2,7 +2,7 @@ from analysis.utils.calc import do_decomp, par_calc
 from sklearn.decomposition import NMF
 import numpy as np
 from ieeg.calc.stats import dist
-from ieeg.calc.mat import get_elbow, LabeledArray
+from ieeg.arrays.label import get_elbow, LabeledArray
 from ieeg.viz.ensemble import plot_dist, plot_weight_dist
 import matplotlib.pyplot as plt
 from collections.abc import Iterable
@@ -327,12 +327,11 @@ def plot_horizontal_bars(ax: plt.Axes,
 if __name__ == "__main__":
     import matplotlib as mpl
     mpl.use('TkAgg', force=True)
-    import mne
     import os
     import numpy as np
     from ieeg.io import get_data
     from ieeg.viz.utils import plot_dist
-    from ieeg.viz.mri import get_sub_dir, plot_on_average, gen_labels
+    from ieeg.viz.mri import plot_on_average
     import matplotlib.pyplot as plt
     from analysis.utils.mat_load import load_intermediates, group_elecs
 

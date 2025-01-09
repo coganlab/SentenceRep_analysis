@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from ieeg.calc.oversample import MinimumNaNSplit
 import torch
 import numpy as np
-from ieeg.calc.mat import LabeledArray
+from ieeg.arrays.label import LabeledArray
 
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 # %% Define data module

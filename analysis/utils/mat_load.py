@@ -111,8 +111,8 @@ class DataLoader:
         combos = product(self.subjects, self.conds.keys())
 
         # joblib settings with some defaults
-        kwargs.setdefault("n_jobs", cpu_count())
-        kwargs.setdefault("return_as", "generator_unordered")
+        kwargs.setdefault("n_jobs", 1) # cpu_count())
+        kwargs.setdefault("return_as", "generator")
         kwargs.setdefault("backend", "loky")
         kwargs.setdefault("verbose", 0)
 
