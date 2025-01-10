@@ -1,9 +1,7 @@
 import numpy as np
 from scipy import linalg
 import os
-from ieeg.calc.mat import LabeledArray
 from analysis.grouping import GroupData
-import scipy.stats as st
 from tqdm import tqdm
 
 n_samples, n_features, rank = 500, 25, 5
@@ -24,15 +22,15 @@ aud_slice = slice(0, 175)
 pval = np.where(sub.p_vals > 0.9999, 0.9999, sub.p_vals)
 
 # pval[pval<0.0001] = 0.0001
-zscores = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
-powers = np.nanmean(sub['zscore'].array, axis=(-4, -2))
+# zscores = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
+zscores = np.nanmean(sub['zscore'].array, axis=(-4, -2))
 X_hetero = np.hstack([zscores['aud_ls', :, aud_slice],
-                    # zscores['aud_lm', :, aud_slice],
+                    zscores['aud_lm', :, aud_slice],
                     # zscores['aud_jl', :, aud_slice],
                     zscores['go_ls'],
                     # zscores['go_lm'],
                     # zscores['go_jl'],
-                    # zscores['resp']
+                    zscores['resp']
                      ])[list(sub.SM)]
 n_features = X_hetero.shape[1]
 import matplotlib.pyplot as plt
@@ -41,12 +39,12 @@ from sklearn.covariance import OAS, ShrunkCovariance
 from sklearn.decomposition import PCA, FactorAnalysis
 from sklearn.model_selection import GridSearchCV, cross_val_score
 
-n_components = np.arange(0, n_features//8, 5)  # options for n_components
+n_components = np.arange(0, n_features//25, 2)  # options for n_components
 
 
 def compute_scores(X):
-    pca = PCA(svd_solver="full")
-    fa = FactorAnalysis(rotation="varimax")
+    pca = PCA(svd_solver="full", tol=1e-4)
+    fa = FactorAnalysis(rotation="varimax", tol=1e-4, svd_method='lapack')
 
     pca_scores, fa_scores = [], []
     for n in tqdm(n_components):
@@ -111,12 +109,12 @@ plt.axhline(
     label="Shrunk Covariance MLE",
     linestyle="-.",
 )
-# plt.axhline(
-#     lw_score(X),
-#     color="orange",
-#     label="LedoitWolf MLE" % n_components_pca_mle,
-#     linestyle="-.",
-# )
+plt.axhline(
+    lw_score(X),
+    color="orange",
+    label="LedoitWolf MLE",
+    linestyle="-.",
+)
 
 plt.xlabel("nb of components")
 plt.ylabel("CV scores")
