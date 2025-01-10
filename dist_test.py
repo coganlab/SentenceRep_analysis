@@ -1,8 +1,9 @@
 import ieeg.viz
 import numpy as np
 import matplotlib.pyplot as plt
-from ieeg.calc.fast import mean_diff
+from ieeg.calc.fast import mean_diff, _md
 from ieeg.arrays._api import get_namespace
+from ieeg.arrays.reshape import windower
 import inspect
 from itertools import combinations
 from scipy.special import comb
@@ -271,10 +272,21 @@ def _calculate_null_both(data, statistic, n_permutations, batch,
         # can permute axis-slices independently. If this feature is
         # added in the future, batches of the desired size should be
         # generated in a single call.
-        perm_generator = (rng.permutation(n_obs)
-                          for i in range(n_permutations))
+        # idx = np.arange(n_obs)
+        # probs = np.concatenate([(np.ones(n_obs_i[i])/n_obs_i[i])
+        #                         for i in range(n_samples)]) / n_samples
+        # perm_generator = rng.choice(idx, (n_permutations, n_obs), p=probs)
+        # perm_generator = (rng.permutation(n_obs)
+        #                   for i in range(n_permutations))
+        tot = min(n_obs_i)
+        perm_generator = rng.permuted(np.stack([np.concatenate([
+            rng.choice(n_obs_i[i], tot, shuffle=False, replace=False) +
+            (n_obs_ic[i-1] if i > 0 else 0)
+            for i in range(n_samples)])
+            for _ in range(n_permutations)]), axis=1)
 
     batch = batch or int(n_permutations)
+    batch_generator = windower(perm_generator, batch, 0, 1)[::batch]
     null_distribution = []
 
     # First, concatenate all the samples. In batches, permute samples with
@@ -282,8 +294,8 @@ def _calculate_null_both(data, statistic, n_permutations, batch,
     # the original sizes, compute the statistic for each batch, and add these
     # statistic values to the null distribution.
     data = np.concatenate(data, axis=-1)
-    for indices in _batch_generator(perm_generator, batch=batch):
-        indices = np.array(indices)
+    for indices in batch_generator:
+        # indices = np.array(indices)
 
         # `indices` is 2D: each row is a permutation of the indices.
         # We use it to index `data` along its last axis, which corresponds
@@ -331,7 +343,7 @@ def _all_partitions_concatenated(ns):
 
 # allocate memory for two normal distributions
 n = 2000 # number of samples
-m = 1000 # number of vectorized iterations
+m = 5000 # number of vectorized iterations
 rng = np.random.default_rng()
 arr1 = rng.normal(0, 1, (n, m))
 
