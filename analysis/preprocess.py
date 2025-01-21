@@ -3,13 +3,37 @@ from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq import gamma, utils
 from ieeg.calc import stats, scaling
+from ieeg.calc.oversample import resample
 import os.path as op
 import os
+import numpy as np
 import mne
 from itertools import product
+import scipy
 
+def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
+    """Resample a TFR object to a new sampling frequency"""
+    if copy:
+        tfr = tfr.copy()
 
-n_jobs = -1
+    if o_sfreq is None:
+        # o_sfreq = len(tfr.times) / (tfr.tmax - tfr.tmin)
+        o_sfreq = tfr.info["sfreq"]
+
+    tfr._data = resample(tfr._data, o_sfreq, sfreq, axis=-1)
+    lowpass = tfr.info.get("lowpass")
+    lowpass = np.inf if lowpass is None else lowpass
+    with tfr.info._unlock():
+        tfr.info["lowpass"] = min(lowpass, sfreq / 2)
+        tfr.info["sfreq"] = sfreq
+    new_times = resample(tfr.times, o_sfreq, sfreq, axis=-1)
+    # adjust indirectly affected variables
+    tfr._set_times(new_times)
+    tfr._raw_times = tfr.times
+    tfr._update_first_last()
+    return tfr
+
+n_jobs = 8
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -24,13 +48,13 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for subj in subjects:
-    if int(subj[1:]) in (3, 65, 71):
+    if int(subj[1:]) in (3, 32):
         continue
     # Load the data
     TASK = "SentenceRep"
     # subj = "D" + str(sub).zfill(4)
-    filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
-                           extension='.edf', desc='clean', preload=False)
+    filt = raw_from_layout(layout.derivatives['notch'], subject=subj,
+                           extension='.edf', desc='notch', preload=False)
 
     if "Trigger" in filt.ch_names:
         filt.drop_channels(["Trigger"])
@@ -64,7 +88,8 @@ for subj in subjects:
         outliers_to_nan(trials, outliers=10)
         gamma.extract(trials, copy=False, n_jobs=n_jobs)
         utils.crop_pad(trials, "0.5s")
-        trials.resample(100)
+        resample_tfr(trials, 100, copy=False)
+        # trials._data = resample(trials._data, trials.info['sfreq'], 100, axis=-1)
         trials.filenames = good.filenames
         out.append(trials)
         # if len(out) == 2:
@@ -81,7 +106,7 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 100000
+    nperm = 10000
     sig2 = base.get_data(copy=True)
     for epoch, name, window in zip((out[0]["Start"],) +
             tuple(out[1][e] for e in ["Response"] + list(
@@ -92,9 +117,18 @@ for subj in subjects:
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
         # time-perm
-        mask[name], p_act = stats.time_perm_cluster(
-            sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
-            ignore_adjacency=1)
+        e = None
+        for _ in range(10):
+            try:
+                mask[name], p_act = stats.time_perm_cluster(
+                    sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
+                    ignore_adjacency=1)
+                break
+            except scipy.optimize._optimize.BracketError as e:
+                e = e
+                continue
+        else:
+            print(e, subj)
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
                                      tmin=window[0])
 
