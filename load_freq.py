@@ -16,8 +16,8 @@ conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                     "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                     "go_jl": (-0.5, 1.5)}
 
-def load_data(datatype: str, out_type = float):
-    loader = DataLoader(layout, conds, datatype, True, 'stats_freq',
+def load_data(datatype: str, out_type: type | str = float, average: bool = True):
+    loader = DataLoader(layout, conds, datatype, average, 'stats_freq',
                        '.h5')
     zscore = loader.load_dict()
     zscore_ave = combine(zscore, (0, 2))
@@ -42,9 +42,7 @@ AUD = sorted(AUD)
 PROD = sorted(PROD)
 sig_chans = sorted(sig_chans)
 
-pvals = load_data("pval", out_type=float)
-data = np.where(pvals > 0.9999, 0.9999, pvals)
-zscores = LabeledArray(st.norm.ppf(1 - data), pvals.labels)
+zscores = load_data("zscores", "float16", False)
 
 times = np.linspace(-0.5, 1.5, 200)
 
@@ -55,7 +53,7 @@ picked = mne.time_frequency.EpochsTFRArray(
     info, sigs.__array__(), times, zscores.labels[2],
     events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
 
-# picked.average().plot(picks=0)
+# picked.average()n .plot(picks=0)
 # chan_grid(picked['aud_ls'].average(), yscale='log', vlim=(0, 1), cmap=parula_map)
 # all_spec = [picked['aud_ls'].pick_channels([pick]) for pick in picks]
 # for sub in subjects:
@@ -67,4 +65,9 @@ picked = mne.time_frequency.EpochsTFRArray(
 #
 # picks_old = (p.split('-') for p in picks)
 # picks = [f"D{int(p[0][1:])}-{p[1]}" for p in picks_old]
-# plot_on_average(subjects, picks=picks, hemi='both')
+from ieeg.viz.mri import plot_on_average
+br = None
+for i, idx in enumerate([SM, AUD, PROD]):
+    picks = [f"D{int(p[0][1:])}-{p[1]}" for p in (s.split("-") for s in zscores.labels[1][idx])]
+    rgb = [1 if j == i else 0 for j in range(3)]
+    br = plot_on_average(subjects, picks=picks, hemi='both', color=rgb, fig=br)
