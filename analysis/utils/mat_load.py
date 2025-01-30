@@ -65,7 +65,7 @@ class DataLoader:
                                  f" instead got {self.value_type}")
         return reader, suffix
 
-    def load_subject_condition(self, subject, cond):
+    def load_subject_condition(self, subject, cond, dtype=None):
         out_cond = OrderedDict()
         try:
             fname = os.path.join(self.root, 'derivatives',
@@ -85,6 +85,8 @@ class DataLoader:
         elif isinstance(sig, list):
             sig = sig[0]
         mat = sig.get_data(tmin=times[0], tmax=times[1])
+        if dtype is not None:
+            mat = mat.astype(dtype)
 
         for i, ch in enumerate(sig.ch_names):
             if (self.suffix.split('.')[0].endswith("epo") or
@@ -106,7 +108,7 @@ class DataLoader:
                 out_cond[ch] = mat[i]
         return subject, cond, out_cond
 
-    def load_dict(self, **kwargs):
+    def load_dict(self, dtype=None, **kwargs):
         out = OrderedDict()
         combos = product(self.subjects, self.conds.keys())
 
@@ -117,7 +119,7 @@ class DataLoader:
         kwargs.setdefault("verbose", 0)
 
         proc = Parallel(**kwargs)(delayed(self.load_subject_condition)(
-            subject, cond) for subject, cond in combos)
+            subject, cond, dtype) for subject, cond in combos)
         for subject, cond, result in tqdm(
                 proc,
                 total=len(self.subjects) * len(self.conds),

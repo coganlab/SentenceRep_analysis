@@ -19,7 +19,7 @@ conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
 def load_data(datatype: str, out_type: type | str = float, average: bool = True):
     loader = DataLoader(layout, conds, datatype, average, 'stats_freq',
                        '.h5')
-    zscore = loader.load_dict()
+    zscore = loader.load_dict(dtype=out_type)
     zscore_ave = combine(zscore, (0, 2))
     for key in zscore_ave.keys():
         for k in zscore_ave[key].keys():
@@ -42,7 +42,7 @@ AUD = sorted(AUD)
 PROD = sorted(PROD)
 sig_chans = sorted(sig_chans)
 
-zscores = load_data("zscores", "float16", False)
+zscores = load_data("zscore", "float16", False)
 
 times = np.linspace(-0.5, 1.5, 200)
 
