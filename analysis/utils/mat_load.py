@@ -86,7 +86,7 @@ class DataLoader:
                 sig = sig.average(method=lambda x: np.nanmean(x, axis=0))
         elif isinstance(sig, list):
             sig = sig[0]
-        mat = sig.get_data(tmin=times[0], tmax=times[1])
+        mat = get_data(sig, tmin=times[0], tmax=times[1])
         if dtype is not None:
             mat = mat.astype(dtype)
 
