@@ -7,9 +7,11 @@ from tqdm import tqdm
 
 from ieeg import Doubles, PathLike
 from joblib import Parallel, delayed, cpu_count
+from ieeg import Signal
 from itertools import product
 
 mne.set_log_level("ERROR")
+tfr_types = (mne.time_frequency.EpochsTFR, mne.time_frequency.AverageTFR)
 
 class DataLoader:
     def __init__(self, layout: BIDSLayout, conds: dict[str, Doubles],
@@ -129,6 +131,16 @@ class DataLoader:
                 out.setdefault(subject, OrderedDict())[cond] = result
 
         return out
+
+
+def get_data(inst: Signal, tmin: float, tmax: float):
+
+    if isinstance(inst, tfr_types) or getattr(inst, "preload", False):
+        tmin_idx = np.searchsorted(inst.times, tmin)
+        tmax_idx = np.searchsorted(inst.times, tmax, side="right")
+        return inst._data[..., tmin_idx:tmax_idx]
+    else:
+        return inst.get_data(tmin=tmin, tmax=tmax)
 
 if __name__ == "__main__":
     from ieeg.io import get_data
