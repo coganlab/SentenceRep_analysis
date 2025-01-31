@@ -22,12 +22,17 @@ def load_data(datatype: str, out_type: type | str = float, average: bool = True)
     zscore = loader.load_dict(dtype=out_type)
     if average:
         zscore_ave = combine(zscore, (0, 2))
+        for key in zscore_ave.keys():
+            for k in zscore_ave[key].keys():
+                for f in zscore_ave[key][k].keys():
+                    zscore_ave[key][k][f] = zscore_ave[key][k][f][..., :200]
     else:
-        zscore_ave = combine(combine(zscore, (0, 3)), (1, 3))
-    for key in zscore_ave.keys():
-        for k in zscore_ave[key].keys():
-            for f in zscore_ave[key][k].keys():
-                zscore_ave[key][k][f] = zscore_ave[key][k][f][..., :200]
+        zscore_ave = combine(zscore, (0, 3))
+        for key in zscore_ave.keys():
+            for t in zscore_ave[key].keys():
+                for k in zscore_ave[key][t].keys():
+                    for f in zscore_ave[key][t][k].keys():
+                        zscore_ave[key][t][k][f] = zscore_ave[key][t][k][f][:, :200]
     del zscore
     return LabeledArray.from_dict(zscore_ave, dtype=out_type)
 
