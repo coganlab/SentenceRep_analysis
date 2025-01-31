@@ -6,8 +6,10 @@ import os
 
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_horizontal_bars
+from analysis.decoding import get_scores
 from ieeg.calc.stats import time_perm_cluster
-from analysis.decoding import (Decoder, get_scores, plot_all_scores, plot_dist_bound)
+from ieeg.decoding.decode import Decoder, plot_all_scores
+from ieeg.viz.ensemble import plot_dist_bound
 
 
 def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
@@ -57,7 +59,7 @@ if __name__ == '__main__':
     idxs = [list(idx) for idx in idxs]
     names = list(scores.keys())
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-    window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
+    window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
                     'average_repetitions': False}
 
     # %% Time Sliding decoding for word tokens
@@ -65,37 +67,39 @@ if __name__ == '__main__':
     scores = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 1, sub, idxs, conds,
                                 window_kwargs, scores,
                                 shuffle=False)
-    dict_to_structured_array(scores, 'true_scores.npy')
+    dict_to_structured_array(scores, 'true_scores_new_test.npy')
+    if True:
+        raise ValueError
     scores2 = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-                                    0.8, 'lda', 5, 250, sub, idxs, conds,
+                                    0.8, 'lda', 5, 50, sub, idxs, conds,
                                     window_kwargs, scores2,
                                     shuffle=True)
     dict_to_structured_array(scores2, 'shuffle_score.npy')
 
     # %% Plotting
     data_dir = ''
-    # true_scores = np.load(data_dir + 'true_scores_short.npy', allow_pickle=True)[0]
-    # true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
+    true_scores = np.load(data_dir + 'true_scores.npy', allow_pickle=True)[0]
+    true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
 
     plots = {}
-    for key, values in scores.items():
+    for key, values in true_scores.items():
         if values is None:
             continue
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
     fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors, "Word Decoding")
 
-    for ax in fig.axes:
-        ax.axhline(0.25, color='k', linestyle='--')
 
     # %% Time Sliding decoding significance
 
-    shuffle_score = np.load(data_dir + 'shuffle_score_short.npy', allow_pickle=True)[0]
+    shuffle_score = np.load(data_dir + 'shuffle_score_brunner.npy', allow_pickle=True)[0]
     shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
     signif = {}
-    for cond, score in scores.items():
+    for cond, score in true_scores.items():
         true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
         shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
-        signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+        signif[cond] = time_perm_cluster(
+            true.T, shuffle.T, 0.01,
+            stat_func=lambda x, y, axis: np.mean(x, axis=axis))[0]
 
     # %% Plot significance
     for cond, ax in zip(conds, axs):
@@ -115,3 +119,6 @@ if __name__ == '__main__':
             plot_dist_bound(shuffle, 'std', 'both', times, 0, ax=ax, color=colors[i], alpha=0.3)
             bars.append(signif[name])
         plot_horizontal_bars(ax, bars, 0.05, 'below')
+
+    for ax in fig.axes:
+        ax.axhline(0.25, color='k', linestyle='--')
