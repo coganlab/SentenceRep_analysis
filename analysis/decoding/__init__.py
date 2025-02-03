@@ -63,12 +63,12 @@ def nan_common_denom(array: LabeledArray, sort: bool = True, trials_ax: int = 1,
     ch_min = ch_tnum.min()
     if verbose:
         print(f"Lowest trials {ch_min} at "
-              f"{array.keys['channel'][ch_tnum.argmin()]}")
+              f"{array.labels[ch_ax][ch_tnum.argmin()]}")
 
     ntrials = max(ch_min, min_trials)
     if ch_min < min_trials:
         # data = data.take(np.where(ch_tnum >= ntrials)[0], ch_idx)
-        ch = np.array(array.keys['channel'])[ch_tnum < ntrials].tolist()
+        ch = np.array(array.labels[ch_ax])[ch_tnum < ntrials].tolist()
         if verbose:
             print(f"Channels excluded (too few trials): {ch}")
 

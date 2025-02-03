@@ -37,7 +37,7 @@ def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
     names = list(scores_dict.keys())
     while len(scores_dict) > 0:
         scores_dict.popitem()
-    for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
+    for key, values in get_scores(sub.array['zscore'], decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
         print(key)
         scores_dict[key] = values
     return scores_dict
