@@ -5,7 +5,7 @@ import mne
 from ieeg.io import get_data
 from analysis.utils.mat_load import DataLoader
 from analysis.grouping import group_elecs
-from ieeg.arrays.label import LabeledArray, combine
+from ieeg.arrays.label import LabeledArray, combine, Labels
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 layout = get_data('SentenceRep', root=fpath)
@@ -36,13 +36,19 @@ def average_tfr_channels(tfr: mne.time_frequency.tfr.AverageTFR):
     avgd_data = np.nanmean(tfr.data, axis=0, keepdims=True)
     return mne.time_frequency.AverageTFRArray(info, avgd_data, tfr.times, tfr.freqs)
 
+def name_from_idx(idx: list[int], chs: Labels):
+    return [f"D{int(p[0][1:])}-{p[1]}" for p in
+             (s.split("-") for s in chs[idx])]
+
 # loader = DataLoader(layout, conds, "zscore", False, 'stats_freq',
 #                     '.h5')
 # zscore = loader.load_dict(dtype="float16")
 # zscore2 = combine(zscore, (0, 3))
 # zscore = LabeledArray.from_dict(zscore2, dtype="float16")
-zscores = load_data("zscore", "float16", False)
-zscores.tofile("zscore")
+if not os.path.exists("zscores.npy"):
+    zscores = load_data("zscore", "float16", False)
+    zscores.tofile("zscores")
+zscores = LabeledArray.fromfile("zscores", mmap_mode='r')
 avg = np.nanmean(zscores, axis=(1, 4))
 sigs = load_data("significance", out_type=bool)
 
@@ -55,14 +61,14 @@ sig_chans = sorted(sig_chans)
 
 times = np.linspace(-0.5, 1.5, 200)
 
-info = mne.create_info(ch_names=zscores.labels[1].tolist(), sfreq=100)
+info = mne.create_info(ch_names=avg.labels[1].tolist(), sfreq=100)
 events = np.array([[0 + 200 * i, 0, i] for i in range(7)])
-event_id = dict(zip(zscores.labels[0], range(7)))
+event_id = dict(zip(avg.labels[0], range(7)))
 picked = mne.time_frequency.EpochsTFRArray(
-    info, zscores.__array__(), times, zscores.labels[2],
+    info, avg.__array__(), times, avg.labels[2],
     events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
 
-# picked.average()n .plot(picks=0)
+picked['aud_ls'].pick(AUD).average().plot(0)
 # chan_grid(picked['aud_ls'].average(), yscale='log', vlim=(0, 1), cmap=parula_map)
 # all_spec = [picked['aud_ls'].pick_channels([pick]) for pick in picks]
 # for sub in subjects:
@@ -77,6 +83,6 @@ picked = mne.time_frequency.EpochsTFRArray(
 from ieeg.viz.mri import plot_on_average
 br = None
 for i, idx in enumerate([SM, AUD, PROD]):
-    picks = [f"D{int(p[0][1:])}-{p[1]}" for p in (s.split("-") for s in zscores.labels[1][idx])]
+    picks = name_from_idx(idx, avg.labels[1])
     rgb = [1 if j == i else 0 for j in range(3)]
-    br = plot_on_average(subjects, picks=picks, hemi='both', color=rgb, fig=br)
+    br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
