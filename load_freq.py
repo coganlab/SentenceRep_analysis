@@ -2,21 +2,24 @@ import os
 import numpy as np
 import mne
 
-from ieeg.io import get_data
-from analysis.utils.mat_load import DataLoader
+from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
 from ieeg.arrays.label import LabeledArray, combine, Labels
+from analysis.utils.plotting import plot_horizontal_bars
+from ieeg.decoding.decode import Decoder, plot_all_scores, get_scores
+from ieeg.viz.ensemble import plot_dist_bound
+from ieeg.io import dict_to_structured_array
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 layout = get_data('SentenceRep', root=fpath)
 subjects = layout.get_subjects()
-conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
+all_conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                     "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                     "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                     "go_jl": (-0.5, 1.5)}
 
 def load_data(datatype: str, out_type: type | str = float, average: bool = True):
-    loader = DataLoader(layout, conds, datatype, average, 'stats_freq',
+    loader = DataLoader(layout, all_conds, datatype, average, 'stats_freq',
                        '.h5')
     zscore = loader.load_dict(dtype=out_type, n_jobs=12)
     if average:
@@ -39,6 +42,12 @@ def average_tfr_channels(tfr: mne.time_frequency.tfr.AverageTFR):
 def name_from_idx(idx: list[int], chs: Labels):
     return [f"D{int(p[0][1:])}-{p[1]}" for p in
              (s.split("-") for s in chs[idx])]
+
+def score_it(decoder, array, idxs, conds, window_kwargs, scores_dict, names, shuffle=False):
+    for key, values in get_scores(array, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
+        print(key)
+        scores_dict[key] = values
+    return scores_dict
 
 # loader = DataLoader(layout, conds, "zscore", False, 'stats_freq',
 #                     '.h5')
@@ -68,21 +77,30 @@ picked = mne.time_frequency.EpochsTFRArray(
     info, avg.__array__(), times, avg.labels[2],
     events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
 
-picked['aud_ls'].pick(AUD).average().plot(0)
-# chan_grid(picked['aud_ls'].average(), yscale='log', vlim=(0, 1), cmap=parula_map)
-# all_spec = [picked['aud_ls'].pick_channels([pick]) for pick in picks]
-# for sub in subjects:
-#     picks = tuple(p for p in zscores.labels[1][AUD].tolist() if sub in p)
-#     all_avg = average_tfr_channels(picked['aud_ls'].pick_channels(picks).average())
-#     all_avg.plot('Average', cmap=parula_map, vlim=(0, 1), title=sub)
-# all_avg = average_tfr_channels(picked['go_ls'].pick_channels(picks).average())
-# all_avg.plot('Average', cmap=parula_map, vlim=(0, 1))
-#
-# picks_old = (p.split('-') for p in picks)
-# picks = [f"D{int(p[0][1:])}-{p[1]}" for p in picks_old]
+# %% plot data
+do_plot=False
+if do_plot:
+    picked['aud_ls'].pick(AUD).average().plot(0)
+
+# %% plot brain
 from ieeg.viz.mri import plot_on_average
 br = None
 for i, idx in enumerate([SM, AUD, PROD]):
     picks = name_from_idx(idx, avg.labels[1])
     rgb = [1 if j == i else 0 for j in range(3)]
     br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
+
+# %% word decoding
+decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
+                  5, 10, explained_variance=0.8, da_type='lda')
+scores_dict = {}
+names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
+idxs = [AUD, SM, PROD, sig_chans]
+window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
+                    'average_repetitions': False}
+conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+
+for key, values in get_scores(zscores, decoder, idxs, conds, names,
+                              shuffle=False, **window_kwargs):
+    print(key)
+    scores_dict[key] = values

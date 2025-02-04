@@ -9,25 +9,7 @@ from analysis.utils.plotting import plot_horizontal_bars
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.decoding.decode import Decoder, plot_all_scores, get_scores
 from ieeg.viz.ensemble import plot_dist_bound
-
-
-def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
-    # Get the keys and shapes
-    keys = list(dict_matrices.keys())
-    shape = dict_matrices[keys[0]].shape
-
-    # Create a data type for the structured array
-    dt = np.dtype([(key, dict_matrices[key].dtype, shape) for key in keys])
-
-    # Create the structured array
-    structured_array = np.zeros((1,), dtype=dt)
-
-    # Fill the structured array
-    for key in keys:
-        structured_array[key] = dict_matrices[key]
-
-    # Save the structured array to a file
-    np.save(filename, structured_array)
+from ieeg.io import dict_to_structured_array
 
 
 def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
