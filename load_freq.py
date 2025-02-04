@@ -95,9 +95,9 @@ if plot_brain:
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                   5, 10, explained_variance=0.8, da_type='lda')
 scores_dict = {}
-names = ['Auditory', 'Sensory-Motor', 'Production']
-idxs = [AUD, SM, PROD]
-window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
+names = ['Sensory-Motor', 'Auditory', 'Production']
+idxs = [SM, AUD, PROD]
+window_kwargs = {'window': 20, 'obs_axs': 4, 'normalize': 'true', 'n_jobs': -3,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
