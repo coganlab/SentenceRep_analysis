@@ -33,7 +33,7 @@ def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
     tfr._update_first_last()
     return tfr
 
-n_jobs = 8
+n_jobs = -3
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -78,8 +78,8 @@ for subj in subjects:
     ## High Gamma Filter and epoching
     out = []
 
-    for epoch, t in zip(("Start", "Start", "Word"),
-                        ((-0.5, 0), (-0.5, 0.5), (-1, 1.5))):
+    for epoch, t in zip(("Start", "Word"),
+                        ((-0.5, 0.5), (-1, 1.5))):
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
@@ -95,7 +95,7 @@ for subj in subjects:
         # if len(out) == 2:
         #     break
 
-    base = out.pop(0)
+    base = out[0].crop(-0.5, 0, copy=True)
 
     # power = scaling.rescale(out[1], out[0], copy=True, mode='mean')
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
@@ -106,7 +106,7 @@ for subj in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 10000
+    nperm = 20000
     sig2 = base.get_data(copy=True)
     for epoch, name, window in zip((out[0]["Start"],) +
             tuple(out[1][e] for e in ["Response"] + list(
@@ -117,18 +117,10 @@ for subj in subjects:
         sig1 = epoch.get_data(tmin=window[0], tmax=window[1], copy=True)
 
         # time-perm
-        e = None
-        for _ in range(10):
-            try:
-                mask[name], p_act = stats.time_perm_cluster(
-                    sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
-                    ignore_adjacency=1)
-                break
-            except scipy.optimize._optimize.BracketError as e:
-                e = e
-                continue
-        else:
-            print(e, subj)
+        mask[name], p_act = stats.time_perm_cluster(
+            sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
+            ignore_adjacency=1)
+
         epoch_mask = mne.EvokedArray(mask[name], epoch.average().info,
                                      tmin=window[0])
 
@@ -138,8 +130,11 @@ for subj in subjects:
         #                              tmin=window[0])
         # p_vals = epoch_mask.copy()
 
-        power = scaling.rescale(epoch, base, 'mean', copy=True)
-        z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
+        power = scaling.rescale(epoch, base, 'mean', copy=True).crop(*window)
+        z_score = scaling.rescale(epoch, base, 'zscore', copy=True).crop(*window)
+        if z_score._data.shape[-1] != 200 and name != "start":
+            raise ValueError(
+                f"unexpected size subject {subj}: {z_score._data.shape[-1]}")
         # sig2 = stats.make_data_same(sig2, sig1.shape)
 
         # Calculate the difference between the two groups averaged across
