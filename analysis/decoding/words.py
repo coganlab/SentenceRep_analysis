@@ -6,9 +6,8 @@ import os
 
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_horizontal_bars
-from analysis.decoding import get_scores
 from ieeg.calc.stats import time_perm_cluster
-from ieeg.decoding.decode import Decoder, plot_all_scores
+from ieeg.decoding.decode import Decoder, plot_all_scores, get_scores
 from ieeg.viz.ensemble import plot_dist_bound
 
 
@@ -64,12 +63,10 @@ if __name__ == '__main__':
 
     # %% Time Sliding decoding for word tokens
 
-    scores = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 1, sub, idxs, conds,
+    scores = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
                                 window_kwargs, scores,
                                 shuffle=False)
     dict_to_structured_array(scores, 'true_scores_new_test.npy')
-    if True:
-        raise ValueError
     scores2 = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                                     0.8, 'lda', 5, 50, sub, idxs, conds,
                                     window_kwargs, scores2,
