@@ -95,7 +95,7 @@ for subj in subjects:
         # if len(out) == 2:
         #     break
 
-    base = out[0].crop(-0.5, 0, copy=True)
+    base = out[0].copy().crop(-0.5, 0)
 
     # power = scaling.rescale(out[1], out[0], copy=True, mode='mean')
     # power.average(method=lambda x: np.nanmean(x, axis=0)).plot()
