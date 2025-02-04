@@ -83,19 +83,21 @@ if do_plot:
     picked['aud_ls'].pick(AUD).average().plot(0)
 
 # %% plot brain
-from ieeg.viz.mri import plot_on_average
-br = None
-for i, idx in enumerate([SM, AUD, PROD]):
-    picks = name_from_idx(idx, avg.labels[1])
-    rgb = [1 if j == i else 0 for j in range(3)]
-    br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
+plot_brain = False
+if plot_brain:
+    from ieeg.viz.mri import plot_on_average
+    br = None
+    for i, idx in enumerate([SM, AUD, PROD]):
+        picks = name_from_idx(idx, avg.labels[1])
+        rgb = [1 if j == i else 0 for j in range(3)]
+        br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
 
 # %% word decoding
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                   5, 10, explained_variance=0.8, da_type='lda')
 scores_dict = {}
-names = ['Auditory', 'Sensory-Motor', 'Production', 'All']
-idxs = [AUD, SM, PROD, sig_chans]
+names = ['Auditory', 'Sensory-Motor', 'Production']
+idxs = [AUD, SM, PROD]
 window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
                     'average_repetitions': False}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
@@ -104,3 +106,5 @@ for key, values in get_scores(zscores, decoder, idxs, conds, names,
                               shuffle=False, **window_kwargs):
     print(key)
     scores_dict[key] = values
+
+dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
