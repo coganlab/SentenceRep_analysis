@@ -58,7 +58,7 @@ if not os.path.exists("zscores.npy"):
     zscores = load_data("zscore", "float16", False)
     zscores.tofile("zscores")
 zscores = LabeledArray.fromfile("zscores", mmap_mode='r')
-avg = np.nanmean(zscores, axis=(1, 4))
+
 sigs = load_data("significance", out_type=bool)
 
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
@@ -68,18 +68,17 @@ AUD = sorted(AUD)
 PROD = sorted(PROD)
 sig_chans = sorted(sig_chans)
 
-times = np.linspace(-0.5, 1.5, 200)
-
-info = mne.create_info(ch_names=avg.labels[1].tolist(), sfreq=100)
-events = np.array([[0 + 200 * i, 0, i] for i in range(7)])
-event_id = dict(zip(avg.labels[0], range(7)))
-picked = mne.time_frequency.EpochsTFRArray(
-    info, avg.__array__(), times, avg.labels[2],
-    events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
-
 # %% plot data
 do_plot=False
 if do_plot:
+    avg = np.nanmean(zscores, axis=(1, 4))
+    times = np.linspace(-0.5, 1.5, 200)
+    info = mne.create_info(ch_names=avg.labels[1].tolist(), sfreq=100)
+    events = np.array([[0 + 200 * i, 0, i] for i in range(7)])
+    event_id = dict(zip(avg.labels[0], range(7)))
+    picked = mne.time_frequency.EpochsTFRArray(
+        info, avg.__array__(), times, avg.labels[2],
+        events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
     picked['aud_ls'].pick(AUD).average().plot(0)
 
 # %% plot brain
@@ -99,7 +98,7 @@ scores_dict = {}
 names = ['Auditory', 'Sensory-Motor', 'Production']
 idxs = [AUD, SM, PROD]
 window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
-                    'average_repetitions': False}
+                    'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
 for key, values in get_scores(zscores, decoder, idxs, conds, names,
