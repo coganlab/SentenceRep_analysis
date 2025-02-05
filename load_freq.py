@@ -6,7 +6,7 @@ from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
 from ieeg.arrays.label import LabeledArray, combine, Labels
 from analysis.utils.plotting import plot_horizontal_bars
-from ieeg.decoding.decode import Decoder, plot_all_scores, get_scores
+from ieeg.decoding.decode import Decoder, flatten_list, extract, classes_from_labels
 from ieeg.viz.ensemble import plot_dist_bound
 from ieeg.io import dict_to_structured_array
 
@@ -42,12 +42,6 @@ def average_tfr_channels(tfr: mne.time_frequency.tfr.AverageTFR):
 def name_from_idx(idx: list[int], chs: Labels):
     return [f"D{int(p[0][1:])}-{p[1]}" for p in
              (s.split("-") for s in chs[idx])]
-
-def score_it(decoder, array, idxs, conds, window_kwargs, scores_dict, names, shuffle=False):
-    for key, values in get_scores(array, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
-        print(key)
-        scores_dict[key] = values
-    return scores_dict
 
 # loader = DataLoader(layout, conds, "zscore", False, 'stats_freq',
 #                     '.h5')
@@ -97,13 +91,25 @@ decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
 scores_dict = {}
 names = ['Sensory-Motor', 'Auditory', 'Production']
 idxs = [SM, AUD, PROD]
-window_kwargs = {'window': 20, 'obs_axs': 4, 'normalize': 'true', 'n_jobs': -3,
+window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 10,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
-for key, values in get_scores(zscores, decoder, idxs, conds, names,
-                              shuffle=False, **window_kwargs):
-    print(key)
-    scores_dict[key] = values
+for i, idx in enumerate(idxs):
+    all_conds = flatten_list(conds)
+    x_data = extract(zscores, all_conds, 4, idx, decoder.n_splits,
+                     False)
+    for cond in conds:
+        if isinstance(cond, list):
+            X = np.swapaxes(x_data,0, 3).combine((0, 3)).dropna()
+            cond = "-".join(cond)
+        else:
+            X = x_data[cond,].dropna()
+        cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
+
+        # Decoding
+        score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
+        key = "-".join([names[i], cond])
+        scores_dict[key] = score
 
 dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
