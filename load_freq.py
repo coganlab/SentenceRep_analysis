@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import mne
+from joblib import dump, load
+from tempfile import TemporaryFile
 
 from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
@@ -89,9 +91,9 @@ if plot_brain:
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                   5, 10, explained_variance=0.8, da_type='lda')
 scores_dict = {}
-names = ['Sensory-Motor', 'Auditory', 'Production']
-idxs = [SM, AUD, PROD]
-window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 10,
+names = ['Production','Sensory-Motor', 'Auditory']
+idxs = [PROD, SM, AUD]
+window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 4,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
@@ -108,8 +110,12 @@ for i, idx in enumerate(idxs):
         cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
 
         # Decoding
-        score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
-        key = "-".join([names[i], cond])
-        scores_dict[key] = score
+        with TemporaryFile() as f:
+            dump(X.__array__(), f)
+            f.seek(0)
+            X = load(f, mmap_mode='r')
+            score = decoder.cv_cm(X, labels, **window_kwargs)
+            key = "-".join([names[i], cond])
+            scores_dict[key] = score
 
 dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
