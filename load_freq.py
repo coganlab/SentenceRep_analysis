@@ -2,9 +2,8 @@ import os
 import numpy as np
 import cupy as cp
 import mne
-from joblib import dump, load
-from tempfile import TemporaryFile
 
+from sklearn import config_context
 from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
 from ieeg.arrays.label import LabeledArray, combine, Labels
@@ -90,11 +89,11 @@ if plot_brain:
 
 # %% word decoding
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-                  5, 10, explained_variance=0.8, da_type='lda')
+                  5, 10, 1, 'train', explained_variance=0.8, da_type='lda')
 scores_dict = {}
 names = ['Production','Sensory-Motor', 'Auditory']
 idxs = [PROD, SM, AUD]
-window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
+window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 3,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
@@ -111,8 +110,11 @@ for name, idx in zip(names, idxs):
         cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
 
         # Decoding
-        x_in = cp.asarray(X.__array__())
-        score = decoder.cv_cm(x_in, labels, **window_kwargs)
+        score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
+        # x_in = cp.asarray(X.__array__())
+        # y_in = cp.asarray(labels)
+        # with config_context(array_api_dispatch=True):
+        #     score = decoder.cv_cm(x_in, y_in, **window_kwargs)
         key = "-".join([name, cond])
         scores_dict[key] = score
 
