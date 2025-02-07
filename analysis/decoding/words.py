@@ -14,7 +14,7 @@ from ieeg.io import dict_to_structured_array
 
 def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
           conds, window_kwargs, scores_dict, shuffle=False):
-    decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
+    decoder = Decoder(categories, n_splits=n_splits, n_repeats=n_repeats, explained_variance=test_size, da_type=method)
     names = list(scores_dict.keys())
     while len(scores_dict) > 0:
         scores_dict.popitem()

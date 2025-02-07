@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import cupy as cp
 import mne
 from joblib import dump, load
 from tempfile import TemporaryFile
@@ -93,11 +94,11 @@ decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
 scores_dict = {}
 names = ['Production','Sensory-Motor', 'Auditory']
 idxs = [PROD, SM, AUD]
-window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 4,
+window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
 
-for i, idx in enumerate(idxs):
+for name, idx in zip(names, idxs):
     all_conds = flatten_list(conds)
     x_data = extract(zscores, all_conds, 4, idx, decoder.n_splits,
                      False)
@@ -110,12 +111,9 @@ for i, idx in enumerate(idxs):
         cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
 
         # Decoding
-        with TemporaryFile() as f:
-            dump(X.__array__(), f)
-            f.seek(0)
-            X = load(f, mmap_mode='r')
-            score = decoder.cv_cm(X, labels, **window_kwargs)
-            key = "-".join([names[i], cond])
-            scores_dict[key] = score
+        x_in = cp.asarray(X.__array__())
+        score = decoder.cv_cm(x_in, labels, **window_kwargs)
+        key = "-".join([name, cond])
+        scores_dict[key] = score
 
 dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
