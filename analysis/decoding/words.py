@@ -41,14 +41,14 @@ if __name__ == '__main__':
     names = list(scores.keys())
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -3,
-                    'average_repetitions': False}
+                    'average_repetitions': False, 'step': 5}
 
     # %% Time Sliding decoding for word tokens
 
     scores = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', 5, 10, sub, idxs, conds,
                                 window_kwargs, scores,
                                 shuffle=False)
-    dict_to_structured_array(scores, 'true_scores_new_test.npy')
+    dict_to_structured_array(scores, 'true_scores.npy')
     scores2 = score({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                                     0.8, 'lda', 5, 50, sub, idxs, conds,
                                     window_kwargs, scores2,
@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     # %% Plotting
     data_dir = ''
-    true_scores = np.load(data_dir + 'true_scores.npy', allow_pickle=True)[0]
+    true_scores = np.load(data_dir + 'true_scores_freq.npy', allow_pickle=True)[0]
     true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
 
     plots = {}
@@ -65,7 +65,7 @@ if __name__ == '__main__':
         if values is None:
             continue
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names, idxs)}, colors, "Word Decoding")
+    fig, axs = plot_all_scores(plots, conds, {n: i for n, i in zip(names[:-1], idxs[:-1])}, colors, "Word Decoding")
 
 
     # %% Time Sliding decoding significance

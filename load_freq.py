@@ -8,7 +8,7 @@ from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
 from ieeg.arrays.label import LabeledArray, combine, Labels
 from analysis.utils.plotting import plot_horizontal_bars
-from ieeg.decoding.decode import Decoder, flatten_list, extract, classes_from_labels
+from ieeg.decoding.decode import Decoder, flatten_list, extract, classes_from_labels, concatenate_conditions, plot_all_scores
 from ieeg.viz.ensemble import plot_dist_bound
 from ieeg.io import dict_to_structured_array
 
@@ -91,11 +91,12 @@ if plot_brain:
 decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
                   5, 10, 1, 'train', explained_variance=0.8, da_type='lda')
 scores_dict = {}
-names = ['Production','Sensory-Motor', 'Auditory']
-idxs = [PROD, SM, AUD]
-window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 3,
+names = ['Production','Sensory-Motor', 'Auditory', 'All']
+idxs = [PROD, SM, AUD, sig_chans]
+window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
                     'average_repetitions': False, 'step': 5}
 conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+colors = [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0.5, 0.5, 0.5]]
 
 for name, idx in zip(names, idxs):
     all_conds = flatten_list(conds)
@@ -103,19 +104,28 @@ for name, idx in zip(names, idxs):
                      False)
     for cond in conds:
         if isinstance(cond, list):
-            X = np.swapaxes(x_data,0, 3).combine((0, 3)).dropna()
+            X = concatenate_conditions(x_data, cond, 0, 3)
             cond = "-".join(cond)
         else:
             X = x_data[cond,].dropna()
         cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
 
         # Decoding
-        score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
-        # x_in = cp.asarray(X.__array__())
-        # y_in = cp.asarray(labels)
-        # with config_context(array_api_dispatch=True):
-        #     score = decoder.cv_cm(x_in, y_in, **window_kwargs)
+        # score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
+        x_in = cp.asarray(X.__array__())
+        y_in = cp.asarray(labels)
+        with config_context(array_api_dispatch=True):
+            score = decoder.cv_cm(x_in, y_in, **window_kwargs)
         key = "-".join([name, cond])
-        scores_dict[key] = score
+        scores_dict[key] = score.get()
 
 dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
+
+plots = {}
+for key, values in scores_dict.items():
+    if values is None:
+        continue
+    plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
+fig, axs = plot_all_scores(plots, conds,
+                           {n: i for n, i in zip(names, idxs)},
+                           colors, "Word Decoding")
