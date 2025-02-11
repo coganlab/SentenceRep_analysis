@@ -20,6 +20,7 @@ def score(categories, test_size, method, n_splits, n_repeats, sub, idxs,
         scores_dict.popitem()
     for values in get_scores(sub.array['zscore'], decoder, idxs, conds,
                                   names, on_gpu=gpu, shuffle=shuffle, **window_kwargs):
+        key = decoder.current_job
         scores_dict[key] = values
     return scores_dict
 
@@ -41,7 +42,7 @@ if __name__ == '__main__':
     names = list(scores.keys())
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
-                    'average_repetitions': False}
+                    'average_repetitions': False, 'step': 3}
 
     # %% Time Sliding decoding for word tokens
 
