@@ -5,7 +5,7 @@ from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
 from ieeg.calc.oversample import resample
 import os
-from ieeg.timefreq.utils import crop_pad
+from ieeg.timefreq.utils import crop_pad, cwt
 import numpy as np
 
 ## check if currently running a slurm job
@@ -84,13 +84,13 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
-        freq = np.geomspace(60, 300, num=40)
-        decim = int(trials.info['sfreq']) // 100
-        kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-                      n_cycles=freq / 2, time_bandwidth=4,
-                      decim=4)
-
-        spec = trials.compute_tfr(method="multitaper", **kwargs)
+        # freq = np.geomspace(60, 300, num=40)
+        # decim = int(trials.info['sfreq']) // 100
+        # kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
+        #               n_cycles=freq / 2, time_bandwidth=4,
+        #               decim=4)
+        # spec = trials.compute_tfr(method="multitaper", **kwargs)
+        spec = cwt(trials, 10, 500, 10, 4, 40)
         crop_pad(spec, "0.5s")
         # spec = spec.decimate(2, 1)
         del trials
