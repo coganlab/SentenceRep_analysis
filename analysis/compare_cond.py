@@ -58,7 +58,10 @@ for i, fname in enumerate(fnames):
                 ylims = ax.get_ylim()
             # ax.set_xlabel("Time(s)")
             ax.set_ylim(ylims)
-            ax.set_title(cond)
+            if cond[:4] == "aud_":
+                ax.set_title("Stimulus")
+            else:
+                ax.set_title("Go Cue")
 
             if k == 3:
                 ax.set_xlabel("Time(s)")
