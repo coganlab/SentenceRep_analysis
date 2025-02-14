@@ -8,7 +8,7 @@ import scipy.stats as st
 fpath = os.path.expanduser("~/Box/CoganLab")
 # Create a gridspec instance with 3 rows and 3 columns
 r = 4
-c_minor = 3
+c_minor = 2
 c_major = 1
 major_rows = (0,)
 
@@ -54,8 +54,12 @@ for i, fname in enumerate(fnames):
                           label=group, ax=ax, color=color)
             if j == 0:
                 # ax.legend()
-                ax.set_ylabel("Z-Score (V)")
+                ax.set_ylabel("Z-Score (V), " + cond[-2:])
                 ylims = ax.get_ylim()
             # ax.set_xlabel("Time(s)")
             ax.set_ylim(ylims)
             ax.set_title(cond)
+
+            if k == 3:
+                ax.set_xlabel("Time(s)")
+
