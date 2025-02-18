@@ -4,6 +4,7 @@ import mne.time_frequency
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
 from ieeg.calc.oversample import resample
+from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
 from ieeg.timefreq.utils import crop_pad, cwt
 import numpy as np
@@ -46,7 +47,7 @@ def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
 
 n_jobs = 4
 for sub in subjects:
-    if int(sub[1:]) <= subject:
+    if int(sub[1:]) == subject:
         continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
@@ -90,7 +91,8 @@ for sub in subjects:
         #               n_cycles=freq / 2, time_bandwidth=4,
         #               decim=4)
         # spec = trials.compute_tfr(method="multitaper", **kwargs)
-        spec = cwt(trials, 10, 500, 10, 4, 40)
+        # spec = cwt(trials, 10, 500, 8, 4, 40)
+        spec = hilbert_spectrogram(trials, (30, 500), 4, 1/8.7, n_jobs)
         crop_pad(spec, "0.5s")
         # spec = spec.decimate(2, 1)
         del trials
