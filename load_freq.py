@@ -20,10 +20,11 @@ all_conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                     "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                     "go_jl": (-0.5, 1.5)}
 
-def load_data(datatype: str, out_type: type | str = float, average: bool = True):
+def load_data(datatype: str, out_type: type | str = float,
+              average: bool = True, n_jobs: int = 12):
     loader = DataLoader(layout, all_conds, datatype, average, 'stats_freq',
                        '.h5')
-    zscore = loader.load_dict(dtype=out_type, n_jobs=12)
+    zscore = loader.load_dict(dtype=out_type, n_jobs=n_jobs)
     if average:
         zscore_ave = combine(zscore, (0, 2))
         for key in zscore_ave.keys():
@@ -51,7 +52,7 @@ def name_from_idx(idx: list[int], chs: Labels):
 # zscore2 = combine(zscore, (0, 3))
 # zscore = LabeledArray.from_dict(zscore2, dtype="float16")
 if not os.path.exists("zscores.npy"):
-    zscores = load_data("zscore", "float16", False)
+    zscores = load_data("zscore", "float16", False, 12)
     zscores.tofile("zscores")
 zscores = LabeledArray.fromfile("zscores", mmap_mode='r')
 
@@ -63,6 +64,7 @@ SM = sorted(SM)
 AUD = sorted(AUD)
 PROD = sorted(PROD)
 sig_chans = sorted(sig_chans)
+avg = None
 
 # %% plot data
 do_plot=False
@@ -83,49 +85,81 @@ if plot_brain:
     from ieeg.viz.mri import plot_on_average
     br = None
     for i, idx in enumerate([SM, AUD, PROD]):
-        picks = name_from_idx(idx, avg.labels[1])
+        picks = name_from_idx(idx, zscores.labels[2])
         rgb = [1 if j == i else 0 for j in range(3)]
         br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
 
 # %% word decoding
-decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4},
-                  5, 10, 1, 'train', explained_variance=0.8, da_type='lda')
-scores_dict = {}
-names = ['Production','Sensory-Motor', 'Auditory', 'All']
-idxs = [PROD, SM, AUD, sig_chans]
-window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
-                    'average_repetitions': False, 'step': 5}
-conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-colors = [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0.5, 0.5, 0.5]]
+decode = True
+if decode:
+    decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
+                      5, 10, 1, 'train', explained_variance=0.8, da_type='lda')
+    scores_dict = {}
+    scores_dict2 = {}
+    names = ['Production','Sensory-Motor', 'Auditory', 'All']
+    idxs = [PROD, SM, AUD, sig_chans]
+    window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
+                        'average_repetitions': False, 'step': 5}
+    conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+    colors = [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0.5, 0.5, 0.5]]
 
-for name, idx in zip(names, idxs):
-    all_conds = flatten_list(conds)
-    x_data = extract(zscores, all_conds, 4, idx, decoder.n_splits,
-                     False)
-    for cond in conds:
-        if isinstance(cond, list):
-            X = concatenate_conditions(x_data, cond, 0, 3)
-            cond = "-".join(cond)
-        else:
-            X = x_data[cond,].dropna()
-        cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
+    for name, idx in zip(names, idxs):
+        all_conds = flatten_list(conds)
+        x_data = extract(zscores, all_conds, 4, idx, decoder.n_splits,
+                         False)
+        for cond in conds:
+            if isinstance(cond, list):
+                X = concatenate_conditions(x_data, cond, 0, 3)
+                cond = "-".join(cond)
+            else:
+                X = x_data[cond,].dropna()
+            cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
 
-        # Decoding
-        # score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
-        x_in = cp.asarray(X.__array__())
-        y_in = cp.asarray(labels)
-        with config_context(array_api_dispatch=True):
-            score = decoder.cv_cm(x_in, y_in, **window_kwargs)
-        key = "-".join([name, cond])
-        scores_dict[key] = score.get()
+            # Decoding
+            # score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
+            # x_in = torch.from_numpy(X.__array__()).to('cuda')
+            # y_in = torch.from_numpy(labels).to('cuda')
+            x_in = cp.asarray(X.__array__())
+            y_in = cp.asarray(labels)
+            with config_context(array_api_dispatch=True):
+                score = decoder.cv_cm(x_in, y_in, **window_kwargs)
+            key = "-".join([name, cond])
+            scores_dict[key] = score.get()
 
-dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
+    dict_to_structured_array(scores_dict, 'true_scores_freq.npy')
 
-plots = {}
-for key, values in scores_dict.items():
-    if values is None:
-        continue
-    plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-fig, axs = plot_all_scores(plots, conds,
-                           {n: i for n, i in zip(names, idxs)},
-                           colors, "Word Decoding")
+    plots = {}
+    for key, values in scores_dict.items():
+        if values is None:
+            continue
+        plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
+    fig, axs = plot_all_scores(plots, conds,
+                               {n: i for n, i in zip(names, idxs)},
+                               colors, "Word Decoding")
+
+    decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
+                      5, 50, 1, 'train', explained_variance=0.8, da_type='lda')
+    for name, idx in zip(names, idxs):
+        all_conds = flatten_list(conds)
+        x_data = extract(zscores, all_conds, 4, idx, decoder.n_splits,
+                         False)
+        for cond in conds:
+            if isinstance(cond, list):
+                X = concatenate_conditions(x_data, cond, 0, 3)
+                cond = "-".join(cond)
+            else:
+                X = x_data[cond,].dropna()
+            cats, labels = classes_from_labels(X.labels[-2], crop=slice(0, 4))
+
+            # Decoding
+            # score = decoder.cv_cm(X.__array__(), labels, **window_kwargs)
+            # x_in = torch.from_numpy(X.__array__()).to('cuda')
+            # y_in = torch.from_numpy(labels).to('cuda')
+            x_in = cp.asarray(X.__array__())
+            y_in = cp.asarray(labels)
+            with config_context(array_api_dispatch=True):
+                score = decoder.cv_cm(x_in, y_in, shuffle=True, **window_kwargs)
+            key = "-".join([name, cond])
+            scores_dict2[key] = score.get()
+
+    dict_to_structured_array(scores_dict2, 'shuffle_scores_freq.npy')
