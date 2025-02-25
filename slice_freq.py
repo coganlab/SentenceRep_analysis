@@ -1,5 +1,4 @@
 import os
-
 from ieeg.io import get_data, DataLoader
 from ieeg.arrays.label import LabeledArray, combine
 from ieeg.decoding.decode import extract
@@ -28,8 +27,16 @@ def load_tensor(array, idx, conds, trial_ax):
         out_tensor.dtype)
     return out_tensor, mask, combined.labels
 
-fpath = os.path.expanduser("~/Box/CoganLab")
-layout = get_data('SentenceRep', root=fpath)
+HOME = os.path.expanduser("~")
+if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+    LAB_root = os.path.join(HOME, "workspace", "CoganLab")
+    n = int(os.environ['SLURM_ARRAY_TASK_ID'])
+    print(n)
+else:  # if not then set box directory
+    LAB_root = os.path.join(HOME, "Box", "CoganLab")
+    n = 1
+
+layout = get_data('SentenceRep', root=LAB_root)
 
 conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
@@ -39,7 +46,8 @@ loader = DataLoader(layout, conds_all, 'significance', True, 'stats_freq',
                    '.h5')
 sigs = LabeledArray.from_dict(combine(loader.load_dict(
     dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
-zscores = LabeledArray.fromfile("zscores", mmap_mode='r')
+filename = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'zscores')
+zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
 ch_names = sigs.labels[1]
@@ -47,22 +55,21 @@ conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
 idx_name = 'Sensory-Motor'
 
 # %% grid search
-pick_k = True
+pick_k = False
 if pick_k:
-    n = 1
-    param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [8, 0, 0]},
-                            {'min': [1], 'max': [8]},],
+    param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [12, 0, 0]},
+                            {'min': [1], 'max': [12]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
                   'masks': [
                       {'train': False, 'test': False},
                       {'train': True, 'test': True},
                             ],
-                  'loss': ['HuberLoss'],
-                  'lr': [1e-4],
+                  'loss': ['HuberLoss', 'L1Loss'],
+                  'lr': [1e-3, 1e-4],
                   'decay': [1]
                     }
     procs = 1
-    threads = 1
+    threads = 4
     repeats = 4
     conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
     aud_slice = slice(0, 175)
@@ -73,7 +80,9 @@ if pick_k:
         if n > 1:
             n -= 1
             continue
-        idx = idxs[group]
+        else:
+            print(ranks, group, is_mask, loss, lr, decay)
+        idx = sorted(idxs[group])
         neural_data_tensor, mask, labels = load_tensor(zscores, idx,
                                                        conds, 4)
         mask = mask.any(2)
@@ -137,12 +146,12 @@ if pick_k:
 
 
 # %% decompose
-decompose = False
+decompose = True
 if decompose:
     neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds,
                                                    4)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
-    n_components = [4]
+    n_components = [5]
     n = 0
     losses, model = slicetca.decompose(trial_av,#.to(torch.float32),
                                        # n_components,
