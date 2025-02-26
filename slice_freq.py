@@ -10,6 +10,7 @@ import numpy as np
 from functools import reduce
 import slicetca
 import matplotlib.pyplot as plt
+from multiprocessing import freeze_support
 
 
 def load_tensor(array, idx, conds, trial_ax):
@@ -44,19 +45,25 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
 loader = DataLoader(layout, conds_all, 'significance', True, 'stats_freq',
                    '.h5')
-sigs = LabeledArray.from_dict(combine(loader.load_dict(
-    dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
-filename = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'zscores')
-zscores = LabeledArray.fromfile(filename, mmap_mode='r')
+filemask = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'mask')
+if not os.path.exists(filemask + ".npy"):
+    sigs = LabeledArray.from_dict(combine(loader.load_dict(
+        dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
+    sigs.tofile(filemask)
+else:
+    sigs = LabeledArray.fromfile(filemask)
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
-ch_names = sigs.labels[1]
+
+filename = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'zscores')
+zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
-idx_name = 'Sensory-Motor'
 
 # %% grid search
-pick_k = False
+pick_k = True
 if pick_k:
+    if __name__ == '__main__':
+        freeze_support()
     param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [12, 0, 0]},
                             {'min': [1], 'max': [12]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
@@ -65,12 +72,12 @@ if pick_k:
                       {'train': True, 'test': True},
                             ],
                   'loss': ['HuberLoss', 'L1Loss'],
-                  'lr': [1e-3, 1e-4],
+                  'lr': [1e-3],
                   'decay': [1]
                     }
     procs = 1
-    threads = 4
-    repeats = 4
+    threads = 1
+    repeats = 2
     conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
     aud_slice = slice(0, 175)
 
@@ -146,9 +153,10 @@ if pick_k:
 
 
 # %% decompose
-decompose = True
+decompose = False
 if decompose:
-    neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds,
+    idx_name = 'Sensory-Motor'
+    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds,
                                                    4)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     n_components = [5]
@@ -169,7 +177,7 @@ if decompose:
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.HuberLoss(
+                                       loss_function=torch.nn.L1Loss(
                                            reduction='mean'),
                                        verbose=0
                                        )
