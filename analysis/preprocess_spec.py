@@ -25,26 +25,26 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = 5
+    subject = 71
 
-n_jobs = 10
+n_jobs = -1
 
 for sub in subjects:
-    if int(sub[1:]) == subject:
+    if int(sub[1:]) in (32, 30):
         continue
     # Load the data
     TASK = "SentenceRep"
     # %%
-    save_dir = op.join(layout.root, "derivatives", "stats_freq")
+    save_dir = op.join(layout.root, "derivatives", "stats_freq_wavelet")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
     nperm = 5000
-    spec_type = 'hilbert'
+    spec_type = 'wavelet'
     filename = os.path.join(layout.root, 'derivatives',
                             'spec', spec_type, sub, f'start-tfr.h5')
-    base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0)
+    base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0., 10, 500)
     sig2 = base.get_data()
     for name, window in zip(
             ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
@@ -54,29 +54,31 @@ for sub in subjects:
         filename = os.path.join(layout.root, 'derivatives',
                                     'spec', spec_type, sub, f'{name}-tfr.h5')
         epoch = mne.time_frequency.read_tfrs(filename)
-        sig1 = epoch.get_data(tmin=window[0], tmax=window[1])
+        sig1, times, freqs = epoch.get_data(tmin=window[0], tmax=window[1],
+                                            fmin=10, fmax=500,
+                              return_times=True, return_freqs=True)
 
         # time-perm
         mask[name], p_act = stats.time_perm_cluster(
             sig1, sig2, p_thresh=0.05, axis=0, n_perm=nperm, n_jobs=n_jobs,
-            ignore_adjacency=1)
+            ignore_adjacency=(1,2))
         epoch_mask = mne.time_frequency.AverageTFRArray(
-            epoch.average().info, mask[name], epoch.times, epoch.freqs, nave=1)
+            epoch.average().info, mask[name], times, freqs, nave=1)
 
         # Plot the Time-Frequency Clusters
         # --------------------------------
         # figs = chan_grid(epoch_mask, size=(20, 10), vmin=0, vmax=1,
         #                  cmap=parula_map, show=False)
 
-        power = scaling.rescale(epoch, base, 'mean', copy=True)
-        z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
+        power = scaling.rescale(epoch, base, 'mean', copy=True).crop(fmin=10, fmax=500)
+        z_score = scaling.rescale(epoch, base, 'zscore', copy=True).crop(fmin=10, fmax=500)
 
         # Calculate the p-value
         p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,
-                                                    epoch.times, epoch.freqs)
-        # p_vals = epoch_mask.copy()
-        # data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(),
-        #              p_vals.copy()))
+                                                    times, freqs)
+        p_vals = epoch_mask.copy()
+        data.append((name, epoch_mask.copy(), power.copy(), z_score.copy(),
+                     p_vals.copy()))
 
         # for name, epoch_mask, power, z_score, p_vals in data:
         power.save(save_dir + f"/{sub}_{name}_power-tfr.h5", overwrite=True)
