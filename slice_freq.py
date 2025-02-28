@@ -60,7 +60,7 @@ zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
 
 # %% grid search
-pick_k = True
+pick_k = False
 if pick_k:
     if __name__ == '__main__':
         freeze_support()
@@ -153,24 +153,24 @@ if pick_k:
 
 
 # %% decompose
-decompose = False
+decompose = True
 if decompose:
     idx_name = 'Sensory-Motor'
-    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds,
-                                                   4)
+    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
+    # trial_av = neural_data_tensor.to(torch.float32)
     n_components = [5]
     n = 0
-    losses, model = slicetca.decompose(trial_av,#.to(torch.float32),
+    losses, model = slicetca.decompose(trial_av,
                                        # n_components,
                                        (n_components[0], 0, 0),
                                        seed=None,
                                        positive=True,
                                        # min_std=5e-5,
                                        # iter_std=1000,
-                                       learning_rate=5e-4,
+                                       learning_rate=1e-3,
                                        max_iter=1000000,
-                                       # batch_dim=0,
+                                       # batch_dim=2,
                                        # batch_prop=1,
                                        # batch_prop_decay=5,
                                        weight_decay=0.33,
@@ -178,9 +178,10 @@ if decompose:
                                        init_bias=0.01,
                                        initialization='uniform-positive',
                                        loss_function=torch.nn.L1Loss(
-                                           reduction='mean'),
-                                       verbose=0
-                                       )
+                                           reduction='sum'),
+                                       verbose=0,
+                                       compile=True)
+    torch.save(model, f'model_{idx_name}_freq.pt')
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)

@@ -7,6 +7,7 @@ from ieeg.calc.oversample import MinimumNaNSplit
 import torch
 import numpy as np
 from ieeg.arrays.label import LabeledArray
+from ieeg.decoding.decode import nan_common_denom
 
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
 # %% Define data module
@@ -65,16 +66,16 @@ class LabeledData(L.LightningDataModule):
                                         self.targets[self.test_idx]))
 
 
-def dataloader(sub, idx, conds, metric='zscore', do_mixup=False, no_nan=False):
-    reduced = sub[:, :, :, idx][:, conds,]
-    reduced.array = reduced.array.dropna()
+def dataloader(array, idx, conds, metric='zscore', do_mixup=False, no_nan=False):
+    array = array[metric, :, :, idx][conds,].dropna()
+    ax = array.ndim - 2
     if no_nan:
-        reduced.nan_common_denom(True, 10, True)
-    std = np.nanstd(reduced.array[metric].__array__())
+        nan_common_denom(array, True, ax,  10, 1, True)
+    std = np.nanstd(array.__array__())
     if do_mixup:
-        mixup(reduced.array[metric], 3)
+        mixup(array[metric], ax)
     combined = reduce(lambda x, y: x.concatenate(y, -1),
-                      [reduced.array[metric, c] for c in conds])
+                      [array[c] for c in conds])
     data = combined.combine((0, 2)).swapaxes(0, 1)
     neural_data_tensor = torch.from_numpy(
         (data.__array__() / std))
