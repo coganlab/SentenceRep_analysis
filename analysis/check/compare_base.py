@@ -1,12 +1,10 @@
 ## Preprocess
-import ieeg.viz.utils
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
 from ieeg.timefreq import gamma, utils
-from ieeg.calc import stats, scaling, reshape
-import os.path as op
+from ieeg.calc import stats
+from ieeg.arrays import reshape
 import os
-import mne
 from itertools import product
 import numpy as np
 
