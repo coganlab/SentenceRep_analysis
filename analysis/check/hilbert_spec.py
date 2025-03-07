@@ -45,9 +45,9 @@ def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
     tfr._update_first_last()
     return tfr
 
-n_jobs = 4
+n_jobs = 7
 for sub in subjects:
-    if int(sub[1:]) == subject:
+    if int(sub[1:]) in (30, 32):
         continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
@@ -68,7 +68,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'hilbert', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -85,14 +85,16 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10)
-        # freq = np.geomspace(60, 300, num=40)
+        freq = np.linspace(10, 500, num=25)
+        time_smooth = 0.3 #seconds
+        bw = (freq[1] - freq[0]) * time_smooth
         # decim = int(trials.info['sfreq']) // 100
-        # kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-        #               n_cycles=freq / 2, time_bandwidth=4,
-        #               decim=4)
-        # spec = trials.compute_tfr(method="multitaper", **kwargs)
+        kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
+                      n_cycles=freq * time_smooth, time_bandwidth=11,
+                      decim=4)
+        spec = trials.compute_tfr(method="multitaper", **kwargs)
         # spec = cwt(trials, 10, 500, 8, 4, 40)
-        spec = hilbert_spectrogram(trials, (30, 500), 4, 1/8.7, n_jobs)
+        # spec = hilbert_spectrogram(trials, (30, 500), 4, 1/8.7, n_jobs)
         crop_pad(spec, "0.5s")
         # spec = spec.decimate(2, 1)
         del trials
