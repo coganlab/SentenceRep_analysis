@@ -1,16 +1,8 @@
-from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import crop_empty_data, outliers_to_nan, trial_ieeg
-from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
+from ieeg.io import get_data
 from ieeg.calc import stats, scaling
-from ieeg.viz.ensemble import chan_grid
-from ieeg.viz.parula import parula_map
-from joblib import Parallel, delayed
 import mne
 import os
 import os.path as op
-from itertools import product
-from tqdm import tqdm
-import numpy as np
 
 
 # %% check if currently running a slurm job
@@ -50,6 +42,9 @@ for sub in subjects:
             ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
             ((-0.5, 0.5), (-1, 1), *((-0.5, 1.5),) * 6)):  # time-perm
             # (*((0, 0.5),) * 5, *((0.25, 0.75),) * 3)):  # ave
+
+        # if os.path.exists(save_dir + f"/{sub}_{name}_mask-tfr.h5"):
+        #     continue
 
         filename = os.path.join(layout.root, 'derivatives',
                                     'spec', spec_type, sub, f'{name}-tfr.h5')
