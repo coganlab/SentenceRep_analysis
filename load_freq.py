@@ -14,6 +14,7 @@ all_conds = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                     "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                     "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                     "go_jl": (-0.5, 1.5)}
+folder = 'stats_freq_multitaper'
 
 def load_data(datatype: str, out_type: type | str = float,
               average: bool = True, n_jobs: int = 12):
@@ -21,7 +22,7 @@ def load_data(datatype: str, out_type: type | str = float,
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-    loader = DataLoader(layout, conds, datatype, average, 'stats_freq',
+    loader = DataLoader(layout, conds, datatype, average, folder,
                        '.h5')
     zscore = loader.load_dict(dtype=out_type, n_jobs=n_jobs)
     # if average:
@@ -49,9 +50,9 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-loader = DataLoader(layout, conds_all, 'significance', True, 'stats_freq',
+loader = DataLoader(layout, conds_all, 'significance', True, folder,
                    '.h5')
-filemask = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'mask')
+filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
 if not os.path.exists(filemask + ".npy"):
     sigs = LabeledArray.from_dict(combine(loader.load_dict(
         dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
@@ -62,7 +63,7 @@ else:
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
 
-filez = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'zscores')
+filez = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscores')
 if not os.path.exists(filez + ".npy"):
     zscores = load_data("zscore", "float16", False, -1)
     zscores.tofile(filez)
