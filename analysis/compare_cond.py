@@ -28,7 +28,7 @@ fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 ## Load the data
 kwargs = [dict(folder='stats'), dict(folder='stats_freq_multitaper')]
-fnames = ["new"]
+fnames = ['gamma', 'freq']
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
 # wm = [None, ".a2009s", ".BN_atlas"]
@@ -76,7 +76,7 @@ for i, fname in enumerate(fnames):
             zscores.tofile(filez)
         else:
             trials = LabeledArray.fromfile(filez, mmap_mode='r')
-            zscores = np.nanmean(trials, axis=4, subok=True)
+            zscores = np.nanmean(trials, axis=(1,4))
 
         from ieeg.viz.mri import plot_on_average
 
