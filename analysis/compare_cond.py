@@ -44,7 +44,7 @@ for i, fname in enumerate(fnames):
 
         subfig = sub.plot_groups_on_average(idxs[:-1], hemi='lh',
                                             colors=colors[:-1])
-        zscores = sub.array['zscore']
+        zscores = np.nanmean(sub.array['zscore'], axis=(1, 3))
     else:
         conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                      "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
@@ -76,16 +76,15 @@ for i, fname in enumerate(fnames):
             zscores.tofile(filez)
         else:
             trials = LabeledArray.fromfile(filez, mmap_mode='r')
-            zscores = np.nanmean(trials, axis=(1,4))
+            zscores = np.nanmean(trials, axis=(1,3,4))
 
         from ieeg.viz.mri import plot_on_average
 
-        br = None
-        for i, idx in enumerate([SM, AUD, PROD]):
-            picks = name_from_idx(idx, zscores.labels[2])
-            rgb = [1 if j == i else 0 for j in range(3)]
+        subfig = None
+        for k, idx in enumerate(idxs[:-1]):
+            picks = name_from_idx(idx, zscores.labels[1])
             subfig = plot_on_average(layout.get_subjects(), picks=picks, hemi='both',
-                                 color=[rgb] * len(idx), fig=br)
+                                 color=colors[k], fig=subfig)
 
     screenshot = subfig.screenshot()
     nonwhite_pix = (screenshot != 255).any(-1)
@@ -103,8 +102,7 @@ for i, fname in enumerate(fnames):
 
         # make a plot for each condition in conds as a subgrid
         for j, cond in enumerate(conds):
-            arr = np.nanmean(zscores[cond].__array__(),
-                             axis=(0, 2))
+            arr = zscores[cond].__array__()
             ax = axs[k + 1][i][j]
             for group, color, idx in zip(groups[:-1], colors[:-1], idxs[:-1]):
                 plot_dist(arr[idx], times=conds[cond],

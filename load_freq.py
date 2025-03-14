@@ -6,6 +6,9 @@ from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
 from ieeg.arrays.label import LabeledArray, combine, Labels
 from ieeg.decoding.decode import Decoder, get_scores, plot_all_scores
+from ieeg.calc.stats import time_perm_cluster
+from ieeg.viz.ensemble import plot_dist_bound
+from analysis.utils.plotting import plot_horizontal_bars
 
 fpath = os.path.expanduser("~/Box/CoganLab")
 layout = get_data('SentenceRep', root=fpath)
@@ -105,8 +108,8 @@ decode = False
 if decode:
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
                       5, 10, 1, 'train', explained_variance=0.8, da_type='lda')
-    scores_dict = {}
-    scores_dict2 = {}
+    true_scores = {}
+    shuffle_score = {}
     names = ['Production','Sensory-Motor', 'Auditory', 'All']
     idxs = [PROD, SM, AUD, sig_chans]
     window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true', 'n_jobs': 1,
@@ -114,18 +117,19 @@ if decode:
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
 
-    if not os.path.exists("true_scores_freq.npz"):
+    true_name = 'true_scores_freqmult'
+    if not os.path.exists(true_name + '.npz'):
         for values in get_scores(zscores, decoder, idxs, conds,
                                  names, on_gpu=True, shuffle=False, **window_kwargs):
             key = decoder.current_job
-            scores_dict[key] = values
+            true_scores[key] = values
 
-        np.savez('true_scores_freq', **scores_dict)
+        np.savez(true_name, **true_scores)
     else:
-        scores_dict = dict(np.load("true_scores_freq.npz", allow_pickle=True))
+        true_scores = dict(np.load(true_name + '.npz', allow_pickle=True))
 
     plots = {}
-    for key, values in scores_dict.items():
+    for key, values in true_scores.items():
         if values is None:
             continue
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
@@ -135,12 +139,50 @@ if decode:
 
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
                       5, 50, 1, 'train', explained_variance=0.8, da_type='lda')
-    if not os.path.exists("shuffle_scores_freq.npz"):
+    shuffle_name = 'shuffle_scores_freqmult2'
+    if not os.path.exists(shuffle_name + '.npz'):
         for values in get_scores(zscores, decoder, idxs, conds,
                                  names, on_gpu=True, shuffle=True, **window_kwargs):
             key = decoder.current_job
-            scores_dict2[key] = values
+            shuffle_score[key] = values
 
-        np.savez('shuffle_scores_freq', **scores_dict2)
+        # shuffle_score['All-aud_ls-aud_lm'] = shuffle_score['Auditory-aud_ls-aud_lm']
+        # shuffle_score['All-go_ls-go_lm'] = shuffle_score['Production-go_ls-go_lm']
+        # shuffle_score['All-resp'] = shuffle_score['Production-resp']
+
+        np.savez(shuffle_name, **shuffle_score)
     else:
-        scores_dict2 = dict(np.load("shuffle_scores_freq.npy", allow_pickle=True))
+        shuffle_score = dict(np.load(shuffle_name + '.npz', allow_pickle=True))
+
+    # %% Time Sliding decoding significance
+
+    signif = {}
+    for cond, score in true_scores.items():
+        true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
+        shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
+        signif[cond] = time_perm_cluster(
+            true.T, shuffle.T, 0.01,
+            stat_func=lambda x, y, axis: np.mean(x, axis=axis))[0]
+
+    # %% Plot significance
+    for cond, ax in zip(conds, axs):
+        bars = []
+        if isinstance(cond, list):
+            cond = "-".join(cond)
+        for i, idx in enumerate(idxs):
+            name = "-".join([names[i], cond])
+            if name.endswith('resp'):
+                times = (-1, 1)
+            else:
+                times = (-0.5, 1.5)
+            shuffle = np.mean(shuffle_score[name].T[np.eye(4).astype(bool)].T, axis=2)
+            # smooth the shuffle using a window
+            window = np.lib.stride_tricks.sliding_window_view(shuffle, 20, 0)
+            shuffle = np.mean(window, axis=-1)
+            plot_dist_bound(shuffle, 'std', 'both', times, 0, ax=ax, color=colors[i], alpha=0.3)
+            bars.append(signif[name])
+        plot_horizontal_bars(ax, bars, 0.05, 'below')
+
+    for ax in fig.axes:
+        ax.axhline(0.25, color='k', linestyle='--')
+

@@ -11,17 +11,21 @@ from functools import reduce
 import slicetca
 import matplotlib.pyplot as plt
 from multiprocessing import freeze_support
+import pickle
 
 
 def load_tensor(array, idx, conds, trial_ax):
     idx = sorted(idx)
     X = extract(array, conds, trial_ax, idx)
     std = float(np.nanstd(X.__array__(), dtype='f8'))
+    std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
     mean = float(np.nanmean(X.__array__(), dtype='f8'))
     combined = reduce(lambda x, y: x.concatenate(y, -1),
                       [X[c] for c in conds])
-    out_tensor = torch.from_numpy(
-        (combined.__array__() / std))
+    if (std_ch < (2 * std)).any():
+        combined = combined[std_ch < (2 * std),]
+        std = float(np.nanstd(combined.__array__(), dtype='f8'))
+    out_tensor = torch.from_numpy((combined.__array__() / std))
     mask = torch.isnan(out_tensor)
     n_nan = mask.sum(dtype=torch.int64)
     out_tensor[mask] = torch.normal(mean, std, (n_nan,)).to(
@@ -43,9 +47,10 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-loader = DataLoader(layout, conds_all, 'significance', True, 'stats_freq',
+folder = 'stats_freq_multitaper'
+loader = DataLoader(layout, conds_all, 'significance', True, folder,
                    '.h5')
-filemask = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'mask')
+filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
 if not os.path.exists(filemask + ".npy"):
     sigs = LabeledArray.from_dict(combine(loader.load_dict(
         dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
@@ -55,7 +60,7 @@ else:
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
 
-filename = os.path.join(layout.root, 'derivatives', 'stats_freq', 'combined', 'zscores')
+filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscores')
 zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
 
@@ -64,7 +69,7 @@ pick_k = False
 if pick_k:
     if __name__ == '__main__':
         freeze_support()
-    param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [12, 0, 0]},
+    param_grid = {'ranks': [#{'min': [1, 0, 0], 'max': [12, 0, 0]},
                             {'min': [1], 'max': [12]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
                   'masks': [
@@ -155,44 +160,58 @@ if pick_k:
 # %% decompose
 decompose = True
 if decompose:
-    idx_name = 'Sensory-Motor'
+    idx_name = 'SM'
+    with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
+              f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
+              'rb') as f:
+        results = pickle.load(f)
+    loss_grid = np.array(results['loss']).squeeze()
+    seed_grid = np.array(results['seed']).squeeze()
+    n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
+    n_components = 4
+    best_seed = seed_grid[
+        n_components - 1, np.argmin(loss_grid[n_components - 1])]
+    n_components = (n_components,)
     neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     # trial_av = neural_data_tensor.to(torch.float32)
-    n_components = [5]
     n = 0
     losses, model = slicetca.decompose(trial_av,
                                        # n_components,
                                        (n_components[0], 0, 0),
-                                       seed=None,
+                                       seed=best_seed,
                                        positive=True,
-                                       # min_std=5e-5,
-                                       # iter_std=1000,
-                                       learning_rate=1e-3,
+                                       min_std=5e-5,
+                                       iter_std=1000,
+                                       learning_rate=1e-4,
                                        max_iter=1000000,
                                        # batch_dim=2,
-                                       # batch_prop=1,
+                                       # batch_prop=0.2,
                                        # batch_prop_decay=5,
-                                       weight_decay=0.33,
+                                       weight_decay=0.1,
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
                                        loss_function=torch.nn.L1Loss(
-                                           reduction='sum'),
+                                           reduction='mean'),
                                        verbose=0,
                                        compile=True)
-    torch.save(model, f'model_{idx_name}_freq.pt')
+    # torch.save(model, f'model_{idx_name}_freq.pt')
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(1000, len(model.losses)), model.losses[1000:], 'k')
+    plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
     plt.tight_layout()
     # %% plot the model
+    idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
+    idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
     axes = slicetca.plot(model,
-                         variables=('channel', 'freq', 'time'), )
+                         variables=('channel', 'freq', 'time'),
+                         ticks=(None, idx2, None),
+                         tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), labels[3]))
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
     W, H = model.get_components(numpy=True)[n]
