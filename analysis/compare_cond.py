@@ -22,15 +22,17 @@ layout = get_data('SentenceRep', root=fpath)
 r = 5
 c_minor = 2
 c_major = 3
-major_rows = (0,)
+major_rows = (0,1)
 
 fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 ## Load the data
-kwargs = [dict(folder='stats'), dict(folder='stats_freq'), dict(folder='stats_freq_multitaper')]
-fnames = ['gamma', 'freq']
+kwargs = [dict(folder='stats'), dict(folder='stats_freq'),
+          dict(folder='stats_freq_multitaper')]
+fnames = ['gamma (70-150 Hz)', 'hilbert_spec (50-500 Hz)', 'multitaper (50-300 Hz)']
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
+ylims = [0, 0]
 # wm = [None, ".a2009s", ".BN_atlas"]
 
 for i, fname in enumerate(fnames):
@@ -83,7 +85,7 @@ for i, fname in enumerate(fnames):
         subfig = None
         for k, idx in enumerate(idxs[:-1]):
             picks = name_from_idx(idx, zscores.labels[1])
-            subfig = plot_on_average(layout.get_subjects(), picks=picks, hemi='both',
+            subfig = plot_on_average(layout.get_subjects(), picks=picks, hemi='lh',
                                  color=colors[k], fig=subfig)
 
     screenshot = subfig.screenshot()
@@ -119,16 +121,21 @@ for i, fname in enumerate(fnames):
                           label=group, ax=ax, color=color)
             if j == 0:
                 # ax.legend()
-                ax.set_ylabel("Z-Score (V), " + cond[-2:])
-                ylims = ax.get_ylim()
+                if i == 0:
+                    ax.set_ylabel("Z-Score (V), " + cond[-2:])
+
+                ylims[0] = min(ylims[0], ax.get_ylim()[0])
+                ylims[1] = max(ylims[1], ax.get_ylim()[1])
             # ax.set_xlabel("Time(s)")
-            ax.set_ylim(ylims)
-            if k == 0:
+
+            if k == 2:
                 if cond.split("_")[0] == "aud":
-                    ax.set_title("Stimulus")
+                    event = "Stim"
                 else:
-                    ax.set_title("Go Cue")
+                    event = "Go"
+                ax.set_xlabel(f"Time(s) from {event}")
 
-            elif k == 2:
-                ax.set_xlabel("Time(s)")
-
+for ax in np.array(axs[2:]).flat:
+    ax.set_ylim(ylims)
+    ax.axhline(0, color='k', linestyle='--')
+    ax.axvline(0, color='k', linestyle='--')
