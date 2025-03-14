@@ -19,15 +19,15 @@ def name_from_idx(idx: list[int], chs: Labels):
 fpath = os.path.expanduser("~/Box/CoganLab")
 layout = get_data('SentenceRep', root=fpath)
 # Create a gridspec instance with 3 rows and 3 columns
-r = 4
+r = 5
 c_minor = 2
-c_major = 2
+c_major = 3
 major_rows = (0,)
 
 fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 ## Load the data
-kwargs = [dict(folder='stats'), dict(folder='stats_freq_multitaper')]
+kwargs = [dict(folder='stats'), dict(folder='stats_freq'), dict(folder='stats_freq_multitaper')]
 fnames = ['gamma', 'freq']
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
@@ -95,6 +95,16 @@ for i, fname in enumerate(fnames):
     axs[0][i].set_title(fname)
     axs[0][i].axis('off')
 
+    # %% more plots
+    idx_count = [len(idx) for idx in idxs]
+
+    if i == 0:
+        axs[1][i].table(cellText=np.array([[idx_count]]).T, rowLabels=groups,
+                        loc='center')
+    else:
+        axs[1][i].table(cellText=np.array([[idx_count]]).T, loc='center')
+    axs[1][i].axis('off')
+
     # %% plot the distribution sub.power in aud_ls, go_ls, and resp as subplots
     for k, condss in enumerate(
             [['aud_jl', 'go_jl'], ['aud_lm', 'go_lm'], ['aud_ls', 'go_ls']]):
@@ -103,7 +113,7 @@ for i, fname in enumerate(fnames):
         # make a plot for each condition in conds as a subgrid
         for j, cond in enumerate(conds):
             arr = zscores[cond].__array__()
-            ax = axs[k + 1][i][j]
+            ax = axs[k + 2][i][j]
             for group, color, idx in zip(groups[:-1], colors[:-1], idxs[:-1]):
                 plot_dist(arr[idx], times=conds[cond],
                           label=group, ax=ax, color=color)
