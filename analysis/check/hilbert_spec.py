@@ -8,6 +8,7 @@ from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
 from ieeg.timefreq.utils import crop_pad, cwt
 import numpy as np
+import scipy.stats as st
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -45,7 +46,7 @@ def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
     tfr._update_first_last()
     return tfr
 
-n_jobs = 7
+n_jobs = -2
 for sub in subjects:
     if int(sub[1:]) in (30, 32):
         continue
@@ -84,9 +85,9 @@ for sub in subjects:
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=10)
-        freq = np.linspace(10, 500, num=25)
-        time_smooth = 0.3 #seconds
+        outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
+        freq = np.linspace(50, 500, num=46)
+        time_smooth = 0.25 #seconds
         bw = (freq[1] - freq[0]) * time_smooth
         # decim = int(trials.info['sfreq']) // 100
         kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
