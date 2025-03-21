@@ -88,7 +88,7 @@ for sub in subjects:
         outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
         freq = np.linspace(50, 500, num=46)
         specs = []
-        for time_smooth in [0.05, 0.1, 0.25, 0.5, 1.]:
+        for time_smooth in np.linspace(0.5, 1., 10).tolist():
             kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
                           n_cycles=freq * time_smooth, time_bandwidth=11,
                           decim=4)
