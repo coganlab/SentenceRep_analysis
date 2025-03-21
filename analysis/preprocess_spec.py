@@ -17,13 +17,17 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = 71
+    subject = None
 
 n_jobs = -1
+freqs = (50, 300)
 
 for sub in subjects:
     if int(sub[1:]) in (32, 30):
         continue
+    if subject is not None:
+        if int(sub[1:]) != subject:
+            continue
     # Load the data
     TASK = "SentenceRep"
     # %%
@@ -32,11 +36,11 @@ for sub in subjects:
         os.mkdir(save_dir)
     mask = dict()
     data = []
-    nperm = 5000
+    nperm = 10000
     spec_type = 'multitaper'
     filename = os.path.join(layout.root, 'derivatives',
                             'spec', spec_type, sub, f'start-tfr.h5')
-    base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0., 50, 500)
+    base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0., freqs[0], freqs[1])
     sig2 = base.get_data()
     for name, window in zip(
             ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl"),
@@ -50,7 +54,7 @@ for sub in subjects:
                                     'spec', spec_type, sub, f'{name}-tfr.h5')
         epoch = mne.time_frequency.read_tfrs(filename)
         sig1, times, freqs = epoch.get_data(tmin=window[0], tmax=window[1],
-                                            fmin=50, fmax=500,
+                                            fmin=freqs[0], fmax=freqs[1],
                               return_times=True, return_freqs=True)
 
         # time-perm
@@ -65,8 +69,8 @@ for sub in subjects:
         # figs = chan_grid(epoch_mask, size=(20, 10), vmin=0, vmax=1,
         #                  cmap=parula_map, show=False)
 
-        power = scaling.rescale(epoch.crop(fmin=50, fmax=500), base, 'mean', copy=True)
-        z_score = scaling.rescale(epoch.crop(fmin=50, fmax=500), base, 'zscore', copy=True)
+        power = scaling.rescale(epoch.crop(fmin=freqs[0], fmax=freqs[1]), base, 'mean', copy=True)
+        z_score = scaling.rescale(epoch.crop(fmin=freqs[0], fmax=freqs[1]), base, 'zscore', copy=True)
 
         # Calculate the p-value
         p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,
