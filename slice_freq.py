@@ -171,15 +171,17 @@ if decompose:
     loss_grid = np.array(results['loss']).squeeze()
     seed_grid = np.array(results['seed']).squeeze()
     n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 5
+    n_components = 6
     best_seed = seed_grid[
         n_components - 1, np.argmin(loss_grid[n_components - 1])]
     n_components = (n_components,)
     neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4)
-    trial_av = neural_data_tensor.to(torch.float32).nanmedian(2)[0]
+    trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
+    # trial_av.to('cuda')
     idx_name = 'sig_chans'
     # trial_av = neural_data_tensor.to(torch.float32)
     n = 0
+    # %%
     losses, model = slicetca.decompose(
         trial_av,
         # neural_data_tensor,
@@ -199,10 +201,11 @@ if decompose:
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.HuberLoss(
+                                       loss_function=torch.nn.L1Loss(
                                            reduction='mean'),
                                        verbose=0,
-                                       compile=True)
+                                       compile=True,
+    device='cuda')
     # torch.save(model, f'model_{idx_name}_freq.pt')
 
     # %% plot the losses
@@ -324,6 +327,50 @@ if decompose:
         ylims[0] = min(ylim[0], ylims[0])
     for ax in axs:
         ax.set_ylim(ylims)
+
+    # %% plot each component
+    n_comp = W.shape[0]
+    fig, axs = plt.subplots(2, n_comp)
+    for j, (cond, times) in enumerate(timings.items()):
+        j *= 2
+
+        data = neural_data_tensor.mean(0).detach().cpu().numpy()
+        ylims = [0, 0]
+        for i, ax in enumerate(axs[0 + j]):
+            component = model.construct_single_component(n,
+                                                         i).detach().cpu().numpy()
+            trimmed = data[(W[i] / W.sum(0)) > 0.4][:, times]
+            sorted_trimmed = trimmed[
+                                 np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][
+                             ::-1]
+            plot_dist(trimmed.reshape(-1, 200), ax=ax, color=colors[i],
+                      mode='sem', times=conds[cond])
+            ax.set_xticks([])
+            ax.set_xticklabels([])
+            ylims[1] = max(ax.get_ylim()[1], ylims[1])
+            ylims[0] = min(ax.get_ylim()[0], ylims[0])
+
+            scale = np.mean(sorted_trimmed) + 2 * np.std(sorted_trimmed)
+            axs[1 + j, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno',
+                                 vmin=0, vmax=scale,
+                                 extent=[conds[cond][0], conds[cond][-1], 0,
+                                         len(sorted_trimmed)])
+
+            if i > 0:
+                axs[0 + j, i].set_yticks([])
+                axs[0 + j, i].set_yticklabels([])
+                axs[1 + j, i].set_yticks([])
+                axs[1 + j, i].set_yticklabels([])
+            else:
+                axs[0 + j, i].set_ylabel("Z-Score (V)")
+                axs[1 + j, i].set_ylabel("Channels")
+            if i == n_components[n] // 2:
+                axs[0 + j, i].set_title(f"{cond}")
+
+        for ax in axs[0 + j]:
+            ax.set_ylim(ylims)
+        # fig.suptitle(cond)
+        fig.tight_layout()
 
     # # %% plot the components
     # colors = colors[:n_components[0]]
