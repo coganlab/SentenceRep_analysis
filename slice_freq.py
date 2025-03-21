@@ -163,17 +163,18 @@ if pick_k:
 # %% decompose
 decompose = True
 if decompose:
-    idx_name = 'SM'
-    with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
-              f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
-              'rb') as f:
-        results = pickle.load(f)
-    loss_grid = np.array(results['loss']).squeeze()
-    seed_grid = np.array(results['seed']).squeeze()
-    n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
+    # idx_name = 'SM'
+    # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
+    #           f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
+    #           'rb') as f:
+    #     results = pickle.load(f)
+    # loss_grid = np.array(results['loss']).squeeze()
+    # seed_grid = np.array(results['seed']).squeeze()
+    # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
     n_components = 6
-    best_seed = seed_grid[
-        n_components - 1, np.argmin(loss_grid[n_components - 1])]
+    # best_seed = seed_grid[
+    #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
+    best_seed = None
     n_components = (n_components,)
     neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
@@ -330,15 +331,12 @@ if decompose:
 
     # %% plot each component
     n_comp = W.shape[0]
-    fig, axs = plt.subplots(2, n_comp)
+    fig, axs = plt.subplots(2*len(timings), n_comp)
+    data = neural_data_tensor.mean((1, 2)).detach().cpu().numpy()
     for j, (cond, times) in enumerate(timings.items()):
         j *= 2
-
-        data = neural_data_tensor.mean(0).detach().cpu().numpy()
         ylims = [0, 0]
         for i, ax in enumerate(axs[0 + j]):
-            component = model.construct_single_component(n,
-                                                         i).detach().cpu().numpy()
             trimmed = data[(W[i] / W.sum(0)) > 0.4][:, times]
             sorted_trimmed = trimmed[
                                  np.argsort(W[i, (W[i] / W.sum(0)) > 0.4])][
