@@ -22,7 +22,7 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = 32
+    subject = None
 
 def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
     """Resample a TFR object to a new sampling frequency"""
@@ -50,6 +50,9 @@ n_jobs = -2
 for sub in subjects:
     if int(sub[1:]) in (30, 32):
         continue
+    if subject is not None:
+        if int(sub[1:]) != subject:
+            continue
     # Load the data
     filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
                            extension='.edf', desc='notch', preload=False)
