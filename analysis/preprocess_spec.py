@@ -31,7 +31,7 @@ for sub in subjects:
     # Load the data
     TASK = "SentenceRep"
     # %%
-    save_dir = op.join(layout.root, "derivatives", "stats_freq_multitaper")
+    save_dir = op.join(layout.root, "derivatives", "stats_freq")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()

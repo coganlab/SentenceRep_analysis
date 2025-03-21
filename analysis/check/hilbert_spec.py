@@ -72,7 +72,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'hilbert', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -89,16 +89,17 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
-        freq = np.linspace(50, 500, num=46)
-        specs = []
-        for time_smooth in np.linspace(0.5, 1., 10).tolist():
-            kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-                          n_cycles=freq * time_smooth, time_bandwidth=11,
-                          decim=4)
-            specs.append(trials.compute_tfr(method="multitaper", **kwargs))
-        spec = specs[2]
-        arrays = list(s._data for s in specs)
-        np.minimum.reduce(arrays, out=spec._data)
+        # freq = np.linspace(50, 500, num=46)
+        # specs = []
+        # for time_smooth in np.linspace(0.5, 1., 10).tolist():
+        #     kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
+        #                   n_cycles=freq * time_smooth, time_bandwidth=11,
+        #                   decim=4)
+        #     specs.append(trials.compute_tfr(method="multitaper", **kwargs))
+        # spec = specs[2]
+        # arrays = list(s._data for s in specs)
+        # np.minimum.reduce(arrays, out=spec._data)
+        spec = hilbert_spectrogram(trials, (50, 500),4, 1/10, n_jobs)
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         # if spec.sfreq > 100:
