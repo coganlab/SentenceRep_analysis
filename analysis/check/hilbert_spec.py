@@ -87,23 +87,16 @@ for sub in subjects:
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
         freq = np.linspace(50, 500, num=46)
-        time_smooth = 0.25 #seconds
-        bw = (freq[1] - freq[0]) * time_smooth
-        # decim = int(trials.info['sfreq']) // 100
-        kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-                      n_cycles=freq * time_smooth, time_bandwidth=11,
-                      decim=4)
-        spec = trials.compute_tfr(method="multitaper", **kwargs)
-        # spec = cwt(trials, 10, 500, 8, 4, 40)
-        # spec = hilbert_spectrogram(trials, (30, 500), 4, 1/8.7, n_jobs)
+        specs = []
+        for time_smooth in [0.05, 0.1, 0.25, 0.5, 1.]:
+            kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
+                          n_cycles=freq * time_smooth, time_bandwidth=11,
+                          decim=4)
+            specs.append(trials.compute_tfr(method="multitaper", **kwargs))
+        spec = specs[2]
+        arrays = list(s._data for s in specs)
+        np.minimum.reduce(arrays, out=spec._data)
         crop_pad(spec, "0.5s")
-        # spec = spec.decimate(2, 1)
-        del trials
-
-        # if spec.sfreq % 100 == 0:
-        #     factor = spec.sfreq // 100
-        #     offset = len(spec.times) % factor
-        #     spec = spec.decimate(factor, offset)
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         # if spec.sfreq > 100:
         #     # factor = min(2, spec.sfreq // 100)
