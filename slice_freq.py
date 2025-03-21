@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 from multiprocessing import freeze_support
 import pickle
 
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
+torch.set_float32_matmul_precision("medium")
 
 def load_tensor(array, idx, conds, trial_ax):
     idx = sorted(idx)
@@ -47,7 +50,7 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-folder = 'stats_freq_multitaper'
+folder = 'stats_freq_multitaper_std'
 loader = DataLoader(layout, conds_all, 'significance', True, folder,
                    '.h5')
 filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
@@ -168,15 +171,19 @@ if decompose:
     loss_grid = np.array(results['loss']).squeeze()
     seed_grid = np.array(results['seed']).squeeze()
     n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 4
+    n_components = 5
     best_seed = seed_grid[
         n_components - 1, np.argmin(loss_grid[n_components - 1])]
     n_components = (n_components,)
-    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4)
-    trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
+    neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4)
+    trial_av = neural_data_tensor.to(torch.float32).nanmedian(2)[0]
+    idx_name = 'sig_chans'
     # trial_av = neural_data_tensor.to(torch.float32)
     n = 0
-    losses, model = slicetca.decompose(trial_av,
+    losses, model = slicetca.decompose(
+        trial_av,
+        # neural_data_tensor,
+
                                        # n_components,
                                        (n_components[0], 0, 0),
                                        seed=best_seed,
@@ -186,13 +193,13 @@ if decompose:
                                        learning_rate=1e-4,
                                        max_iter=1000000,
                                        # batch_dim=2,
-                                       # batch_prop=0.2,
+                                       # batch_prop=0.1,
                                        # batch_prop_decay=5,
                                        weight_decay=0.1,
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.L1Loss(
+                                       loss_function=torch.nn.HuberLoss(
                                            reduction='mean'),
                                        verbose=0,
                                        compile=True)
@@ -232,7 +239,7 @@ if decompose:
             fig = plot_dist(
                 # H[i],
                 model.construct_single_component(n, i).detach().cpu().numpy()[
-                (W[i] / W.sum(0)) > 0.4][
+                (W[i] / W.sum(0)) > 0.5][
                     ..., timings[cond]].reshape(-1, 200),
                 ax=ax, color=colors[i], mode='sem', times=times,
                 label=f"Component {colors[i]}")
@@ -249,3 +256,98 @@ if decompose:
     for ax in axs:
         ax.set_ylim(ylims)
     plt.suptitle(f"{idx_name}")
+
+    # %% plot the region membership
+    from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
+
+    # colors = ['Late Prod', 'WM', 'Feedback', 'Instructional', 'Early Prod']
+    rois = ['IFG', 'Tha', 'PoG', 'Amyg', 'PhG', 'MVOcC', 'ITG', 'PrG', 'PCL',
+            'IPL', 'MFG', 'CG', 'Pcun', 'BG',
+            'INS', 'FuG', 'LOcC', 'STG', 'OrG', 'MTG', 'pSTS', 'Hipp', 'SFG',
+            'SPL']
+    names = ['orange', 'yellow', 'black', 'cyan', 'magenta', 'deeppink',
+             'darkorange', 'lime', 'blue', 'red', 'purple']
+    atlas = Atlas()
+    fig, axs = plt.subplots(n_components[0], 1)
+    split = (l.split('-') for l in labels[0])
+    lzfilled = (f"D{s[1:].zfill(4)}-{ch}" for s, ch in split)
+    sm_idx = [zscores.labels[2].tolist().index(l) for l in lzfilled]
+    idxs = [torch.tensor(sm_idx)[
+                (W[i] / W.sum(0)) > 0.4
+                # W.argmax(0) == i
+                ].tolist() for i in range(n_components[0])]
+    ylims = [0, 0]
+    all_groups = []
+    for idx in idxs:
+        groups = {r: [] for r in rois}
+        sm_elecs = zscores.labels[2][idx]
+        for subj in layout.get_subjects():
+            subj_old = f"D{int(subj[1:])}"
+            info = subject_to_info(subj_old)
+            ch_labels = gen_labels(info, subj_old, atlas='.BN_atlas')
+            for key, value in ch_labels.items():
+                item = subj + '-' + key
+                if item in sm_elecs:
+                    roi = value.split("_")[0]
+                    try:
+                        area = atlas[value.split("_")[0]].gyrus
+                    except KeyError as e:
+                        if value.split("_")[0] == 'TE1.0/TE1.2':
+                            area = 'STG'
+                        else:
+                            print(e)
+                            continue
+                    if area in groups.keys():
+                        groups[area].append(subj + '-' + key)
+        groups_num = {key: len(value) for key, value in groups.items()}
+        all_groups.append(groups_num)
+        # plot the histogram, with
+
+    filtered_groups_num = [{} for _ in range(n_components[0])]
+    for roi in rois:
+        # new_roi = atlas.abbreviations[roi]
+        new_roi = roi
+        if any(group[roi] > 0 for group in all_groups):
+            for i, group in enumerate(all_groups):
+                filtered_groups_num[i][new_roi] = group[roi]
+    for i, (c, ax) in enumerate(zip(names, axs)):
+        ax.bar(filtered_groups_num[i].keys(), filtered_groups_num[i].values())
+        plt.sca(ax)
+        # if ax is axs[-1]:
+        if True:
+            plt.xticks(rotation=45)
+        else:
+            plt.xticks([])
+        ax.set_ylabel(f"{c}")
+        ylim = ax.get_ylim()
+        ylims[1] = max(ylim[1], ylims[1])
+        ylims[0] = min(ylim[0], ylims[0])
+    for ax in axs:
+        ax.set_ylim(ylims)
+
+    # # %% plot the components
+    # colors = colors[:n_components[0]]
+    # conds = {'aud_ls': (-0.5, 1.5),
+    #          'go_ls': (-0.5, 1.5),
+    #          'resp': (-1, 1)}
+    # fig, axs = plt.subplots(1, 3)
+    #
+    # # make a plot for each condition in conds as a subgrid
+    # for j, (cond, times) in enumerate(conds.items()):
+    #     ax = axs[j]
+    #     start = 200 * j
+    #     end = start + 200
+    #     for i in range(n_components[0]):
+    #         fig = plot_dist(
+    #             # H[i],
+    #             model.construct_single_component(0, i).detach().numpy()[
+    #             (W[i] / W.sum(0)) > 0.3, ..., start:end].reshape(-1, 200),
+    #             ax=ax, color=colors[i], mode='sem', times=times)
+    #     if j == 0:
+    #         ax.legend()
+    #         ax.set_ylabel("Z-Score (V)")
+    #         ylims = ax.get_ylim()
+    #     elif j == 1:
+    #         ax.set_xlabel("Time(s)")
+    #     ax.set_ylim(ylims)
+    #     ax.set_title(cond)
