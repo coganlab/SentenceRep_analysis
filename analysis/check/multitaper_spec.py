@@ -3,35 +3,66 @@ import mne.time_frequency
 
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
-from ieeg.calc.scaling import rescale
+from ieeg.calc.oversample import resample
+from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
-from ieeg.timefreq.utils import crop_pad
+from ieeg.timefreq.utils import crop_pad, cwt
 import numpy as np
+import scipy.stats as st
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
 
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
     LAB_root = os.path.join(HOME, "workspace", "CoganLab")
-    sid = int(os.environ['SLURM_ARRAY_TASK_ID'])
-    subjects = [f"D{sid:04}"]
     layout = get_data("SentenceRep", root=LAB_root)
-    print(f"Running subject {subjects[0]}")
+    subjects = layout.get(return_type="id", target="subject")
+    subject = int(os.environ['SLURM_ARRAY_TASK_ID'])
 else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
+    subject = None
 
+def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
+    """Resample a TFR object to a new sampling frequency"""
+    if copy:
+        tfr = tfr.copy()
+
+    if o_sfreq is None:
+        # o_sfreq = len(tfr.times) / (tfr.tmax - tfr.tmin)
+        o_sfreq = tfr.info["sfreq"]
+
+    tfr._data = resample(tfr._data, o_sfreq, sfreq, axis=-1)
+    lowpass = tfr.info.get("lowpass")
+    lowpass = np.inf if lowpass is None else lowpass
+    with tfr.info._unlock():
+        tfr.info["lowpass"] = min(lowpass, sfreq / 2)
+        tfr.info["sfreq"] = sfreq
+    new_times = resample(tfr.times, o_sfreq, sfreq, axis=-1)
+    # adjust indirectly affected variables
+    tfr._set_times(new_times)
+    tfr._raw_times = tfr.times
+    tfr._update_first_last()
+    return tfr
+
+n_jobs = -1
 for sub in subjects:
+    if int(sub[1:]) in (30, 32):
+        continue
+    if subject is not None:
+        if int(sub[1:]) != subject:
+            continue
     # Load the data
-    filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
-                           extension='.edf', desc='clean', preload=False)
+    filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
+                           extension='.edf', desc='notch', preload=False)
 
     ## Crop raw data to minimize processing time
     good = crop_empty_data(filt,).copy()
 
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    good.drop_channels(good.info['bads'])
+    bads = good.info['bads']
+    good.drop_channels(bads)
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
@@ -41,7 +72,7 @@ for sub in subjects:
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper_big', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'hilbert', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -49,32 +80,35 @@ for sub in subjects:
             ("Start", "Word/Response/LS", "Word/Audio/LS", "Word/Audio/LM",
              "Word/Audio/JL", "Word/Go/LS", "Word/Go/LM",
              "Word/Go/JL"),
-            ((-0.5, 0.5), (-0.5, 1), (-0.5, 1.25), (-0.5, 1.25), (-0.5, 1.25),
-             (0, 1.5), (0, 1.5), (0, 1.5)),
+            ((-0.5, 0.5), (-1, 1), (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5),
+             (-0.5, 1.5), (-0.5, 1.5), (-0.5, 1.5)),
             ("start", "resp", "aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm",
-             "go_jl", )):
-        t1 = t[0] - 0.5
-        t2 = t[1] + 0.5
-        trials = trial_ieeg(good, epoch, (t1, t2), preload=True)
-        outliers_to_nan(trials, outliers=10)
-        freq = np.linspace(0.5, 1024, num=80)
-        kwargs = dict(average=False, n_jobs=-2, freqs=freq, return_itc=False,
-                      n_cycles=freq/2, time_bandwidth=4,
-                      # n_fft=int(trials.info['sfreq'] * 2.75),
-                      decim=20, )
-                      # adaptive=True)
+             "go_jl")):
+        times = [None, None]
+        times[0] = t[0] - 0.5
+        times[1] = t[1] + 0.5
+        trials = trial_ieeg(good, epoch, times, preload=True)
+        outliers_to_nan(trials, outliers=8, deviation=st.median_abs_deviation, center=np.median)
+        freq = np.linspace(50, 500, num=46)
+        time_smooth = 0.25
+        kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
+                      n_cycles=freq * time_smooth, time_bandwidth=11,
+                      decim=4)
+        spec = trials.compute_tfr(method="multitaper", **kwargs)
+        # spec = specs[2]
+        # arrays = list(s._data for s in specs)
+        # np.minimum.reduce(arrays, out=spec._data)
+        crop_pad(spec, "0.5s")
+        resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
 
-        spectra = trials.compute_tfr(method="multitaper",  **kwargs)
-        del trials
-        crop_pad(spectra, "0.5s")
-        if name == "start":
-            base = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
-            base = spectra.copy().crop(-0.5, 0)
-
-        spectra = spectra.average(lambda x: np.nanmean(x, axis=0), copy=True)
-        rescale(spectra._data, base._data, mode='ratio', axis=-1)
+        # if epoch == "Start":
+        #     base = spec.copy().crop(-0.5, 0)
+        # spec_a = rescale(spec, base, copy=True, mode='zscore')
+        # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        spectra.info['subject_info']['files'] = tuple(fnames)
-        spectra.info['bads'] = good.info['bads']
+        #spec.info['subject_info']['files'] = tuple(fnames)
+        # spec.info['bads'] = bads
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        mne.time_frequency.write_tfrs(filename, spectra, overwrite=True)
+        # mne.time_frequency.write_tfrs(filename, spec, overwrite=True)
+
+        spec.save(filename, overwrite=True, verbose=True)
