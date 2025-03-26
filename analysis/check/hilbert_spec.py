@@ -1,12 +1,10 @@
 ## Description: Produce spectrograms for each subject
-import mne.time_frequency
 
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
-from ieeg.calc.oversample import resample
 from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
-from ieeg.timefreq.utils import crop_pad, cwt
+from ieeg.timefreq.utils import crop_pad, resample_tfr
 import numpy as np
 import scipy.stats as st
 
@@ -24,30 +22,8 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
     subject = None
 
-def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
-    """Resample a TFR object to a new sampling frequency"""
-    if copy:
-        tfr = tfr.copy()
-
-    if o_sfreq is None:
-        # o_sfreq = len(tfr.times) / (tfr.tmax - tfr.tmin)
-        o_sfreq = tfr.info["sfreq"]
-
-    tfr._data = resample(tfr._data, o_sfreq, sfreq, axis=-1)
-    lowpass = tfr.info.get("lowpass")
-    lowpass = np.inf if lowpass is None else lowpass
-    with tfr.info._unlock():
-        tfr.info["lowpass"] = min(lowpass, sfreq / 2)
-        tfr.info["sfreq"] = sfreq
-    new_times = resample(tfr.times, o_sfreq, sfreq, axis=-1)
-    # adjust indirectly affected variables
-    tfr._set_times(new_times)
-    tfr._raw_times = tfr.times
-    tfr._update_first_last()
-    return tfr
-
-n_jobs = -2
-for sub in subjects:
+n_jobs = 6
+for sub in reversed(subjects):
     if int(sub[1:]) in (30, 32):
         continue
     if subject is not None:
@@ -89,17 +65,7 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
-        # freq = np.linspace(50, 500, num=46)
-        # specs = []
-        # for time_smooth in np.linspace(0.5, 1., 10).tolist():
-        #     kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
-        #                   n_cycles=freq * time_smooth, time_bandwidth=11,
-        #                   decim=4)
-        #     specs.append(trials.compute_tfr(method="multitaper", **kwargs))
-        # spec = specs[2]
-        # arrays = list(s._data for s in specs)
-        # np.minimum.reduce(arrays, out=spec._data)
-        spec = hilbert_spectrogram(trials, (50, 500),4, 1/10, n_jobs)
+        spec = hilbert_spectrogram(trials, (50, 500),4, 1/12, n_jobs)
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         # if spec.sfreq > 100:

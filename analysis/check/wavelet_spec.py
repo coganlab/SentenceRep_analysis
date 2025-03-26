@@ -4,9 +4,9 @@ import mne.time_frequency
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data,\
     outliers_to_nan
-from ieeg.calc.scaling import rescale
+import scipy.stats as st
 import os
-from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
+from ieeg.timefreq.utils import crop_pad, wavelet_scaleogram, resample_tfr
 import numpy as np
 
 ## check if currently running a slurm job
@@ -22,8 +22,9 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
 
 for sub in subjects:
-    if sub != "D0070":
+    if sub == "D0032":
         continue
+
     # Load the data
     filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
                            extension='.edf', desc='clean', preload=False)
@@ -36,12 +37,8 @@ for sub in subjects:
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
-    # scheme = pre.make_contact_rereference_arr(good.ch_names)
-    # good._data = pre.rereference(scheme, field=[good._data.T])[0].T
     good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 
-    # Remove intermediates from mem
-    # good.plot()
 
     ## epoching and trial outlier removal
 
@@ -61,16 +58,13 @@ for sub in subjects:
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=10)
-        spec = wavelet_scaleogram(trials, n_jobs=-2, decim=int(
-            good.info['sfreq'] / 100))
+        outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
+        spec = wavelet_scaleogram(trials, n_jobs=-2, decim=4)
         crop_pad(spec, "0.5s")
+        resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         if epoch == "Start":
             base = spec.copy().crop(-0.5, 0)
-        spec_a = rescale(spec, base, copy=True, mode='zscore').average(
-            lambda x: np.nanmean(x, axis=0), copy=True)
+
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        spec_a.info['subject_info']['files'] = tuple(fnames)
-        spec_a.info['bads'] = good.info['bads']
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        mne.time_frequency.write_tfrs(filename, spec_a, overwrite=True)
+        spec.save(filename, overwrite=True, verbose=True)

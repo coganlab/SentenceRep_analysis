@@ -3,10 +3,8 @@ import mne.time_frequency
 
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
-from ieeg.calc.oversample import resample
-from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
-from ieeg.timefreq.utils import crop_pad, cwt
+from ieeg.timefreq.utils import crop_pad, resample_tfr
 import numpy as np
 import scipy.stats as st
 
@@ -24,28 +22,6 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
     subject = None
 
-def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
-    """Resample a TFR object to a new sampling frequency"""
-    if copy:
-        tfr = tfr.copy()
-
-    if o_sfreq is None:
-        # o_sfreq = len(tfr.times) / (tfr.tmax - tfr.tmin)
-        o_sfreq = tfr.info["sfreq"]
-
-    tfr._data = resample(tfr._data, o_sfreq, sfreq, axis=-1)
-    lowpass = tfr.info.get("lowpass")
-    lowpass = np.inf if lowpass is None else lowpass
-    with tfr.info._unlock():
-        tfr.info["lowpass"] = min(lowpass, sfreq / 2)
-        tfr.info["sfreq"] = sfreq
-    new_times = resample(tfr.times, o_sfreq, sfreq, axis=-1)
-    # adjust indirectly affected variables
-    tfr._set_times(new_times)
-    tfr._raw_times = tfr.times
-    tfr._update_first_last()
-    return tfr
-
 n_jobs = -1
 for sub in subjects:
     if int(sub[1:]) in (30, 32):
@@ -59,20 +35,16 @@ for sub in subjects:
 
     ## Crop raw data to minimize processing time
     good = crop_empty_data(filt,).copy()
-
-    # good.info['bads'] = channel_outlier_marker(good, 3, 2)
     bads = good.info['bads']
     good.drop_channels(bads)
     good.load_data()
 
     ch_type = filt.get_channel_types(only_data_chs=True)[0]
-    # scheme = pre.make_contact_rereference_arr(good.ch_names)
-    # good._data = pre.rereference(scheme, field=[good._data.T])[0].T
     good.set_eeg_reference(ref_channels="average", ch_type=ch_type)
 
     ## epoching and trial outlier removal
 
-    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'hilbert', sub)
+    save_dir = os.path.join(layout.root, 'derivatives', 'spec', 'multitaper', sub)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -88,27 +60,17 @@ for sub in subjects:
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=8, deviation=st.median_abs_deviation, center=np.median)
+        outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
         freq = np.linspace(50, 500, num=46)
         time_smooth = 0.25
         kwargs = dict(average=False, n_jobs=n_jobs, freqs=freq, return_itc=False,
                       n_cycles=freq * time_smooth, time_bandwidth=11,
                       decim=4)
         spec = trials.compute_tfr(method="multitaper", **kwargs)
-        # spec = specs[2]
-        # arrays = list(s._data for s in specs)
-        # np.minimum.reduce(arrays, out=spec._data)
+
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
 
-        # if epoch == "Start":
-        #     base = spec.copy().crop(-0.5, 0)
-        # spec_a = rescale(spec, base, copy=True, mode='zscore')
-        # spec_a._data = np.log10(spec_a._data) * 20
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
-        #spec.info['subject_info']['files'] = tuple(fnames)
-        # spec.info['bads'] = bads
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
-        # mne.time_frequency.write_tfrs(filename, spec, overwrite=True)
-
         spec.save(filename, overwrite=True, verbose=True)
