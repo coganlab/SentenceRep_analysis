@@ -231,11 +231,18 @@ if decompose:
         # comp[n] = [comp[n][1][..., timing]]
         comp[n][1] = comp[n][1][..., timing]
         # comp[n][0] = np.array([])
+        if cond.startswith('aud_l'):
+            t_label = f"Time (s) from Stimulus"
+        elif cond.startswith('go_lm'):
+            t_label = f"Time (s) from Go Cue (Mime)"
+        elif cond.startswith('go_ls'):
+            t_label = f"Time (s) from Go Cue (Speak)"
         axes = slicetca.plot(model,
                              components=comp,
                              ignore_component=(0,),
-                             variables=('channel', 'freq', 'time'),
-                             ticks=(None, idx2, [0, 49, 99, 149, 199]),
+                             variables=('channel', 'freq', t_label),
+                             sorting_indices=(None, labels[1].astype(float).argsort(), None),
+                             ticks=(None, idx2[::-1], [0, 49, 99, 149, 199]),
                              tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), [-0.5, 0, 0.5, 1, 1.5]),
                              cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
@@ -283,7 +290,7 @@ if decompose:
 
     chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
              ch in labels[0]]
-    electrode_gradient(layout.get_subjects(), W, chans, colors, mode='both')
+    electrode_gradient(layout.get_subjects(), W, chans, colors, mode='lh', fig_dims=(3,1))
 
     # %%
     from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
