@@ -34,7 +34,7 @@ def load_tensor(array, idx, conds, trial_ax, min_nan=5):
     # n_nan = mask.sum(dtype=torch.int64)
     # out_tensor[mask] = torch.normal(mean, std, (n_nan,)).to(
     #     out_tensor.dtype)
-    return out_tensor, mask, combined.labels
+    return out_tensor, ~mask, combined.labels
 
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -66,7 +66,7 @@ idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
 
 filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscores')
 zscores = LabeledArray.fromfile(filename, mmap_mode='r')
-conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
+conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
 
 # %% grid search
 pick_k = False
@@ -87,7 +87,7 @@ if pick_k:
     procs = 1
     threads = 1
     repeats = 2
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
+    conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
     aud_slice = slice(0, 175)
 
     for ranks, group, is_mask, loss, lr, decay in product(
@@ -172,12 +172,12 @@ if decompose:
     # loss_grid = np.array(results['loss']).squeeze()
     # seed_grid = np.array(results['seed']).squeeze()
     # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 5
+    n_components = 4
     # best_seed = seed_grid[
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
-    neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4, 1)
+    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     # trial_av.to('cuda')
     # idx_name = 'sig_chans'
@@ -193,17 +193,17 @@ if decompose:
                                        seed=best_seed,
                                        positive=True,
                                        min_std=5e-4,
-                                       iter_std=100,
-                                       learning_rate=1e-3,
+                                       iter_std=1000,
+                                       learning_rate=1e-4,
                                        max_iter=1000000,
                                        # batch_dim=2,
                                        # batch_prop=0.1,
                                        # batch_prop_decay=5,
-                                       weight_decay=0.2,
+                                       # weight_decay=0.1,
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.HuberLoss(
+                                       loss_function=torch.nn.L1Loss(
                                            reduction='mean'),
                                        verbose=0,
                                        compile=True,
@@ -211,7 +211,7 @@ if decompose:
      device='cuda')
     # torch.save(model, f'model_{'SM'}_freq.pt')
 
-    # %% plot the losses
+    # plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
     plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
     plt.xlabel('iterations')
@@ -222,8 +222,8 @@ if decompose:
     idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
     idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
     timings = {'aud_ls': range(0, 200),
-               'go_ls': range(400, 600),
-               'go_lm': range(600, 800)}
+               'go_ls': range(600, 800),
+               'go_jl': range(1000, 1200)}
     components = model.get_components(numpy=True)
     figs = {}
     for cond, timing in timings.items():
@@ -237,27 +237,63 @@ if decompose:
             t_label = f"Time (s) from Go Cue (Mime)"
         elif cond.startswith('go_ls'):
             t_label = f"Time (s) from Go Cue (Speak)"
+        elif cond.startswith('go_jl'):
+            t_label = f"Time (s) from Go Cue (:=:)"
         axes = slicetca.plot(model,
                              components=comp,
                              ignore_component=(0,),
                              variables=('channel', 'freq', t_label),
-                             sorting_indices=(None, labels[1].astype(float).argsort(), None),
+                             sorting_indices=(None, labels[1].astype(float).argsort()[::-1], None),
                              ticks=(None, idx2[::-1], [0, 49, 99, 149, 199]),
                              tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), [-0.5, 0, 0.5, 1, 1.5]),
                              cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
-    W, H = model.get_components(numpy=True)[n]
+    # %% plot the sensory motors
+    timingss = [{'aud_ls': range(0, 200),
+               'go_ls': range(600, 800)},
+               {'aud_jl': range(400, 600),
+                'go_jl': range(1000, 1200)}]
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+    ylims = [0, 0]
+    lss = ['-', '--']
+    for i, timings in enumerate(timingss):
+        for j, (cond, time_slice) in enumerate(timings.items()):
+            ax = axs[j]
+            mat = np.nanmean(zscores[cond][:,sorted(SM)].__array__(), axis=(0,2,3))
+            plot_dist(mat,#(trial_av.mean(1)*2).detach().cpu().numpy()[..., time_slice],
+                            ax=ax, color='red', linestyle=lss[i], label=cond[-2:],
+                      times=(-0.5, 1.5))
+            if cond.startswith('go'):
+                event = "Go Cue"
+            elif cond.startswith('aud'):
+                event = "Stimulus"
+            if i == 0:
+                if j == 0:
+                    # ax.legend()
+                    ax.set_ylabel("Z-Score (V)")
+            elif i == 1:
+                if j == 0:
+                    ax.legend(loc='best')
+
+                ax.set_xlabel("Time(s) from " + event)
+            ylim = ax.get_ylim()
+            ylims[1] = max(ylim[1], ylims[1])
+            ylims[0] = min(ylim[0], ylims[0])
+    for ax in axs:
+        ax.set_ylim(ylims)
+        ax.axhline(0, color='k', linestyle='--')
+    fig.suptitle('Sensory Motor')
+
     # %% plot the components
+    W, H = model.get_components(numpy=True)[n]
     timings = {'aud_ls': range(0, 200),
-               'go_ls': range(400, 600),
-               'resp': range(800, 1000)}
+               'go_ls': range(600, 800)}
     idx_name = 'SM'
     colors = colors[:n_components[n]]
     conds = {'aud_ls': (-0.5, 1.5),
-             'go_ls': (-0.5, 1.5),
-             'resp': (-1, 1)}
-    fig, axs = plt.subplots(1, 3)
+             'go_ls': (-0.5, 1.5)}
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
     ylims = [0, 0]
     # make a plot for each condition in conds as a subgrid
     for j, (cond, times) in enumerate(conds.items()):
@@ -270,27 +306,32 @@ if decompose:
                     ..., timings[cond]].reshape(-1, 200),
                 ax=ax, color=colors[i], mode='sem', times=times,
                 label=f"Component {colors[i]}")
+
+
+        if cond.startswith('go'):
+            event = "Go Cue"
+        elif cond.startswith('aud'):
+            event = "Stimulus"
         if j == 0:
             # ax.legend()
             ax.set_ylabel("Z-Score (V)")
 
-        elif j == 1:
-            ax.set_xlabel("Time(s)")
+        ax.set_xlabel("Time(s) from " + event)
         ylim = ax.get_ylim()
         ylims[1] = max(ylim[1], ylims[1])
         ylims[0] = min(ylim[0], ylims[0])
-        ax.set_title(cond)
+        # ax.set_title(cond)
     for ax in axs:
         ax.set_ylim(ylims)
-    plt.suptitle(f"{idx_name}")
+    plt.suptitle(f"Components")
 
     # %% plot the region membership
-    from ieeg.viz.mri import electrode_gradient
-
+    from ieeg.viz.mri import electrode_gradient, plot_on_average
 
     chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
              ch in labels[0]]
-    electrode_gradient(layout.get_subjects(), W, chans, colors, mode='lh', fig_dims=(3,1))
+    subj = sorted(set(ch.split('-')[0] for ch in chans))
+    electrode_gradient(layout.get_subjects(), W*2, chans, colors, mode='both', fig_dims=(W.shape[0],1))
 
     # %%
     from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
