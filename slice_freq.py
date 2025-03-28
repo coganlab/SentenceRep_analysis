@@ -180,7 +180,7 @@ if decompose:
     neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4, 1)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     # trial_av.to('cuda')
-    idx_name = 'sig_chans'
+    # idx_name = 'sig_chans'
     # trial_av = neural_data_tensor.to(torch.float32)
     n = 0
     # %%
@@ -192,23 +192,24 @@ if decompose:
                                        (n_components[0], 0, 0),
                                        seed=best_seed,
                                        positive=True,
-                                       min_std=5e-5,
-                                       iter_std=1000,
-                                       learning_rate=1e-4,
+                                       min_std=5e-4,
+                                       iter_std=100,
+                                       learning_rate=1e-3,
                                        max_iter=1000000,
                                        # batch_dim=2,
                                        # batch_prop=0.1,
                                        # batch_prop_decay=5,
-                                       weight_decay=0.1,
+                                       weight_decay=0.2,
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
-                                       loss_function=torch.nn.L1Loss(
+                                       loss_function=torch.nn.HuberLoss(
                                            reduction='mean'),
                                        verbose=0,
                                        compile=True,
-    device='cuda')
-    # torch.save(model, f'model_{idx_name}_freq.pt')
+    shuffle_dim=0,
+     device='cuda')
+    # torch.save(model, f'model_{'SM'}_freq.pt')
 
     # %% plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
@@ -220,21 +221,35 @@ if decompose:
     # %% plot the model
     idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
     idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
-    axes = slicetca.plot(model,
-                         variables=('channel', 'freq', 'time'),
-                         ticks=(None, idx2, None),
-                         tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), labels[3]))
+    timings = {'aud_ls': range(0, 200),
+               'go_ls': range(400, 600),
+               'go_lm': range(600, 800)}
+    components = model.get_components(numpy=True)
+    figs = {}
+    for cond, timing in timings.items():
+        comp = model.get_components(numpy=True)
+        # comp[n] = [comp[n][1][..., timing]]
+        comp[n][1] = comp[n][1][..., timing]
+        # comp[n][0] = np.array([])
+        axes = slicetca.plot(model,
+                             components=comp,
+                             ignore_component=(0,),
+                             variables=('channel', 'freq', 'time'),
+                             ticks=(None, idx2, [0, 49, 99, 149, 199]),
+                             tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), [-0.5, 0, 0.5, 1, 1.5]),
+                             cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
     W, H = model.get_components(numpy=True)[n]
     # %% plot the components
+    timings = {'aud_ls': range(0, 200),
+               'go_ls': range(400, 600),
+               'resp': range(800, 1000)}
+    idx_name = 'SM'
     colors = colors[:n_components[n]]
     conds = {'aud_ls': (-0.5, 1.5),
              'go_ls': (-0.5, 1.5),
              'resp': (-1, 1)}
-    timings = {'aud_ls': range(0, 200),
-               'go_ls': range(400, 600),
-               'resp': range(800, 1000)}
     fig, axs = plt.subplots(1, 3)
     ylims = [0, 0]
     # make a plot for each condition in conds as a subgrid
@@ -263,7 +278,16 @@ if decompose:
     plt.suptitle(f"{idx_name}")
 
     # %% plot the region membership
+    from ieeg.viz.mri import electrode_gradient
+
+
+    chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
+             ch in labels[0]]
+    electrode_gradient(layout.get_subjects(), W, chans, colors, mode='both')
+
+    # %%
     from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
+    import matplotlib.pyplot as plt
 
     # colors = ['Late Prod', 'WM', 'Feedback', 'Instructional', 'Early Prod']
     rois = ['IFG', 'Tha', 'PoG', 'Amyg', 'PhG', 'MVOcC', 'ITG', 'PrG', 'PCL',
@@ -284,8 +308,8 @@ if decompose:
     ylims = [0, 0]
     all_groups = []
     for idx in idxs:
-        groups = {r: [] for r in rois}
         sm_elecs = zscores.labels[2][idx]
+        groups = {r: [] for r in rois}
         for subj in layout.get_subjects():
             subj_old = f"D{int(subj[1:])}"
             info = subject_to_info(subj_old)
