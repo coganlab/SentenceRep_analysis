@@ -5,6 +5,7 @@ from ieeg.decoding.decode import extract
 from ieeg.viz.ensemble import plot_dist
 from analysis.grouping import group_elecs
 from itertools import product
+from ieeg.viz.parula import parula_map
 import torch
 import numpy as np
 from functools import reduce
@@ -17,22 +18,22 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
 torch.set_float32_matmul_precision("medium")
 
-def load_tensor(array, idx, conds, trial_ax):
+def load_tensor(array, idx, conds, trial_ax, min_nan=5):
     idx = sorted(idx)
-    X = extract(array, conds, trial_ax, idx)
-    std = float(np.nanstd(X.__array__(), dtype='f8'))
-    std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
-    mean = float(np.nanmean(X.__array__(), dtype='f8'))
+    X = extract(array, conds, trial_ax, idx, min_nan)
+    # std = float(np.nanstd(X.__array__(), dtype='f8'))
+    # std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
+    # mean = float(np.nanmean(X.__array__(), dtype='f8'))
     combined = reduce(lambda x, y: x.concatenate(y, -1),
                       [X[c] for c in conds])
-    if (std_ch < (2 * std)).any():
-        combined = combined[std_ch < (2 * std),]
-        std = float(np.nanstd(combined.__array__(), dtype='f8'))
-    out_tensor = torch.from_numpy((combined.__array__() / std))
+    # if (std_ch < (2 * std)).any():
+    #     combined = combined[std_ch < (2 * std),]
+    std = float(np.nanstd(combined.__array__(), dtype='f8'))
+    out_tensor = torch.from_numpy(combined.__array__() / std)
     mask = torch.isnan(out_tensor)
-    n_nan = mask.sum(dtype=torch.int64)
-    out_tensor[mask] = torch.normal(mean, std, (n_nan,)).to(
-        out_tensor.dtype)
+    # n_nan = mask.sum(dtype=torch.int64)
+    # out_tensor[mask] = torch.normal(mean, std, (n_nan,)).to(
+    #     out_tensor.dtype)
     return out_tensor, mask, combined.labels
 
 HOME = os.path.expanduser("~")
@@ -50,7 +51,7 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-folder = 'stats_freq_multitaper_std'
+folder = 'stats_freq'
 loader = DataLoader(layout, conds_all, 'significance', True, folder,
                    '.h5')
 filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
@@ -171,12 +172,12 @@ if decompose:
     # loss_grid = np.array(results['loss']).squeeze()
     # seed_grid = np.array(results['seed']).squeeze()
     # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 6
+    n_components = 5
     # best_seed = seed_grid[
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
-    neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4)
+    neural_data_tensor, mask, labels = load_tensor(zscores, sig_chans, conds, 4, 1)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     # trial_av.to('cuda')
     idx_name = 'sig_chans'
