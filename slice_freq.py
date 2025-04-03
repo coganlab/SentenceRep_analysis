@@ -52,18 +52,10 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
 folder = 'stats_freq'
-loader = DataLoader(layout, conds_all, 'significance', True, folder,
-                   '.h5')
 filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
-if not os.path.exists(filemask + ".npy"):
-    sigs = LabeledArray.from_dict(combine(loader.load_dict(
-        dtype=bool, n_jobs=-1), (0, 2)), dtype=bool)
-    sigs.tofile(filemask)
-else:
-    sigs = LabeledArray.fromfile(filemask)
+sigs = LabeledArray.fromfile(filemask)
 AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
-
 filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscores')
 zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
@@ -199,7 +191,7 @@ if decompose:
                                        # batch_dim=2,
                                        # batch_prop=0.1,
                                        # batch_prop_decay=5,
-                                       # weight_decay=0.1,
+                                       # weight_decay=5e-5,
                                        # mask=mask,
                                        init_bias=0.01,
                                        initialization='uniform-positive',
@@ -324,6 +316,54 @@ if decompose:
     for ax in axs:
         ax.set_ylim(ylims)
     plt.suptitle(f"Components")
+
+    # %% plot the components
+    W, H = model.get_components(numpy=True)[n]
+    timingss = [{'aud-Listen-Speak': range(0, 200),
+               'go-Listen-Speak': range(600, 800)},
+               {'aud_jl': range(400, 600),
+                'go-Just-Listen': range(1000, 1200)}]
+    idx_name = 'SM'
+    colors = colors[:n_components[n]]
+    # conds = {'aud_ls': (-0.5, 1.5),
+    #          'go_ls': (-0.5, 1.5)}
+    fig, axs = plt.subplots(n_components[n], 2, dpi=100)
+    ylims = [[], []]
+    # make a plot for each condition in conds as a subgrid
+    for i, timings in enumerate(timingss):
+        for j, (cond, times) in enumerate(timings.items()):
+            for k in range(n_components[n]):
+                ax = axs[k, j]
+                if i == 0:
+                    ls = '-'
+                else:
+                    ls = '--'
+                plot_dist(
+                    # H[k],
+                    model.construct_single_component(n, k).detach().cpu().numpy()[
+                    (W[k] / W.sum(0)) > 0.5][
+                        ..., times].reshape(-1, 200),
+                    ax=ax, color=colors[k], mode='sem', times=(-0.5, 1.5),
+                    linestyle=ls, label=cond[3:])
+                ylim = ax.get_ylim()
+                ylims[1].append(ylim[1])
+                ylims[0].append(ylim[0])
+                if j == 1 and i == 1:
+                    ax.legend()
+
+            if cond.startswith('go'):
+                event = "Go Cue"
+            elif cond.startswith('aud'):
+                event = "Stimulus"
+
+            #     ax.set_ylabel("Z-Score (V)")
+
+            ax.set_xlabel("Time(s) from " + event)
+
+    for ax in axs.flat:
+        ax.set_ylim((min(ylims[0]), max(ylims[1])))
+    # plt.suptitle(f"Components")
+    fig.supylabel('Z-Score (V)')
 
     # %% plot the region membership
     from ieeg.viz.mri import electrode_gradient, plot_on_average
