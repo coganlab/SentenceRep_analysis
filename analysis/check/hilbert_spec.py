@@ -1,7 +1,7 @@
 ## Description: Produce spectrograms for each subject
 
 from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan
+from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan, find_bad_channels_lof
 from ieeg.timefreq.gamma import hilbert_spectrogram
 import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
@@ -20,10 +20,10 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = None
+    subject = 16
 
-n_jobs = 6
-for sub in reversed(subjects):
+n_jobs = 10
+for sub in subjects:
     if int(sub[1:]) in (30, 32):
         continue
     if subject is not None:
@@ -36,8 +36,9 @@ for sub in reversed(subjects):
     ## Crop raw data to minimize processing time
     good = crop_empty_data(filt,).copy()
 
+    good.info['bads'] = []
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    bads = good.info['bads']
+    bads = list(set(filt.info['bads']) | set(find_bad_channels_lof(good)))
     good.drop_channels(bads)
     good.load_data()
 
@@ -64,8 +65,8 @@ for sub in reversed(subjects):
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
-        spec = hilbert_spectrogram(trials, (50, 500),4, 1/12, n_jobs)
+        outliers_to_nan(trials, outliers=20, deviation=st.median_abs_deviation, center=np.median)
+        spec = hilbert_spectrogram(trials, (4, 500),4, 1/12, n_jobs)
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         # if spec.sfreq > 100:

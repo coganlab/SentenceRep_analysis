@@ -2,8 +2,8 @@
 import mne.time_frequency
 
 from ieeg.io import get_data, raw_from_layout
-from ieeg.navigate import trial_ieeg, channel_outlier_marker, crop_empty_data,\
-    outliers_to_nan
+from ieeg.navigate import trial_ieeg, find_bad_channels_lof,\
+    outliers_to_nan, crop_empty_data
 import scipy.stats as st
 import os
 from ieeg.timefreq.utils import crop_pad, wavelet_scaleogram, resample_tfr
@@ -26,13 +26,13 @@ for sub in subjects:
         continue
 
     # Load the data
-    filt = raw_from_layout(layout.derivatives['clean'], subject=sub,
-                           extension='.edf', desc='clean', preload=False)
+    filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
+                           extension='.edf', desc='notch', preload=False)
 
     ## Crop raw data to minimize processing time
     good = crop_empty_data(filt,).copy()
 
-    good.info['bads'] = channel_outlier_marker(good, 3, 2)
+    good.info['bads'] = find_bad_channels_lof(good, n_jobs=-1)
     good.drop_channels(good.info['bads'])
     good.load_data()
 
@@ -58,7 +58,7 @@ for sub in subjects:
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=10, deviation=st.median_abs_deviation, center=np.median)
+        outliers_to_nan(trials, outliers=30, deviation=st.median_abs_deviation, center=np.median)
         spec = wavelet_scaleogram(trials, n_jobs=-2, decim=4)
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
