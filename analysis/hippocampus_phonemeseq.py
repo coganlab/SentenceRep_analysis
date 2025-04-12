@@ -19,6 +19,34 @@ DData_dir = os.path.join(LAB_root, 'D_Data', 'Phoneme_Sequencing')
 mat_fname = 'muscleChannelWavelet.mat'
 analysisfolder = 'SentenceRep_analysis\\analysis'
 
+# %% Fix event structure and line noise - Done
+from analysis.fix.events import fix
+from ieeg.mt_filter import line_filter
+from ieeg.io import get_data, raw_from_layout, save_derivative
+from ieeg.navigate import crop_empty_data
+plt.switch_backend('QtAgg')
+
+for subj in subjects:
+    if int(subj[1:]) in [19,22,23,25,31,35,76]:
+        continue
+    else:
+        raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None, preload=True)
+        #DO NOT CROP before line_filter as additional run time is helpful for the line noise estimation
+        line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
+                filter_length='700ms', freqs=[60], notch_widths=20)
+        line_filter(raw, mt_bandwidth=10., n_jobs=12, copy=False, verbose=10,
+                    filter_length='20s', freqs=[60, 120, 180, 240],
+                    notch_widths=20)
+
+    try:
+        fixed = fix(raw)
+        del raw
+        fixed = crop_empty_data(fixed)
+        # fixed.drop_channels('Trigger')
+        save_derivative(fixed, layout, "clean", True)
+    except Exception as e:
+        print(f"Error in {subj}: {e}")
+
 # %% Inspect raw/clean timeseries and save mt spectrogram to derivatives folder
 from ieeg.navigate import trial_ieeg, outliers_to_nan, channel_outlier_marker, crop_empty_data
 from ieeg.timefreq.utils import crop_pad
@@ -27,7 +55,6 @@ from ieeg.calc.scaling import rescale
 from ieeg.viz.parula import parula_map
 from analysis.check.chan_utils import get_muscle_chans
 import mne
-plt.switch_backend('Qt5Agg')
 
 save_dir = os.path.join(layout.root, "derivatives", "figs")
 
@@ -115,32 +142,7 @@ for subj in subjects:
     # plt.tight_layout()
     # plt.show()
 
-# %% Fix event structure and line noise - Done
-from analysis.fix.events import fix
-from ieeg.mt_filter import line_filter
-from ieeg.io import get_data, raw_from_layout, save_derivative
-from ieeg.navigate import crop_empty_data
 
-for subj in subjects:
-    if int(subj[1:]) in [19,22,23,25,31,35,76]:
-        continue
-    else:
-        raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None, preload=True)
-        #DO NOT CROP before line_filter as additional run time is helpful for the line noise estimation
-        line_filter(raw, mt_bandwidth=10., n_jobs=-1, copy=False, verbose=10,
-                filter_length='700ms', freqs=[60], notch_widths=20)
-        line_filter(raw, mt_bandwidth=10., n_jobs=12, copy=False, verbose=10,
-                    filter_length='20s', freqs=[60, 120, 180, 240],
-                    notch_widths=20)
-
-    try:
-        fixed = fix(raw)
-        del raw
-        fixed = crop_empty_data(fixed)
-        # fixed.drop_channels('Trigger')
-        save_derivative(fixed, layout, "clean", True)
-    except Exception as e:
-        print(f"Error in {subj}: {e}")
 
 # %% Significant channels and save fifs
 from ieeg.navigate import trial_ieeg, outliers_to_nan, channel_outlier_marker
@@ -162,8 +164,6 @@ if not os.path.isdir(save_dir):
 
 for subj in subjects:
     if int(subj[1:]) in [19,22,23,25,31,35,76]:
-        continue
-    if int(subj[1:]) not in [102, 103]:
         continue
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                            extension=".edf", desc='clean', preload=False)
@@ -426,10 +426,10 @@ true_cat_3rd = {'aka':1, 'ava':1, 'aeba':1, 'aega':1, 'aeka':1,  'ika':1, 'iva':
                 'gak':7, 'baek':7, 'bak':7, 'paek':7, 'vaek':7,  'vuk':7, 'puk':7,
                 'paep':8,'pup':8, 'gip':8, 'bup':8,'vip':8,
                 'gav':9, 'gaev':9,'paev':9}
-# decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4}
+#decoder_cat = {'b':5, 'g':6, 'k':7, 'p':8}
 decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
-iter_num = 20
-trial_num = 11
+iter_num = 50
+trial_num = 15
 true_scores_dict = {}
 for i_cond, cond in enumerate(conds.keys()):
     scores_out = np.zeros((iter_num, zscoresLA.shape[-1] - window_len + 1, len(decoder_cat), len(decoder_cat)),
@@ -438,7 +438,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=20)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
-    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_1st[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
     # take only onset to 500ms
     # zscoresLA_cond_idx = zscoresLA_cond_idx.take(np.arange(50)+49, axis = 2)
@@ -455,7 +455,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV within decoder
     true_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\true_scores_phonemeseq_9way_3rdphoneme.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_9way_1stphoneme.pkl', 'wb') as f:
     pickle.dump(true_scores_dict, f)
 
 #%% shuffle score
@@ -468,7 +468,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=20)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
-    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_1st[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
     # take only onset to 500ms
     # zscoresLA_cond_idx = zscoresLA_cond_idx.take(np.arange(50)+49, axis = 2)
@@ -476,12 +476,15 @@ for i_cond, cond in enumerate(conds.keys()):
     for i_iter in range(iter_num):
         zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=trial_num, upper_limit=trial_num)
         zscores_cropped, labels_cropped = left_adjust_by_stim(zscoresLA_cond_idx_reduced, new_labels, crop=True)
+        valid_idx = np.where(labels_cropped[np.isin(labels_cropped, list(valid_labels))])[0]
+        labels_cropped = labels_cropped[valid_idx]
+        zscores_cropped = zscores_cropped.take(valid_idx, axis=1)
         scores_iter = decoder.cv_cm(zscores_cropped.__array__(), labels_cropped,
                                             **window_kwargs, window=window_len, shuffle=True)
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV i.e. shuffles in this case within decoder
     shuffle_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_9way_3rdphoneme.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_9way_1stphoneme.pkl', 'wb') as f:
     pickle.dump(shuffle_scores_dict, f)
 
 #%% balanced categories initial test
@@ -513,9 +516,9 @@ plt.show()
 
 #%% plot timepoints
 from ieeg.calc.stats import time_perm_cluster
-with open(f'{analysisfolder}\\true_scores_phonemeseq_9way_3rdphoneme.pkl', 'rb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_4way_2ndphoneme.pkl', 'rb') as f:
     true_scores_dict = pickle.load(f)
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_9way_3rdphoneme.pkl', 'rb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_4way_2ndphoneme.pkl', 'rb') as f:
     shuffle_scores_dict = pickle.load(f)
 
 # Create the function to plot the mean trace with shading for the standard deviation
@@ -556,7 +559,7 @@ for i, cond in enumerate(true_scores_dict.keys()):
     axes[i].legend()
 
     bar_width = 0.01  # LDA run every 10ms intervals with 200ms window
-    y_position = 0.2
+    y_position = 0.4
     xlim = (-0.4, 1.4)
     x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
     for idx, bool_value in enumerate(signif[0]):
