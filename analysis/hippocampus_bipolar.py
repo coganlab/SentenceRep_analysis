@@ -448,7 +448,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV within decoder
     true_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\true_scores_phonemeseq_2way_bipolar.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_2way_bipolar_theta.pkl', 'wb') as f:
     pickle.dump(true_scores_dict, f)
 
 #%% shuffle
@@ -474,7 +474,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV i.e. shuffles in this case within decoder
     shuffle_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_bipolar.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_bipolar_theta.pkl', 'wb') as f:
     pickle.dump(shuffle_scores_dict, f)
 
 #%% Approx bipolar referencing
@@ -565,7 +565,7 @@ def plot_confusion_matrices(scores_dict):
                                       ha="center", va="center", color="black", fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_2way_bipolar_firsthalfsec.png'), dpi=300,
+    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_2way_bipolar_firsthalfsec_theta.png'), dpi=300,
                 bbox_inches='tight')
     plt.show()
 
@@ -583,17 +583,17 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
-    true_scores_dict = pickle.load(f)
-with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
-    shuffle_scores_dict = pickle.load(f)
+# with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
+#     true_scores_dict = pickle.load(f)
+# with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
+#     shuffle_scores_dict = pickle.load(f)
 
 timepoints = np.linspace(-0.4, 0.9, 131)
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 bar_width = 0.01  # LDA run every 10ms intervals with 200ms window
-y_position = 0.25
+y_position = 0.6
 xlim = (-0.4, 0.9)
-ylim = (0.05,0.3)
+ylim = (0.3,0.7)
 for ax in fig.axes:
     ax.axhline(0.5, color='k', linestyle='--')
 for i, cond in enumerate(true_scores_dict.keys()):
@@ -617,6 +617,6 @@ for i, cond in enumerate(true_scores_dict.keys()):
             axes[i].barh(y=y_position, width=bar_width, height=0.01, left=x_axis[idx], color='black')
 plt.suptitle('Non hippocampal re-referencing')
 plt.tight_layout()
-# plt.savefig(os.path.join(analysisfolder, 'phonemeseq_hipp_2way_bipolar.png'), dpi=300,
-#                 bbox_inches='tight')
+plt.savefig(os.path.join(analysisfolder, 'phonemeseq_hipp_2way_bipolar_theta.png'), dpi=300,
+                bbox_inches='tight')
 plt.show()
