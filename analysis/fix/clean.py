@@ -15,13 +15,15 @@ else:  # if not then set box directory
     # subject = 24
 
 # %% Load Data
-layout = get_data("Phoneme_sequencing", LAB_root)
+layout = get_data("SentenceRep", LAB_root)
 subjects = layout.get(return_type="id", target="subject")
 
 for i, subj in enumerate(subjects):
 # subj = f"D{subject:04}"
     if int(subj[1:]) in [19, 22, 23, 25, 31, 76] or i < 22:
         continue # skip D31 for now because no event file for run1
+    if int(subj[1:]) != 29:
+        continue
     else:
         raw = raw_from_layout(layout, subject=subj, extension=".edf", desc=None, preload=True)
 

@@ -71,7 +71,7 @@ class GroupData:
                 self._set_data(pvals, 'p_vals')
             keys = self.signif.labels
             if all(cond in keys[0] for cond in
-                   ["aud_ls", "aud_lm", "aud_jl", "aud", "go_ls", "go_lm", "go", "resp"]):
+                   ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "go_jl", "resp"]):
 
                 self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
                     self.signif, keys[1], keys[0], wide=wide)

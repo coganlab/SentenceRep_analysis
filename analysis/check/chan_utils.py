@@ -1,6 +1,8 @@
 import os
 import scipy.io
 import numpy as np
+import re
+import mne
 from ieeg.calc.mat import LabeledArray
 from ieeg.io import get_data, raw_from_layout
 
@@ -56,13 +58,141 @@ def get_preferred_ch_label(channels, sub_dir, hot_words, pct_thresh):
             print(f'Error reading {sub_ch}')
     return channel_label
 
+def parse_channel_info(channel_str):
+    """
+    Parses strings like "D0017-LTM2" or "LTM2" into:
+    - ("D0017", "LTM", 2) if prefix exists
+    - (None, "LTM", 2) if no prefix
+
+    Parameters
+    ----------
+    channel_str : str
+        Channel name string to parse.
+
+    Returns
+    -------
+    tuple
+        (prefix or None, shank name, position as int)
+    """
+    match = re.match(r"^(?:(D\d+)-)?([A-Z0-9]*[A-Z])(\d+)$", channel_str)
+    if not match:
+        raise ValueError(f"Invalid channel format: {channel_str}")
+    subid, shank, pos = match.groups()
+    return subid, shank, int(pos)
+
+def bipolar_reference_by_shank(raw):
+    """
+    Bipolar re-references a subject's RawEDF object by shank using parse_channel_info.
+    Always bipolar reference as 1-2, 2-3, 3-4, set last channel to 0s.
+    keep original names to prevent other functions breaking.
+
+    Parameters
+    ----------
+    raw : mne.io.Raw
+        The raw data.
+
+    Returns
+    -------
+    raw_bipolar : mne.io.Raw
+        The bipolar-referenced Raw object.
+    """
+    ch_info = []
+    for ch in raw.ch_names:
+        try:
+            _, shank, pos = parse_channel_info(ch)
+            ch_info.append((shank, pos, ch))
+        except ValueError:
+            print(f'Error reading {ch}')
+            continue  # skip non-matching channels
+
+    # Group by shank
+    shank_dict = {}
+    for shank, pos, ch in ch_info:
+        key = (shank)
+        shank_dict.setdefault(key, []).append((pos, ch))
+
+    bipolar_data = []
+    bipolar_names = []
+
+    for shank, channels in shank_dict.items():
+        channels.sort()  # sort by position
+        n = len(channels)
+
+        for i in range(n):
+            pos, ch_name = channels[i]
+            if i < n - 1:
+                next_pos, next_ch = channels[i + 1]
+                data = raw.get_data(picks=[ch_name]) - raw.get_data(picks=[next_ch])
+                label = f"{ch_name}"
+            else:
+                # Last electrode: zeroed signal
+                data = np.zeros_like(raw.get_data(picks=[ch_name]))
+                label = f"{ch_name}"
+
+            bipolar_data.append(data[0])
+            bipolar_names.append(label)
+    bipolar_map = {}
+    for data, name in zip(bipolar_data, bipolar_names):
+        bipolar_map[name] = data
+    raw_bipolar = raw.copy()
+    for i, ch_name in enumerate(raw_bipolar.ch_names):
+        if ch_name in bipolar_map:
+            bipolar_data = bipolar_map[ch_name]
+            raw_bipolar._data[i] = bipolar_data
+    return raw_bipolar
+
+def build_shank_map(sub_channel_list):
+    # Maps (subid, shank) -> list of (position, index) sorted by position
+    shank_map = {}
+    for i, ch in enumerate(sub_channel_list):
+        subid, shank, pos = parse_channel_info(ch)
+        key = (subid, shank)
+        shank_map.setdefault(key, []).append((pos, i))
+    # Sort each list by position for binary search
+    for key in shank_map:
+        shank_map[key].sort()
+    return shank_map
+
+def find_nearest_nonhipp(index, sub_channel_list, maxhipp_ch_label, shank_map):
+    subid, shank, pos = parse_channel_info(sub_channel_list[index])
+    key = (subid, shank)
+    pos_list = shank_map[key]
+    # Find current electrode's position in sorted list
+    current_idx = next(i for i, (p, idx) in enumerate(pos_list) if idx == index)
+
+    # Search upwards (lower position values)
+    up_idx = None
+    for i in range(current_idx - 1, -1, -1):
+        _, idx = pos_list[i]
+        if "Hipp" not in maxhipp_ch_label[idx]:
+            up_idx = idx
+            up_dist = pos - pos_list[i][0]
+            break
+
+    # Search downwards (higher position values)
+    down_idx = None
+    for i in range(current_idx + 1, len(pos_list)):
+        _, idx = pos_list[i]
+        if "Hipp" not in maxhipp_ch_label[idx]:
+            down_idx = idx
+            down_dist = pos_list[i][0] - pos
+            break
+
+    # Choose closest
+    if up_idx is not None and (down_idx is None or up_dist <= down_dist):
+        return up_idx
+    elif down_idx is not None:
+        return down_idx
+    else:
+        return None  # Shouldn't happen if you guarantee at least one non-hipp electrode
+
 def get_muscle_chans(matdir: str, matfname: str, subj: str):
-    import scipy.io
+    from scipy.io import loadmat
     try:
         subj = 'D' + str(int(subj[1:]))  # removing leading 0 to match folder name
         matpath = os.path.join(matdir, subj, matfname)
         if os.path.isfile(matpath):
-            muscle_chans = scipy.io.loadmat(matpath)
+            muscle_chans = loadmat(matpath)
             if len(muscle_chans['muscleChannel']) > 0:
                 flattened = [chan[0] for chan in muscle_chans['muscleChannel'] if
                              chan[0].size > 0]  # this gives list of subj-channel
@@ -78,7 +208,6 @@ def get_muscle_chans(matdir: str, matfname: str, subj: str):
             return list()
     except OSError as e:
         print(f"Error reading {subj} mat file: {e}")
-        return list()
 
 def remove_min_nan_ch(X: LabeledArray, stim_labels: np.ndarray, min_non_nan: int = 3):
     """
@@ -175,7 +304,94 @@ def left_adjust_by_stim(X: LabeledArray, stim_labels: np.ndarray, crop: bool = F
                 labels_out[smin:smax] = s
     return X_out, labels_out
 
+def nested_dict_to_ndarray(nested_dict):
+    """
+    Converts a nested dictionary into a numpy ndarray with dimensions
+    (n_level1, n_level2, n_level3, max_channels, time_points).
+    Assumes:
+    - All level 1 dictionaries have the same level 2 keys
+    - Not all level 2 dictionaries have all level 3 Dxxxx-xxxx keys
+    - Arrays at level 3 might have different channel counts
+    - Last dimension (time points) is consistent across all arrays
+    Parameters:
+    -----------
+    nested_dict : dict
+        The nested dictionary to convert
+    Returns:
+    --------
+    result_array : ndarray
+        A numpy array with shape (n_level1, n_level2, n_level3, max_channels, time_points)
+    key_maps : list
+        List of lists representing mapping of dimension indices to original keys.
+        For dimensions 1-3, contains original keys; for dimensions 4-5, contains integers starting from 0.
+    """
+    import numpy as np
+    # Step 1: Get keys at each level
+    level1_keys = sorted(nested_dict.keys())
+    # We can get level2 keys from the first level1 key
+    first_key = level1_keys[0]
+    level2_keys = sorted(nested_dict[first_key].keys())
+    # Collect all unique level3 keys (Dxxxx-xxxx format)
+    level3_keys = set()
+    for key1 in level1_keys:
+        for key2 in level2_keys:
+            if isinstance(nested_dict[key1][key2], dict):
+                level3_keys.update(nested_dict[key1][key2].keys())
+    level3_keys = sorted(level3_keys)
+    # Create mapping dictionaries for processing (we'll return lists later)
+    level1_map = {key: i for i, key in enumerate(level1_keys)}
+    level2_map = {key: i for i, key in enumerate(level2_keys)}
+    level3_map = {key: i for i, key in enumerate(level3_keys)}
+    # Step 2: Find the maximum number of channels and extract time_points from data
+    max_channels = 0
+    time_points = None  # Will be determined from data
+    # Find first available array to get time_points and start determining max_channels
+    for key1 in level1_keys:
+        for key2 in level2_keys:
+            if not isinstance(nested_dict[key1][key2], dict):
+                continue
+            for key3 in nested_dict[key1][key2]:
+                arr = nested_dict[key1][key2][key3]
+                if isinstance(arr, np.ndarray) and len(arr.shape) >= 2:
+                    max_channels = max(max_channels, arr.shape[0])
+                    if time_points is None:
+                        time_points = arr.shape[1]
+                    else:
+                        # Verify consistency of time dimension
+                        if arr.shape[1] != time_points:
+                            raise ValueError(f"Inconsistent time dimensions found: {time_points} vs {arr.shape[1]}")
+    if time_points is None:
+        raise ValueError("Could not determine time dimension from data")
+    # Step 3: Create the result array filled with NaNs
+    result_shape = (len(level1_keys), len(level2_keys), len(level3_keys), max_channels, time_points)
+    result_array = np.full(result_shape, np.nan)
+    # Step 4: Fill the array with available data
+    for key1 in level1_keys:
+        idx1 = level1_map[key1]
+        for key2 in level2_keys:
+            idx2 = level2_map[key2]
+            if not isinstance(nested_dict[key1][key2], dict):
+                continue
+            for key3 in nested_dict[key1][key2]:
+                if key3 in level3_map:  # Check if it's in our mapping
+                    idx3 = level3_map[key3]
+                    arr = nested_dict[key1][key2][key3]
+                    if isinstance(arr, np.ndarray) and len(arr.shape) >= 2:
+                        ch_count = arr.shape[0]
+                        # Copy data, preserving the original shape
+                        result_array[idx1, idx2, idx3, :ch_count, :] = arr
+    # Create key maps as lists instead of dictionaries
+    key_maps = [
+        level1_keys,  # Level 1: original keys
+        level2_keys,  # Level 2: original keys
+        level3_keys,  # Level 3: original keys
+        list(range(max_channels)),  # Level 4: integers from 0 to max_channels-1
+        list(range(time_points))  # Level 5: integers from 0 to time_points-1
+    ]
+    return result_array, key_maps
+
 if __name__ == "__main__":
+    print("shit started")
     HOME = os.path.expanduser("~")
     if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
         LAB_root = os.path.join(HOME, "workspace", "CoganLab")
@@ -184,8 +400,7 @@ if __name__ == "__main__":
         LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("Phoneme_sequencing", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-
-    #%%
+    #
     matdir = os.path.join(LAB_root, 'D_Data', 'Phoneme_Sequencing')
     matfname = 'muscleChannelWavelet.mat'
     for subj in subjects:

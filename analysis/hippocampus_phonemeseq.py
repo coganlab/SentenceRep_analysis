@@ -1,10 +1,9 @@
 # %% Import dir
 import os
-from ieeg.io import get_data, raw_from_layout
 import numpy as np
-import pickle
 from matplotlib import pyplot as plt
-
+from ieeg.io import get_data
+import pickle
 
 HOME = os.path.expanduser("~")
 if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
@@ -22,9 +21,9 @@ analysisfolder = 'SentenceRep_analysis\\analysis'
 # %% Fix event structure and line noise - Done
 from analysis.fix.events import fix
 from ieeg.mt_filter import line_filter
-from ieeg.io import get_data, raw_from_layout, save_derivative
+from ieeg.io import raw_from_layout, save_derivative
 from ieeg.navigate import crop_empty_data
-plt.switch_backend('QtAgg')
+plt.switch_backend('Qt5Agg')
 
 for subj in subjects:
     if int(subj[1:]) in [19,22,23,25,31,35,76]:
@@ -48,13 +47,10 @@ for subj in subjects:
         print(f"Error in {subj}: {e}")
 
 # %% Inspect raw/clean timeseries and save mt spectrogram to derivatives folder
-from ieeg.navigate import trial_ieeg, outliers_to_nan, channel_outlier_marker, crop_empty_data
-from ieeg.timefreq.utils import crop_pad
-from ieeg.viz.ensemble import chan_grid
-from ieeg.calc.scaling import rescale
-from ieeg.viz.parula import parula_map
+from ieeg.navigate import channel_outlier_marker
 from analysis.check.chan_utils import get_muscle_chans
-import mne
+
+plt.switch_backend('Qt5Agg')
 
 save_dir = os.path.join(layout.root, "derivatives", "figs")
 
@@ -143,12 +139,11 @@ for subj in subjects:
     # plt.show()
 
 
-
 # %% Significant channels and save fifs
-from ieeg.navigate import trial_ieeg, outliers_to_nan, channel_outlier_marker
+from ieeg.navigate import trial_ieeg, channel_outlier_marker
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.calc import scaling
-from ieeg.timefreq.utils import wavelet_scaleogram, crop_pad
+from ieeg.timefreq.utils import crop_pad
 import matplotlib.pyplot as plt
 from analysis.check.chan_utils import get_muscle_chans
 from ieeg.timefreq import gamma
@@ -158,6 +153,7 @@ save_dir = os.path.join(layout.root, "derivatives", "stats")
 if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
 
+CAR=True
 #load previously processed sigdict for updating
 # with open(f'{analysisfolder}\\sigdict_phonemeseq_small.pkl', 'rb') as f:
 #     sigdict = pickle.load(f)
@@ -289,7 +285,7 @@ for subj in subjects:
         plt.savefig(f'SigChans_{subj}.png')
         plt.close()
 
-#%% save ch names
+#%% load groupdata for plotting
 # To regenerate channel label and save as channel_label.pkl
 from analysis.grouping import GroupData
 from analysis.check.chan_utils import get_ch_label, get_preferred_ch_label
@@ -298,6 +294,10 @@ sub = GroupData.from_intermediates("Phoneme_sequencing", LAB_root, {'aud': (-0.5
 # get sig chans across 3 windows, across 150 timepoints
 sub.sig_chans = np.where(np.any(sub.signif == 1, axis=(0,2)))[0].tolist()
 sub_channels = sub.keys.get('channel',[])
+
+#%% save ch names
+from analysis.check.chan_utils import get_ch_label, get_preferred_ch_label
+sub_channels = zscoresLA.labels[1]
 orig_ch_label = get_ch_label(sub_channels, RECON_root)
 maxhipp_ch_label = get_preferred_ch_label(sub_channels, RECON_root, "Hipp", 0.1) # at least 10% 10mm-radius sphere overlap with hippocampus
 with open(f'{analysisfolder}\\sub_channel_phonemeseq.pkl', 'wb') as f:
@@ -308,13 +308,12 @@ with open(f'{analysisfolder}\\maxhipp_channel_label_phonemeseq.pkl', 'wb') as f:
     pickle.dump(maxhipp_ch_label, f)
 
 #%%  plot
-sub.plot_groups_on_average([idx_hippsig], colors = ['blue'])
+sub.plot_groups_on_average([idx_hipp, idx_hippsig], colors = ['#F4A6A6','#D46A6A'])
 
 #%% Prep data to labeledarray
 from ieeg.calc.mat import LabeledArray, combine
 from analysis.decoding import Decoder
 from analysis.utils.mat_load import load_dict
-from mne import read_epochs
 import numpy as np
 
 read_dir = os.path.join(layout.root, "derivatives", "stats")
@@ -346,7 +345,7 @@ for i, cond in enumerate(conds.keys()):
         sig_idx[cond] = {}
     sig_idx[cond] = np.where(np.any(maskLA.__array__()[i,:,:] == 1, axis = 1))[0].tolist()
 # get union of sig chans
-sig_idx_union = list(set(sig_idx['aud'])|set(sig_idx['go'])|set(sig_idx['resp']))
+sig_idx_union = list(set(sig_idx['aud'])|set(sig_idx['resp']))
 zscoresLA = zscoresLA.combine((1,3))
 
 with open(f'{analysisfolder}\\sub_channel_phonemeseq.pkl', 'rb') as f:
@@ -367,34 +366,9 @@ idx_gmsig_aud = [i for i in idx_gm if i in sig_idx_aud]
 sig_idx_resp = list(set(sig_idx['resp']))
 idx_gmsig_resp = [i for i in idx_gm if i in sig_idx_resp]
 
-#%%test
-# from analysis.decoding import classes_from_labels
-# from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
-# import numpy as np
-#
-# with open(f'{analysisfolder}\\zscores_test.pkl', 'rb') as f:
-#     zscores_test = pickle.load(f)
-#
-# true_cat = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
-#                  'aeba':2, 'aebi':2, 'aebu':2, 'aega':2, 'aeka':2, 'aepi':2,
-#                  'ibu':3, 'ika':3, 'ikae':3, 'ipu':3, 'iva':3, 'ivu':3,
-#                  'uba':4, 'uga':4, 'ugae':4, 'ukae':4, 'upi':4, 'upu':4, 'uvae':4, 'uvi':4,
-#                  'bab':5, 'baek':5, 'bak':5, 'bup':5,
-#                  'gab':6, 'gaeb':6, 'gaev':6, 'gak':6, 'gav':6, 'gig':6, 'gip':6, 'gub':6,
-#                  'kab':7, 'kaeg':7, 'kub':7, 'kug':7,
-#                  'paek':8, 'paep':8, 'paev':8, 'puk':8, 'pup':8,
-#                  'vaeg':9, 'vaek':9, 'vip':9, 'vug':9, 'vuk':9}
-# decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
-# cats, labels = classes_from_labels(zscores_test.labels[1], crop=slice(0, 4)) #this get out repetitions of same stims
-# flipped_cats = {v:k for k,v in cats.items()}
-# new_labels = np.array([true_cat[flipped_cats[l]] for l in labels]) #convert to true categories
-# zscoresLA_cond_idx, _ = remove_min_nan_ch(zscores_test, new_labels, min_non_nan=10)
-# zscoresLA_cond_idx_reduced = equal_valid_trials_ch(zscoresLA_cond_idx, new_labels, min_non_nan=10, upper_limit=10)
-
-
 # %% Time sliding decoding for reconstruction
 from analysis.decoding import classes_from_labels
-from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim, equal_stims_per_class
+from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
 
 window_len=20 #200ms windowing
 window_kwargs = {'obs_axs': 1, 'normalize': 'true', 'n_jobs': 10,
@@ -426,10 +400,10 @@ true_cat_3rd = {'aka':1, 'ava':1, 'aeba':1, 'aega':1, 'aeka':1,  'ika':1, 'iva':
                 'gak':7, 'baek':7, 'bak':7, 'paek':7, 'vaek':7,  'vuk':7, 'puk':7,
                 'paep':8,'pup':8, 'gip':8, 'bup':8,'vip':8,
                 'gav':9, 'gaev':9,'paev':9}
-#decoder_cat = {'b':5, 'g':6, 'k':7, 'p':8}
-decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
-iter_num = 50
-trial_num = 15
+decoder_cat = {'b':5, 'g':6, 'k':7, 'p':8}
+#decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
+iter_num = 20
+trial_num = 12
 true_scores_dict = {}
 for i_cond, cond in enumerate(conds.keys()):
     scores_out = np.zeros((iter_num, zscoresLA.shape[-1] - window_len + 1, len(decoder_cat), len(decoder_cat)),
@@ -438,7 +412,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=20)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
-    new_labels = np.array([true_cat_1st[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
     # take only onset to 500ms
     # zscoresLA_cond_idx = zscoresLA_cond_idx.take(np.arange(50)+49, axis = 2)
@@ -455,12 +429,12 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV within decoder
     true_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\true_scores_phonemeseq_9way_1stphoneme.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_4way_3rdconsonant.pkl', 'wb') as f:
     pickle.dump(true_scores_dict, f)
 
 #%% shuffle score
 shuffle_scores_dict = {}
-iter_num = 50 # sub sampling
+iter_num = 20 # sub sampling
 for i_cond, cond in enumerate(conds.keys()):
     scores_out = np.zeros((iter_num, zscoresLA.shape[-1] - window_len + 1, len(decoder_cat), len(decoder_cat)),
                           dtype=np.float16)
@@ -468,7 +442,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=20)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
-    new_labels = np.array([true_cat_1st[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(idx_hippsig, axis=0)
     # take only onset to 500ms
     # zscoresLA_cond_idx = zscoresLA_cond_idx.take(np.arange(50)+49, axis = 2)
@@ -484,7 +458,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV i.e. shuffles in this case within decoder
     shuffle_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_9way_1stphoneme.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_4way_3rdconsonant.pkl', 'wb') as f:
     pickle.dump(shuffle_scores_dict, f)
 
 #%% balanced categories initial test
@@ -516,76 +490,104 @@ plt.show()
 
 #%% plot timepoints
 from ieeg.calc.stats import time_perm_cluster
-with open(f'{analysisfolder}\\true_scores_phonemeseq_4way_2ndphoneme.pkl', 'rb') as f:
-    true_scores_dict = pickle.load(f)
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_4way_2ndphoneme.pkl', 'rb') as f:
-    shuffle_scores_dict = pickle.load(f)
+from matplotlib import cm
+from matplotlib.colors import to_hex
+
+#reds = [to_hex(cm.autumn(i)) for i in [0.3, 0.6, 0.9]]   # red → orange → yellow
+#blues = [to_hex(cm.cool(i)) for i in [0.3, 0.6, 0.9]]    # turquoise → violet → pinkish
+
+# Red to Yellow
+#reds = [to_hex(cm.YlOrRd(i)) for i in [0.3, 0.55, 0.8]]  # More hue variation: reddish to orangey/yellow
+# Blue to Purple
+#blues = [to_hex(cm.PuBu(i)) for i in [0.3, 0.55, 0.8]]
+reds = [to_hex(cm.Reds(0.6)), to_hex(cm.Reds(0.4)), to_hex(cm.Reds(0.25))]
+blues = [to_hex(cm.Blues(0.6)), to_hex(cm.Blues(0.4)), to_hex(cm.Blues(0.25))]
+
+positions = ['1st', '2nd', '3rd']
+bar_width = 0.01
+y_base_position = 0.25
+height_spacing = 0.02
+timepoints = np.linspace(-0.4, 0.9, 131)
+xlim = (-0.4, 0.9)
+ylim = (0.05, 0.3)
+x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
+
+plt.rcParams.update({
+    'axes.edgecolor': 'black',
+    'axes.linewidth': 0.8,
+    'xtick.direction': 'out',
+    'ytick.direction': 'out',
+    'xtick.major.size': 4,
+    'ytick.major.size': 4,
+    'xtick.major.width': 0.8,
+    'ytick.major.width': 0.8,
+    'font.size': 10,
+    'legend.frameon': False,
+    'figure.dpi': 300,
+    'savefig.dpi': 300,
+})
 
 # Create the function to plot the mean trace with shading for the standard deviation
-def plot_mean_with_std(data, timepoints, ax, color='blue', label=None):
-    """
-    Plots the mean trace with shading for the standard deviation.
-
-    Parameters:
-    - data (ndarray): 2D array (samples x timepoints) for which the mean and std will be plotted
-    - timepoints (ndarray): 1D array representing the timepoints
-    - color (str): Color for the plot line and shading
-    - label (str): Label for the legend (optional)
-    """
-    # Compute the mean and standard deviation across the samples (axis=0)
+def plot_mean_with_std(data, timepoints, ax, color, label):
     mean_trace = np.mean(data, axis=0)
     std_trace = np.std(data, axis=0)
-    # Plot the mean trace
-    ax.plot(timepoints, mean_trace, label=label, color=color)
-    # Shade the area between mean ± standard deviation
-    ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace, color=color, alpha=0.2)
+    ax.plot(timepoints, mean_trace, label=label, color=color, linewidth=1.5)
+    ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
+                    color=color, alpha=0.2, linewidth=0)
 
+fig, axes = plt.subplots(1, 3, figsize=(18, 4))
+for ax in fig.axes:
+    ax.axhline(0.111, color='k', linestyle='--')
+# Iterate through each phoneme position
+for p_idx, position in enumerate(positions):
+    with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
+        true_scores_dict = pickle.load(f)
+    with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
+        shuffle_scores_dict = pickle.load(f)
 
-timepoints = np.linspace(-0.4, 0.9, 131)
-fig, axes = plt.subplots(1, 3, figsize=(12, 5))
+    for cond_idx, cond in enumerate(true_scores_dict.keys()):
+        ax = axes[cond_idx]
+        true_traces = np.mean(np.diagonal(true_scores_dict[cond], axis1=2, axis2=3), axis=2)
+        shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
 
+        # Plot with pastel shades
+        plot_mean_with_std(true_traces, timepoints, ax=ax, color=reds[p_idx], label=f'True - {position} position')
+        plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffle - {position} position')
+
+        # Calculate significance
+        signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm=10000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+
+        # Plot stacked significance bars
+        y_position = y_base_position + p_idx * height_spacing
+        for i, value in enumerate(signif[0]):
+            if value:
+                ax.barh(y=y_position, width=bar_width, height=0.005, left=x_axis[i], color=reds[p_idx])
+
+# Final touches
 for i, cond in enumerate(true_scores_dict.keys()):
-    true_traces = np.mean(np.diagonal(true_scores_dict[cond], axis1=2, axis2=3), axis=2)  # traces of average decoding accuracy
-    shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
-    signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm = 10000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+    axes[i].set_xlabel('Time from Onset (s)')
+    axes[i].set_ylabel('Accuracy (%)')
+    axes[i].set_title(f'{cond}')
+    axes[i].set_xlim(xlim)
+    axes[i].set_ylim(ylim)
+    # if i == 0:
+    #     axes[i].legend(
+    axes[i].legend().set_visible(False)
+    # Remove top and right spines (borders)
+    axes[i].spines['top'].set_visible(False)
+    axes[i].spines['right'].set_visible(False)
 
-    plot_mean_with_std(true_traces, timepoints, ax = axes[i], color = 'red', label = 'true')
-    plot_mean_with_std(shuffle_traces, timepoints, ax = axes[i], color = 'blue', label = 'shuffle')
+handles, labels = axes[0].get_legend_handles_labels()
 
-    # Set labels and title for each subplot
-    axes[i].set_xlabel('Time (s)')
-    axes[i].set_ylabel('Decoding Score')
-    axes[i].set_title(f'Score Trace for {cond}')
-    axes[i].legend()
+# Add a single legend to the whole figure
+fig.legend(handles, labels, loc='lower center', ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
 
-    bar_width = 0.01  # LDA run every 10ms intervals with 200ms window
-    y_position = 0.4
-    xlim = (-0.4, 1.4)
-    x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
-    for idx, bool_value in enumerate(signif[0]):
-        if bool_value:
-            axes[i].barh(y=y_position, width=bar_width, height=0.001, left=x_axis[idx], color='black')
 plt.tight_layout()
+plt.savefig("phonemeseq_9way_sequential_bipolar.png", format="png", dpi=300, bbox_inches='tight', transparent=False)
 plt.show()
 
 
-#%% just real
-timepoints = np.linspace(-0.4, 0.9, 131)
-fig, axes = plt.subplots(1, 3, figsize=(12, 5))
 
-for i, cond in enumerate(true_scores_dict.keys()):
-    true_traces = np.mean(np.diagonal(true_scores_dict[cond], axis1=2, axis2=3), axis=2)  # traces of average decoding accuracy
-    signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm = 10000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
-    plot_mean_with_std(true_traces, timepoints, ax = axes[i], color = 'red', label = 'true')
-
-    # Set labels and title for each subplot
-    axes[i].set_xlabel('Time (s)')
-    axes[i].set_ylabel('Decoding Score')
-    axes[i].set_title(f'Score Trace for {cond}')
-    axes[i].legend()
-
-plt.tight_layout()
-plt.show()
 
 
