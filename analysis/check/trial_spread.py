@@ -1,7 +1,7 @@
 
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan, find_bad_channels_lof
-from ieeg.timefreq.gamma import hilbert_spectrogram
+from ieeg.calc import stats, scaling
 import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
 import ieeg.viz
@@ -62,16 +62,20 @@ for i, sub in enumerate(subjects):
     # fig, axs = plt.subplots(5, 7, figsize=(20, 10))
 
     for epoch, t, name in zip(
-            ("Word/Response/LS",),
-            ((-1, 1),),
-            ("resp",)):
+            ("Start", "Word/Response/LS",),
+            ((-0.5, 0), (-1, 1),),
+            ("start", "resp",)):
         j, k = divmod(i, 5)
         ax = axs[j, k]
         times = [None, None]
-        times[0] = t[0] - 0.5
-        times[1] = t[1] + 0.5
+        times[0] = t[0]
+        times[1] = t[1]
         trials[name] = trial_ieeg(good, epoch, times, preload=True)
-        # outliers_to_nan(trials[name], outliers=10)
+        outliers_to_nan(trials[name], outliers=10)
+        if name == "start":
+            continue
+
+        scaling.rescale(trials[name], trials["start"], 'zscore', copy=False)
         # outliers_to_nan(trials[name], outliers=30, deviation=st.median_abs_deviation, center=np.median)
         isnan = np.isnan(trials[name].get_data()).any(axis=-1).T
         maxmax = np.max(trials[name].get_data(), axis=-1).T
