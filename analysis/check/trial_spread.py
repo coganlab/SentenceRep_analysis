@@ -72,14 +72,15 @@ for i, sub in enumerate(subjects):
         times[0] = t[0]
         times[1] = t[1]
         trials[name] = trial_ieeg(good, epoch, times, preload=True)
-        # outliers_to_nan(trials[name], outliers=10)
+        # outliers_to_nan(trials[name], outliers=12)
         func = functools.partial(st.median_abs_deviation, scale='normal')
-        outliers_to_nan(trials[name], outliers=10, deviation=func, center=np.median)
+        outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
         if name == "start":
             continue
 
         scaling.rescale(trials[name], trials["start"], 'zscore', copy=False)
-        outliers_to_nan(trials[name], outliers=10, deviation=func, center=np.median)
+        # outliers_to_nan(trials[name], outliers=12)
+        outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
         isnan = np.isnan(trials[name].get_data()).any(axis=-1).T
         maxmax = np.max(trials[name].get_data(), axis=-1).T
         # maxmax = reduce(lambda x, y: np.concatenate((x, y), axis=-1),

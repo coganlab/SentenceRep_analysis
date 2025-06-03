@@ -4,6 +4,7 @@ import mne
 import os
 import os.path as op
 
+from ieeg.navigate import outliers_to_nan
 
 # %% check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -23,7 +24,7 @@ n_jobs = -1
 freq_lim = (50, 300)
 
 for sub in subjects:
-    if int(sub[1:]) in (32, 30):
+    if int(sub[1:]) in (32, 30, 71):
         continue
     if subject is not None:
         if int(sub[1:]) != subject:
@@ -31,13 +32,13 @@ for sub in subjects:
     # Load the data
     TASK = "SentenceRep"
     # %%
-    save_dir = op.join(layout.root, "derivatives", "stats_freq")
+    save_dir = op.join(layout.root, "derivatives", "stats_freq_std")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
     data = []
     nperm = 5000
-    spec_type = 'multitaper'
+    spec_type = 'hilbert'
     filename = os.path.join(layout.root, 'derivatives',
                             'spec', spec_type, sub, f'start-tfr.h5')
     base = mne.time_frequency.read_tfrs(filename).crop(-0.5, 0., freq_lim[0], freq_lim[1])
@@ -70,7 +71,9 @@ for sub in subjects:
         #                  cmap=parula_map, show=False)
 
         power = scaling.rescale(epoch.crop(fmin=freq_lim[0], fmax=freq_lim[1]), base, 'mean', copy=True)
+        outliers_to_nan(power, 12)
         z_score = scaling.rescale(epoch.crop(fmin=freq_lim[0], fmax=freq_lim[1]), base, 'zscore', copy=True)
+        outliers_to_nan(z_score, 12)
 
         # Calculate the p-value
         p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,

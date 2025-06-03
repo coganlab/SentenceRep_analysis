@@ -23,8 +23,8 @@ else:  # if not then set box directory
     subject = None
 
 n_jobs = 8
-for sub in subjects:
-    if int(sub[1:]) in (32,):
+for sub in reversed(subjects):
+    if int(sub[1:]) <= 32:
         continue
     if subject is not None:
         if int(sub[1:]) != subject:
@@ -65,7 +65,7 @@ for sub in subjects:
         times[0] = t[0] - 1.5
         times[1] = t[1] + 1.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=10)
+        outliers_to_nan(trials, outliers=12, tmin=t[0], tmax=t[1])
         freqs = np.geomspace(4, 500, 80)
         # for i in range(8, 13):
         spec = superlet_tfr(trials, freqs, 1., (10, 20), 4, n_jobs)
