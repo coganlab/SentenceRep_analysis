@@ -3,6 +3,7 @@
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan, find_bad_channels_lof
 from ieeg.timefreq.superlets import superlet_tfr
+from ieeg.calc.scaling import rescale
 import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
 import numpy as np
@@ -22,10 +23,8 @@ else:  # if not then set box directory
     subjects = layout.get(return_type="id", target="subject")
     subject = None
 
-n_jobs = 8
-for sub in reversed(subjects):
-    if int(sub[1:]) <= 32:
-        continue
+n_jobs = 10
+for sub in subjects:
     if subject is not None:
         if int(sub[1:]) != subject:
             continue
@@ -70,6 +69,11 @@ for sub in reversed(subjects):
         # for i in range(8, 13):
         spec = superlet_tfr(trials, freqs, 1., (10, 20), 4, n_jobs)
         crop_pad(spec, "1.5s")
+        if name == "start":
+            base = spec.copy().crop(tmin=-0.5, tmax=0.)
+        zscore = rescale(spec, base, 'zscore', copy=True)
+        outliers_to_nan(zscore, outliers=12)
+        spec._data[np.isnan(zscore._data)] = np.nan
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         filename = os.path.join(save_dir, f'{name}-tfr.h5')
