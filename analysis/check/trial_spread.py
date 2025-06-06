@@ -1,8 +1,7 @@
-import functools
-
 from ieeg.io import get_data, raw_from_layout
 from ieeg.navigate import trial_ieeg, crop_empty_data, outliers_to_nan, find_bad_channels_lof
 from ieeg.calc import stats, scaling
+from ieeg.timefreq import gamma
 import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
 import ieeg.viz
@@ -69,18 +68,20 @@ for i, sub in enumerate(subjects):
         j, k = divmod(i, 7)
         ax = axs[j, k]
         times = [None, None]
-        times[0] = t[0]
-        times[1] = t[1]
+        times[0] = t[0] - 0.5
+        times[1] = t[1] + 0.5
         trials[name] = trial_ieeg(good, epoch, times, preload=True)
-        # outliers_to_nan(trials[name], outliers=12)
-        func = functools.partial(st.median_abs_deviation, scale='normal')
-        outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
+        outliers_to_nan(trials[name], outliers=10, tmin=t[0], tmax=t[1])
+        # func = functools.partial(st.median_abs_deviation, scale='normal')
+        # outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
+        gamma.extract(trials[name], copy=False, n_jobs=n_jobs)
+        crop_pad(trials[name], "0.5s")
         if name == "start":
             continue
 
-        scaling.rescale(trials[name], trials["start"], 'zscore', copy=False)
+        scaling.rescale(trials[name], trials["start"], 'mean', copy=False)
         # outliers_to_nan(trials[name], outliers=12)
-        outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
+        # outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
         isnan = np.isnan(trials[name].get_data()).any(axis=-1).T
         maxmax = np.max(trials[name].get_data(), axis=-1).T
         # maxmax = reduce(lambda x, y: np.concatenate((x, y), axis=-1),
