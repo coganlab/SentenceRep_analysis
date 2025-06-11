@@ -4,8 +4,9 @@ import mne
 
 from ieeg.io import get_data, DataLoader
 from analysis.grouping import group_elecs
+from analysis.decoding.utils import get_scores
 from ieeg.arrays.label import LabeledArray, combine, Labels
-from ieeg.decoding.decode import Decoder, get_scores, plot_all_scores
+from ieeg.decoding.decode import Decoder, plot_all_scores
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist_bound
 from analysis.utils.plotting import plot_horizontal_bars

@@ -6,8 +6,9 @@ import os
 
 from analysis.grouping import GroupData
 from analysis.utils.plotting import plot_horizontal_bars
+from analysis.decoding.utils import get_scores
 from ieeg.calc.stats import time_perm_cluster
-from ieeg.decoding.decode import Decoder, plot_all_scores, get_scores
+from ieeg.decoding.decode import Decoder, plot_all_scores
 from ieeg.viz.ensemble import plot_dist_bound
 
 
