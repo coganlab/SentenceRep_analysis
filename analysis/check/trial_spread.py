@@ -8,7 +8,7 @@ import ieeg.viz
 import numpy as np
 import scipy.stats as st
 import matplotlib.pyplot as plt
-from functools import reduce
+import functools
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -25,14 +25,17 @@ else:  # if not then set box directory
     subject = None
 
 n_jobs = 10
-fig, axs = plt.subplots(5, 7, figsize=(20, 10))
+fig, axs = plt.subplots(5, 4, figsize=(20, 10))
 ylims = [0, 0]
-for i, sub in enumerate(subjects):
-    if int(sub[1:]) in (30, 32):
-        continue
+n = 0
+for i, sub in enumerate(s for s in subjects if int(s[1:]) not in (30, 32, 71)):
     if subject is not None:
         if int(sub[1:]) != subject:
             continue
+
+    if i - n >= 20:
+        fig, axs = plt.subplots(5, 4, figsize=(20, 10))
+        n += 20
     # Load the data
     filt = raw_from_layout(layout.derivatives['notch'], subject=sub,
                            extension='.edf', desc='notch', preload=False)
@@ -41,9 +44,10 @@ for i, sub in enumerate(subjects):
     good = crop_empty_data(filt,).copy()
 
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
+    bads = good.info['bads']
     good.info['bads'] = []
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    bads = list(set(filt.info['bads']) | set(find_bad_channels_lof(good, n_jobs=n_jobs)))
+    # bads = list(set(filt.info['bads']) | set(find_bad_channels_lof(good, n_jobs=n_jobs)))
     good.drop_channels(bads)
     good.load_data()
 
@@ -65,36 +69,40 @@ for i, sub in enumerate(subjects):
             ("Start", "Word/Response/LS",),
             ((-0.5, 0), (-1, 1),),
             ("start", "resp",)):
-        j, k = divmod(i, 7)
+        j, k = divmod(i - n, 4)
         ax = axs[j, k]
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials[name] = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials[name], outliers=10, tmin=t[0], tmax=t[1])
-        # func = functools.partial(st.median_abs_deviation, scale='normal')
-        # outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
+        # outliers_to_nan(trials[name], outliers=12, tmin=t[0], tmax=t[1])
+        func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
+        outliers_to_nan(trials[name], outliers=4, deviation=func,
+                        center=np.nanmedian, tmin=t[0], tmax=t[1])
         gamma.extract(trials[name], copy=False, n_jobs=n_jobs)
         crop_pad(trials[name], "0.5s")
+        outliers_to_nan(trials[name], outliers=4, deviation=func,
+                        center=np.nanmedian)
+        # outliers_to_nan(trials[name], outliers=12)
         if name == "start":
             continue
 
-        scaling.rescale(trials[name], trials["start"], 'mean', copy=False)
-        # outliers_to_nan(trials[name], outliers=12)
-        # outliers_to_nan(trials[name], outliers=30, deviation=func, center=np.median)
+        scaling.rescale(trials[name], trials["start"], 'zscore', copy=False)
+        #
+
         isnan = np.isnan(trials[name].get_data()).any(axis=-1).T
         maxmax = np.max(trials[name].get_data(), axis=-1).T
         # maxmax = reduce(lambda x, y: np.concatenate((x, y), axis=-1),
         #                 (a for a in trials[name].get_data()))
         # isnan = np.isnan(maxmax)
-        title = f"{name}: {np.sum(isnan, dtype=float) / isnan.size * 100:.1f}% NaN"
+        title = f" {name}: {np.sum(isnan, dtype=float) / isnan.size * 100:.1f}% NaN"
 
         # axs[0, i].imshow(np.isnan(trials[name].get_data()).any(axis=-1),
         #                  aspect='auto', interpolation='nearest')
         # axs[0, i].set_title(title)
         ax.boxplot([d[~m] for d, m in zip(maxmax, isnan)], notch=True, vert=True)
-        ax.set_xticks(range(0, len(trials[name].ch_names), 50))
-        ax.set_xticklabels(range(0, len(trials[name].ch_names), 50))
+        ax.set_xticks(range(0, len(trials[name].ch_names), 25))
+        ax.set_xticklabels(range(0, len(trials[name].ch_names), 25))
         if j == 0:
             ax.set_ylabel("Trials")
         # else:
@@ -107,7 +115,7 @@ for i, sub in enumerate(subjects):
 
     # for ax in axs:
     # ax.set_ylim(ylims)
-    ax.set_title(sub)
+    ax.set_title(sub + title)
 # fig.suptitle(sub)
 fig.supxlabel("Channel")
 fig.tight_layout()
