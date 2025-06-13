@@ -32,7 +32,7 @@ for sub in subjects:
     # Load the data
     TASK = "SentenceRep"
     # %%
-    save_dir = op.join(layout.root, "derivatives", "stats_freq_std")
+    save_dir = op.join(layout.root, "derivatives", "stats_freq_hilbert")
     if not op.isdir(save_dir):
         os.mkdir(save_dir)
     mask = dict()
@@ -71,9 +71,7 @@ for sub in subjects:
         #                  cmap=parula_map, show=False)
 
         power = scaling.rescale(epoch.crop(fmin=freq_lim[0], fmax=freq_lim[1]), base, 'mean', copy=True)
-        outliers_to_nan(power, 12)
         z_score = scaling.rescale(epoch.crop(fmin=freq_lim[0], fmax=freq_lim[1]), base, 'zscore', copy=True)
-        outliers_to_nan(z_score, 12)
 
         # Calculate the p-value
         p_vals = mne.time_frequency.AverageTFRArray(epoch_mask.info, p_act,

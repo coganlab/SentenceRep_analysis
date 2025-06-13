@@ -8,6 +8,7 @@ import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
 import numpy as np
 import scipy.stats as st
+import functools
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -37,7 +38,7 @@ for sub in subjects:
 
     good.info['bads'] = []
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    bads = list(set(filt.info['bads']) | set(find_bad_channels_lof(good)))
+    bads = list(set(filt.info['bads'])) # | set(find_bad_channels_lof(good)))
     good.drop_channels(bads)
     good.load_data()
 
@@ -64,16 +65,16 @@ for sub in subjects:
         times[0] = t[0] - 1.5
         times[1] = t[1] + 1.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=12, tmin=t[0], tmax=t[1])
-        freqs = np.geomspace(4, 500, 80)
+        # outliers_to_nan(trials, outliers=10, tmin=t[0], tmax=t[1])
+        freqs = np.geomspace(2, 500, 80)
         # for i in range(8, 13):
+        func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
+        outliers_to_nan(trials, outliers=4, deviation=func,
+                        center=np.nanmedian, tmin=t[0], tmax=t[1])
         spec = superlet_tfr(trials, freqs, 1., (10, 20), 4, n_jobs)
         crop_pad(spec, "1.5s")
-        if name == "start":
-            base = spec.copy().crop(tmin=-0.5, tmax=0.)
-        zscore = rescale(spec, base, 'zscore', copy=True)
-        outliers_to_nan(zscore, outliers=12)
-        spec._data[np.isnan(zscore._data)] = np.nan
+        outliers_to_nan(spec, outliers=4, deviation=func,
+                        center=np.nanmedian)
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]
         filename = os.path.join(save_dir, f'{name}-tfr.h5')

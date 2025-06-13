@@ -7,6 +7,7 @@ import os
 from ieeg.timefreq.utils import crop_pad, resample_tfr
 import numpy as np
 import scipy.stats as st
+import functools
 
 ## check if currently running a slurm job
 HOME = os.path.expanduser("~")
@@ -20,11 +21,11 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = 16
+    subject = None
 
 n_jobs = 10
 for sub in subjects:
-    if int(sub[1:]) in (30, 32):
+    if int(sub[1:]) in (32,):
         continue
     if subject is not None:
         if int(sub[1:]) != subject:
@@ -65,7 +66,9 @@ for sub in subjects:
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
-        outliers_to_nan(trials, outliers=20, deviation=st.median_abs_deviation, center=np.median)
+        func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
+        outliers_to_nan(trials, outliers=4, deviation=func,
+                        center=np.nanmedian, tmin=t[0], tmax=t[1])
         spec = hilbert_spectrogram(trials, (4, 500),4, 1/12, n_jobs)
         crop_pad(spec, "0.5s")
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
