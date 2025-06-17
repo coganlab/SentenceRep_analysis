@@ -22,9 +22,9 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = None
+    subject = 29
 
-n_jobs = 10
+n_jobs = 12
 for sub in subjects:
     if subject is not None:
         if int(sub[1:]) != subject:
@@ -66,14 +66,14 @@ for sub in subjects:
         times[1] = t[1] + 1.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         # outliers_to_nan(trials, outliers=10, tmin=t[0], tmax=t[1])
-        freqs = np.geomspace(2, 500, 80)
+        freqs = np.geomspace(4, 500, 80)
         # for i in range(8, 13):
         func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
-        outliers_to_nan(trials, outliers=4, deviation=func,
+        outliers_to_nan(trials, outliers=6, deviation=func,
                         center=np.nanmedian, tmin=t[0], tmax=t[1])
-        spec = superlet_tfr(trials, freqs, 1., (10, 20), 4, n_jobs)
+        spec = superlet_tfr(trials, freqs, 1., (10, 20), 8, n_jobs)
         crop_pad(spec, "1.5s")
-        outliers_to_nan(spec, outliers=4, deviation=func,
+        outliers_to_nan(spec, outliers=6, deviation=func,
                         center=np.nanmedian)
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         fnames = [os.path.relpath(f, layout.root) for f in good.filenames]

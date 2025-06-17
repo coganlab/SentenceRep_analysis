@@ -11,7 +11,6 @@ from analysis.utils.mat_load import DataLoader
 from ieeg.viz.mri import subject_to_info, gen_labels, get_sub, pick_no_wm
 import matplotlib.pyplot as plt
 
-import nimfa
 from scipy import sparse
 
 
@@ -70,7 +69,7 @@ class GroupData:
             if all(cond in keys[0] for cond in
                    ["aud_ls", "aud_lm", "aud_jl", "go_ls", "go_lm", "resp"]):
 
-                self.AUD, self.SM, self.PROD, self.sig_chans = group_elecs(
+                self.AUD, self.SM, self.PROD, self.sig_chans, self.delay = group_elecs(
                     self.signif, keys[1], keys[0], wide=wide)
             else:
                 self.sig_chans = self._find_sig_chans(self.signif)
@@ -445,6 +444,7 @@ class GroupData:
     def nmf(self, dtype: str = 'significance', n_components: int = 4,
             idx: list[int] = None,
             conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
+        import nimfa
         data = self.get_training_data(dtype, conds, idx)
         data = data - np.min(data)
         if dtype == 'significance':
@@ -516,6 +516,7 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
     AUD = set()
     SM = set()
     PROD = set()
+    delay = set()
     for i, name in enumerate(names):
         for cond in conds:
             idx = i
@@ -528,9 +529,15 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
             else:
                 t_idx = slice(75, 125)
 
+            if cond in ["aud_ls", "aud_lm", "aud_jl"]:
+                del_idx = slice(125, 175)
+            else:
+                del_idx = slice(0, 50)
+
             if np.any(all_sig[cond, idx, ..., t_idx] == 1):
                 sig_chans |= {i}
-                break
+            if np.any(all_sig[cond, idx, ..., del_idx] == 1) and cond != "resp":
+                delay |= {i}
 
         if all_sig.ndim == 2:
             aud_slice = None
@@ -559,7 +566,7 @@ def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
         elif mime_is and (speak_is or resp_is):
             PROD |= {i}
 
-    return AUD, SM, PROD, sig_chans
+    return AUD, SM, PROD, sig_chans, delay
 
 
 def get_grey_matter(subjects: Sequence[str], subjects_dir: str = None, atlas: str = ".a2009s") -> set[str]:
@@ -589,12 +596,12 @@ if __name__ == "__main__":
              "go_jl": (-0.5, 1.5)}
 
     power = sub['power']
-    # zscore = np.nanmean(sub['zscore'].__array__(), axis=(-4, -2))
+    zscore = np.nanmean(sub.array['zscore'], axis=(-4, -2))
     pval = np.where(sub.p_vals > 0.9999, 0.9999, sub.p_vals)
 
     # pval[pval<0.0001] = 0.0001
-    zscore = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
-    sig = sub.signif
+    # zscore = LabeledArray(st.norm.ppf(1 - pval), sub.p_vals.labels)
+    # sig = sub.signif
 
     #
     # cond = 'aud_ls'
@@ -605,26 +612,35 @@ if __name__ == "__main__":
     #     SUB = [s for s in sub.sig_chans if subj in sub.keys['channel'][s]]
     #     plot_dist(arr[SUB], times=conds[cond], label=subj)
     # plt.legend()
-    ##
-    cond = 'aud_ls'
+    # %%
+    fig, axs = plt.subplots(3,2)
+    conds = {"aud_ls": (-0.5, 1.5),
+             "go_ls": (-0.5, 1.5),
+             "aud_lm": (-0.5, 1.5),
+             "go_lm": (-0.5, 1.5),
+             "aud_jl": (-0.5, 1.5),
+             "go_jl": (-0.5, 1.5)}
+    # cond = 'aud_jl'
     # arr = np.nanmean(power.array[cond].__array__(), axis=(-4, -2))
     # arr = sub.signif[cond].__array__()
-    arr = zscore[cond].__array__()
-    fig = plt.figure()
-    ax = fig.gca()
-    plot_dist(arr[list(sub.AUD)], times=conds[cond], label='AUD',
-              color='green', ax=ax)
-    plot_dist(arr[list(sub.SM)], times=conds[cond], label='SM',
-              color='red', ax=ax)
-    plot_dist(arr[list(sub.PROD)], times=conds[cond], label='PROD',
-              color='blue', ax=ax)
+    for (cond, timing), ax in zip(conds.items(), axs.flat):
+        arr = zscore[cond].__array__()
+        plot_dist(arr[list(sub.AUD)], times=timing, label='AUD',
+                  color='green', ax=ax)
+        plot_dist(arr[list(sub.SM)], times=timing, label='SM',
+                  color='red', ax=ax)
+        plot_dist(arr[list(sub.PROD)], times=timing, label='PROD',
+                  color='blue', ax=ax)
+        plot_dist(arr[list(sub.delay)], times=timing, label='delay',
+                  color='purple', ax=ax)
     plt.legend()
     plt.xlabel("Time(s)")
     plt.ylabel("Z-Score (V)")
-    plt.title('Response')
+    plt.title('Stimulus')
+    # %%
     # plt.ylim(-0.1, 0.9)
     # plt.savefig(cond+'.svg', dpi=300)
     #
     ##
-    fig = sub.plot_groups_on_average(rm_wm=False)
-    fig.save_image('ALL.png')
+    fig = sub.plot_groups_on_average([list(sub.delay)], colors=["purple"], hemi='both')
+    fig.save_image('SM.png')
