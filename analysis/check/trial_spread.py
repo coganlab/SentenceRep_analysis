@@ -69,25 +69,24 @@ for i, sub in enumerate(s for s in subjects if int(s[1:]) not in (30, 32, 71)):
             ("Start", "Word/Response/LS",),
             ((-0.5, 0), (-1, 1),),
             ("start", "resp",)):
-        j, k = divmod(i - n, 4)
-        ax = axs[j, k]
         times = [None, None]
         times[0] = t[0] - 0.5
         times[1] = t[1] + 0.5
         trials[name] = trial_ieeg(good, epoch, times, preload=True)
-        # outliers_to_nan(trials[name], outliers=12, tmin=t[0], tmax=t[1])
+        # outliers_to_nan(trials[name], outliers=10, tmin=t[0], tmax=t[1])
         func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
-        outliers_to_nan(trials[name], outliers=4, deviation=func,
+        outliers_to_nan(trials[name], outliers=6, deviation=func,
                         center=np.nanmedian, tmin=t[0], tmax=t[1])
         gamma.extract(trials[name], copy=False, n_jobs=n_jobs)
         crop_pad(trials[name], "0.5s")
-        outliers_to_nan(trials[name], outliers=4, deviation=func,
+        outliers_to_nan(trials[name], outliers=6, deviation=func,
                         center=np.nanmedian)
         # outliers_to_nan(trials[name], outliers=12)
         if name == "start":
+            # base = trials[name].copy().crop(-0.5, 0)
             continue
 
-        scaling.rescale(trials[name], trials["start"], 'zscore', copy=False)
+        scaling.rescale(trials[name], trials["start"], 'mean', copy=False)
         #
 
         isnan = np.isnan(trials[name].get_data()).any(axis=-1).T
@@ -100,6 +99,8 @@ for i, sub in enumerate(s for s in subjects if int(s[1:]) not in (30, 32, 71)):
         # axs[0, i].imshow(np.isnan(trials[name].get_data()).any(axis=-1),
         #                  aspect='auto', interpolation='nearest')
         # axs[0, i].set_title(title)
+        j, k = divmod(i - n, 4)
+        ax = axs[j, k]
         ax.boxplot([d[~m] for d, m in zip(maxmax, isnan)], notch=True, vert=True)
         ax.set_xticks(range(0, len(trials[name].ch_names), 25))
         ax.set_xticklabels(range(0, len(trials[name].ch_names), 25))

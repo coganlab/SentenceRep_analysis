@@ -2,7 +2,7 @@ import numpy as np
 from typing import Any, Generator
 
 from numpy import ndarray
-from scipy import config_context
+from sklearn import config_context
 from ieeg.decoding.decode import (
     Decoder, flatten_list, classes_from_labels, nan_common_denom
 )

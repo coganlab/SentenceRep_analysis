@@ -9,6 +9,7 @@ import os
 import numpy as np
 import mne
 from itertools import product
+import functools
 import scipy
 
 def resample_tfr(tfr, sfreq, o_sfreq=None, copy=False):
@@ -85,9 +86,13 @@ for subj in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True
                             , reject_by_annotation=False)
-        outliers_to_nan(trials, outliers=10)
+        func = functools.partial(scipy.stats.iqr, rng=(50, 95), nan_policy='omit')
+        outliers_to_nan(trials, outliers=6, deviation=func,
+                        center=np.nanmedian, tmin=t[0], tmax=t[1])
         gamma.extract(trials, copy=False, n_jobs=n_jobs)
         utils.crop_pad(trials, "0.5s")
+        outliers_to_nan(trials, outliers=6, deviation=func,
+                        center=np.nanmedian)
         resample_tfr(trials, 100, copy=False)
         # trials._data = resample(trials._data, trials.info['sfreq'], 100, axis=-1)
         trials.filenames = good.filenames

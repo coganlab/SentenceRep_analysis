@@ -21,9 +21,9 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     layout = get_data("SentenceRep", root=LAB_root)
     subjects = layout.get(return_type="id", target="subject")
-    subject = None
+    subject = 29
 
-n_jobs = 10
+n_jobs = 1
 for sub in subjects:
     if int(sub[1:]) in (32,):
         continue
@@ -39,7 +39,7 @@ for sub in subjects:
 
     good.info['bads'] = []
     # good.info['bads'] = channel_outlier_marker(good, 3, 2)
-    bads = list(set(filt.info['bads']) | set(find_bad_channels_lof(good)))
+    bads = list(set(filt.info['bads']))
     good.drop_channels(bads)
     good.load_data()
 
@@ -67,10 +67,12 @@ for sub in subjects:
         times[1] = t[1] + 0.5
         trials = trial_ieeg(good, epoch, times, preload=True)
         func = functools.partial(st.iqr, rng=(50, 95), nan_policy='omit')
-        outliers_to_nan(trials, outliers=4, deviation=func,
+        outliers_to_nan(trials, outliers=6, deviation=func,
                         center=np.nanmedian, tmin=t[0], tmax=t[1])
         spec = hilbert_spectrogram(trials, (4, 500),4, 1/12, n_jobs)
         crop_pad(spec, "0.5s")
+        outliers_to_nan(spec, outliers=6, deviation=func,
+                        center=np.nanmedian)
         resample_tfr(spec, 100, spec.times.shape[0] / (spec.tmax - spec.tmin))
         # if spec.sfreq > 100:
         #     # factor = min(2, spec.sfreq // 100)
