@@ -18,7 +18,7 @@ analysisfolder = 'SentenceRep_analysis\\analysis'
 
 #%% proper bipolar reference - not used
 # from analysis.fix.events import fix
-# from ieeg.mt_filter import line_filter
+from ieeg.mt_filter import line_filter
 # from ieeg.io import raw_from_layout, save_derivative
 # from ieeg.navigate import crop_empty_data
 # from analysis.check.chan_utils import bipolar_reference_by_shank
@@ -53,7 +53,7 @@ analysisfolder = 'SentenceRep_analysis\\analysis'
 #         failed_subjects.append(subj)
 
 
-#%% save bipolar referenced hippocampal electrodes and get HG/theta
+#%% save re-referenced ROI electrodes and get HG/theta
 from ieeg.navigate import trial_ieeg, channel_outlier_marker, outliers_to_nan
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.calc import scaling
@@ -66,9 +66,9 @@ from ieeg.viz.parula import parula_map
 from mne import EvokedArray, EpochsArray
 from mne.filter import filter_data
 njobs = 4 #higher njobs can lead to overloading memory and slowing down the compute
-save_dir = os.path.join(layout.root, "derivatives", "hippbipolarthetastats")
-fig_dir = os.path.join(layout.root, "derivatives", "figs", "hippbipolar")
-get_band = 'theta'
+save_dir = os.path.join(layout.root, "derivatives", "lingrerefgammastats")
+fig_dir = os.path.join(layout.root, "derivatives", "figs", "lingreref")
+get_band = 'gamma'
 if get_band == 'theta':
     pad_len = 1
 else:
@@ -77,11 +77,11 @@ if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
 if not os.path.isdir(fig_dir):
     os.mkdir(fig_dir)
-
+no_roi_subj = []
 for subj in subjects:
     if int(subj[1:]) in [19,22,23,25,31,35,76,100]:
         continue
-    if int(subj[1:]) <100 :
+    if int(subj[1:]) < 40:
         continue
     filt = raw_from_layout(layout.derivatives['clean'], subject=subj,
                            extension=".edf", desc='clean', preload=False)
@@ -105,27 +105,27 @@ for subj in subjects:
     # Build shank map for finding nearest references
     shank_map = build_shank_map(good.ch_names)
 
-    # Track hippocampal channels and their referenced data
-    hipp_channels = []
-    hipp_data = []
+    # Track ROI channels and their referenced data
+    roi_channels = []
+    roi_data = []
     data = good.get_data()
-    no_hipp_subj = []
+    ROI_NAME = "LinG"
 
     for i, (ch, label) in enumerate(zip(good.ch_names, channel_labels)):
-        if "Hipp" in label:
+        if ROI_NAME in label:
             # Find reference electrode
             _, shank, pos = parse_channel_info(ch)
             pos_list = shank_map[None,shank]  # This should be a list of (position, index) tuples, None since within subj
             current_idx = next(j for j, (pos_j, idx) in enumerate(pos_list) if idx == i)
 
-            # Search for nearest non-hippocampal reference
+            # Search for nearest non-ROI reference
             ref_idx = None
             min_dist = float('inf')
 
             # Search up
             for j in range(current_idx - 1, -1, -1):
                 pos_j, idx = pos_list[j]  # Unpack position and index
-                if "Hipp" not in channel_labels[idx]:
+                if ROI_NAME not in channel_labels[idx]:
                     dist = abs(pos - pos_j)  # Compare positions directly
                     if dist < min_dist:
                         min_dist = dist
@@ -135,7 +135,7 @@ for subj in subjects:
             # Search down
             for j in range(current_idx + 1, len(pos_list)):
                 pos_j, idx = pos_list[j]  # Unpack position and index
-                if "Hipp" not in channel_labels[idx]:
+                if ROI_NAME not in channel_labels[idx]:
                     dist = abs(pos_j - pos)  # Compare positions directly
                     if dist < min_dist:
                         min_dist = dist
@@ -144,18 +144,18 @@ for subj in subjects:
 
             # If reference found, store channel and referenced data
             if ref_idx is not None:
-                hipp_channels.append(ch)
-                hipp_data.append(data[i] - data[ref_idx])
+                roi_channels.append(ch)
+                roi_data.append(data[i] - data[ref_idx])
             else:
                 print(f"No reference found for channel {ch}, dropped.")
 
-    # Keep only hippocampal channels with their referenced data
-    if hipp_channels and len(hipp_channels) > 0:
-        good.pick_channels(hipp_channels)
-        good._data = np.array(hipp_data)
+    # Keep only ROI channels with their referenced data
+    if roi_channels and len(roi_channels) > 0:
+        good.pick_channels(roi_channels)
+        good._data = np.array(roi_data)
     else:
-        print(f"No hippocampal channels found for subject {subj}")
-        no_hipp_subj.append(subj)
+        print(f"No {ROI_NAME} channels found for subject {subj}")
+        no_roi_subj.append(subj)
         continue
 
     # gamma extraction via filterbank Hilbert
@@ -171,7 +171,7 @@ for subj in subjects:
         # Get Morlet spectrograms and save
         spec = wavelet_scaleogram(trials, n_jobs=njobs,
                                   decim=int(good.info['sfreq'] / 200))
-        crop_pad(spec, "1s")
+        crop_pad(spec, str(pad_len)+"s")
         if epoch == "Listen":
             base = spec.copy()
         else:
@@ -185,6 +185,7 @@ for subj in subjects:
 
         if get_band == 'gamma':
             gamma.extract(trials, copy=False, n_jobs=njobs)
+            trials.resample(100)  # downsample from 2kHz to 100Hz after extracting high gamma
         elif get_band == 'theta':
             # Bandpass filter 4-8 Hz
             trials_filtered = trials.copy().filter(
@@ -206,10 +207,8 @@ for subj in subjects:
                 average=False,
                 verbose=False
             )
-        # trim 0.5 seconds on the beginning and end of the data (edge artifacts)
-        crop_pad(trials, "1s")
-        if get_band == 'gamma':
-            trials.resample(100) # downsample from 2kHz to 100Hz after extracting high gamma
+        # trim pad seconds on the beginning and end of the data (edge artifacts)
+        crop_pad(trials, str(pad_len)+"s")
         out.append(trials)
     base = out.pop(0)
 
@@ -226,21 +225,31 @@ for subj in subjects:
         mask[name], p_act = time_perm_cluster(
             sig1, sig2, p_thresh=0.05, axis=0, tails = 2, n_perm=nperm, n_jobs=njobs,
             ignore_adjacency=1) #tails=2 for both directions in theta band
-        # build mne.EvokedArray to save the data with metadata
-        epoch_mask = EvokedArray(mask[name][:,0,:], epoch.average().info,
-                                     tmin=window[0])
-
         #power = scaling.rescale(epoch, base, 'mean', copy=True)
         z_score = scaling.rescale(epoch, base, 'zscore', copy=True)
-        zscore_EA = EpochsArray(z_score.get_data()[:,:,0,:], info=z_score.info.copy(), tmin=z_score.times[0], events=z_score.events, event_id=z_score.event_id)
+
+        # build mne.EvokedArray to save the data with metadata
+        if mask[name].ndim == 2:
+            mask_sliced = mask[name]
+            p_sliced = p_act
+            z_sliced = z_score.get_data()
+            base_sliced = base.get_data()
+        elif mask[name].ndim == 3:
+            sliced = mask[name][:, 0, :]
+            p_sliced = p_act[:, 0, :]
+            z_sliced = z_score.get_data()[:,:,0,:]
+            base_sliced = base.get_data()[:,:,0,:]
+        epoch_mask = EvokedArray(mask_sliced, epoch.average().info,
+                                     tmin=window[0])
+        zscore_EA = EpochsArray(z_sliced, info=z_score.info.copy(), tmin=z_score.times[0], events=z_score.events, event_id=z_score.event_id)
         # Calculate the p-value
-        p_vals = EvokedArray(p_act[:,0,:], epoch_mask.info, tmin=window[0])
+        p_vals = EvokedArray(p_sliced, epoch_mask.info, tmin=window[0])
         # saving epoch as fif file
         #power.save(save_dir + f"/{subj}_{name}_power-epo.fif", overwrite=True, fmt='double')
         zscore_EA.save(save_dir + f"/{subj}_{name}_zscore-epo.fif", overwrite=True)
         epoch_mask.save(save_dir + f"/{subj}_{name}_mask-ave.fif", overwrite=True)
         p_vals.save(save_dir + f"/{subj}_{name}_pval-ave.fif", overwrite=True)
-    base_EA = EpochsArray(base.get_data()[:, :, 0, :], info=base.info.copy(), tmin=base.times[0],
+    base_EA = EpochsArray(base_sliced, info=base.info.copy(), tmin=base.times[0],
                             events=base.events, event_id=base.event_id)
     base_EA.save(save_dir + f"/{subj}_base-epo.fif", overwrite=True)
 
@@ -249,14 +258,14 @@ for subj in subjects:
 from ieeg.calc.mat import LabeledArray, combine
 from analysis.decoding import Decoder
 from analysis.utils.mat_load import load_dict
-#from analysis.check.chan_utils import nested_dict_to_ndarray
+from analysis.check.chan_utils import nested_dict_to_ndarray
 import numpy as np
 
 suffix = "zscore-epo.fif"
 conds = {'aud': (-0.5,1), 'go': (-0.5,1), 'resp': (-0.5,1)}
 
-zscores = load_dict(layout, conds, 'zscore', False, 'hippbipolarthetastats')
-mask = load_dict(layout, conds, 'significance', True, 'hippbipolarthetastats')
+zscores = load_dict(layout, conds, 'zscore', False, 'stgrerefgammastats')
+mask = load_dict(layout, conds, 'significance', True, 'stgrerefgammastats')
 zscores = combine(zscores, (0, 3)) # combine subj with channel
 zscoresArray, zscoresLabel = nested_dict_to_ndarray(zscores)
 zscoresLA = LabeledArray(zscoresArray, labels=zscoresLabel)
@@ -366,10 +375,10 @@ def plot_HG_traces(data_array, sub_channel_list, legend=False):
         # Set title and axis labels
         axes[idx].set_title(title, fontsize=14)
         axes[idx].set_xlabel("Time from Onset (s)", fontsize=12)
-        axes[idx].set_ylabel("Z(Theta)", fontsize=12)
+        axes[idx].set_ylabel("Z(HG)", fontsize=12)
     plt.grid(False)
     plt.tight_layout()
-    plt.savefig(os.path.join(analysisfolder, 'phonemeseq_hipp_bipolar_Theta.png'), dpi=300,
+    plt.savefig(os.path.join(analysisfolder, 'phonemeseq_stg_reref_HG.png'), dpi=300,
                 bbox_inches='tight')
     plt.show()
 
@@ -448,7 +457,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV within decoder
     true_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\true_scores_phonemeseq_2way_bipolar_theta.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_2way_lingreref_gamma.pkl', 'wb') as f:
     pickle.dump(true_scores_dict, f)
 
 #%% shuffle
@@ -474,7 +483,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV i.e. shuffles in this case within decoder
     shuffle_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_bipolar_theta.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_lingreref_gamma.pkl', 'wb') as f:
     pickle.dump(shuffle_scores_dict, f)
 
 #%% Approx bipolar referencing
@@ -565,7 +574,7 @@ def plot_confusion_matrices(scores_dict):
                                       ha="center", va="center", color="black", fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_2way_bipolar_firsthalfsec_theta.png'), dpi=300,
+    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_2way_stgreref_firsthalfsec_gamma.png'), dpi=300,
                 bbox_inches='tight')
     plt.show()
 
@@ -583,17 +592,17 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-# with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
-#     true_scores_dict = pickle.load(f)
-# with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
-#     shuffle_scores_dict = pickle.load(f)
+with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_2way_m1reref_gamma.pkl'), 'rb') as f:
+    true_scores_dict = pickle.load(f)
+with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_2way_m1reref_gamma.pkl'), 'rb') as f:
+    shuffle_scores_dict = pickle.load(f)
 
 timepoints = np.linspace(-0.4, 0.9, 131)
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 bar_width = 0.01  # LDA run every 10ms intervals with 200ms window
-y_position = 0.6
+y_position = 0.8
 xlim = (-0.4, 0.9)
-ylim = (0.3,0.7)
+ylim = (0.4,1)
 for ax in fig.axes:
     ax.axhline(0.5, color='k', linestyle='--')
 for i, cond in enumerate(true_scores_dict.keys()):
@@ -615,8 +624,8 @@ for i, cond in enumerate(true_scores_dict.keys()):
     for idx, bool_value in enumerate(signif[0]):
         if bool_value:
             axes[i].barh(y=y_position, width=bar_width, height=0.01, left=x_axis[idx], color='black')
-plt.suptitle('Non hippocampal re-referencing')
+plt.suptitle('Non-M1(mouth/larynx) re-referencing')
 plt.tight_layout()
-plt.savefig(os.path.join(analysisfolder, 'phonemeseq_hipp_2way_bipolar_theta.png'), dpi=300,
+plt.savefig(os.path.join(analysisfolder, 'phonemeseq_2way_m1reref_gamma.png'), dpi=300,
                 bbox_inches='tight')
 plt.show()
