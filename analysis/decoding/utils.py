@@ -7,7 +7,10 @@ from ieeg.decoding.decode import (
     Decoder, flatten_list, classes_from_labels, nan_common_denom
 )
 from ieeg.arrays.label import LabeledArray
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 
 def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     """Perform decoding and scoring"""
