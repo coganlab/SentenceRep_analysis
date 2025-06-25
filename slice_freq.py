@@ -1,7 +1,7 @@
 import os
 from ieeg.io import get_data, DataLoader
 from ieeg.arrays.label import LabeledArray, combine
-from ieeg.decoding.decode import extract
+from analysis.decoding.utils import extract
 from ieeg.viz.ensemble import plot_dist
 from analysis.grouping import group_elecs
 from itertools import product
@@ -12,7 +12,7 @@ from functools import reduce
 import slicetca
 import matplotlib.pyplot as plt
 from multiprocessing import freeze_support
-import pickle
+from functools import partial
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
@@ -51,34 +51,34 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-folder = 'stats_freq'
+folder = 'stats_freq_hilbert'
 filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
 sigs = LabeledArray.fromfile(filemask)
-AUD, SM, PROD, sig_chans = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
+AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
 idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans}
-filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscores')
+filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscore')
 zscores = LabeledArray.fromfile(filename, mmap_mode='r')
 conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
 
 # %% grid search
-pick_k = False
+pick_k = True
 if pick_k:
     if __name__ == '__main__':
         freeze_support()
-    param_grid = {'ranks': [#{'min': [1, 0, 0], 'max': [12, 0, 0]},
-                            {'min': [1], 'max': [12]},],
+    param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [12, 0, 0]},],
+                            #{'min': [1], 'max': [12]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
                   'masks': [
                       {'train': False, 'test': False},
-                      {'train': True, 'test': True},
+                      # {'train': True, 'test': True},
                             ],
-                  'loss': ['HuberLoss', 'L1Loss'],
+                  'loss': ['HuberLoss', 'MSELoss'],
                   'lr': [1e-3],
                   'decay': [1]
                     }
     procs = 1
     threads = 1
-    repeats = 2
+    repeats = 10
     conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
     aud_slice = slice(0, 175)
 
@@ -93,14 +93,14 @@ if pick_k:
         idx = sorted(idxs[group])
         neural_data_tensor, mask, labels = load_tensor(zscores, idx,
                                                        conds, 4)
-        mask = mask.any(2)
-        trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
+        # mask = mask.any(2)
+        # trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
 
         ## set up the model
         if is_mask['train'] and is_mask['test']:
-            train_mask, test_mask = slicetca.block_mask(dimensions=trial_av.shape,
-                                                        train_blocks_dimensions=(1, 10, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
-                                                        test_blocks_dimensions=(1, 5, 5), # Same, 2*test_blocks_dimensions + 1
+            train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
+                                                        train_blocks_dimensions=(1, 10, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
+                                                        test_blocks_dimensions=(1, 5, 1, 5), # Same, 2*test_blocks_dimensions + 1
                                                         fraction_test=0.2)
             test_mask = torch.logical_and(test_mask, mask)
             train_mask = torch.logical_and(train_mask, mask)
@@ -108,7 +108,7 @@ if pick_k:
             train_mask = mask
             test_mask = None
 
-        loss_grid, seed_grid = slicetca.grid_search(trial_av,
+        loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = ranks['min'],
                                                     max_ranks = ranks['max'],
                                                     sample_size=repeats,
@@ -122,13 +122,13 @@ if pick_k:
                                                     # min_std=1e-4,
                                                     # iter_std=10,
                                                     init_bias=0.01,
-                                                    # weight_decay=decay,
+                                                    weight_decay=partial(torch.optim.Rprop, etas=(0.99, 1.01), step_sizes=(1e-7, .1)),
                                                     initialization='uniform-positive',
                                                     learning_rate=lr,
                                                     max_iter=1000000,
                                                     positive=True,
                                                     verbose=0,
-                                                    # batch_dim=0,
+                                                    batch_dim=2,
                                                     loss_function=getattr(torch.nn, loss)(reduction='mean'),
                                                     compile=True)
 
@@ -154,7 +154,7 @@ if pick_k:
 
 
 # %% decompose
-decompose = True
+decompose = False
 if decompose:
     # idx_name = 'SM'
     # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
@@ -169,7 +169,7 @@ if decompose:
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
-    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
+    neural_data_tensor, mask, labels = load_tensor(zscores, delay, conds, 4, 1)
     trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
     # trial_av.to('cuda')
     # idx_name = 'sig_chans'
@@ -177,28 +177,29 @@ if decompose:
     n = 0
     # %%
     losses, model = slicetca.decompose(
-        trial_av,
-        # neural_data_tensor,
-
-                                       # n_components,
-                                       (n_components[0], 0, 0),
-                                       seed=best_seed,
-                                       positive=True,
-                                       min_std=5e-4,
-                                       iter_std=1000,
-                                       learning_rate=1e-4,
-                                       max_iter=1000000,
-                                       # batch_dim=2,
-                                       # batch_prop=0.1,
-                                       # batch_prop_decay=5,
-                                       # weight_decay=5e-5,
-                                       # mask=mask,
-                                       init_bias=0.01,
-                                       initialization='uniform-positive',
-                                       loss_function=torch.nn.L1Loss(
-                                           reduction='mean'),
-                                       verbose=0,
-                                       compile=True,
+        # trial_av,
+        neural_data_tensor.to(torch.float32),
+        # n_components,
+        (n_components[0], 0, 0),
+        seed=best_seed,
+        positive=True,
+        min_std=5e-3,
+        iter_std=20,
+        learning_rate=1e-6,
+        max_iter=100000,
+        batch_dim=2,
+        # batch_prop=0.1,
+        # batch_prop_decay=5,
+        # weight_decay=partial(torch.optim.AdamW, weight_decay=1e-4),
+       weight_decay=partial(torch.optim.Rprop, etas=(0.99, 1.01), step_sizes=(1e-7, .1)),
+    # weight_decay=1e-5,
+       mask=mask,
+       init_bias=0.01,
+       initialization='uniform-positive',
+       loss_function=torch.nn.MSELoss(
+           reduction='mean'),
+       verbose=0,
+       compile=True,
     shuffle_dim=0,
      device='cuda')
     # torch.save(model, f'model_{'SM'}_freq.pt')
@@ -215,7 +216,7 @@ if decompose:
     idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
     timings = {'aud_ls': range(0, 200),
                'go_ls': range(600, 800),
-               'go_jl': range(1000, 1200)}
+               'go_lm': range(800, 1000)}
     components = model.get_components(numpy=True)
     figs = {}
     for cond, timing in timings.items():
