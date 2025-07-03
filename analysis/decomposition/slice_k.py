@@ -8,6 +8,7 @@ import slicetca
 from multiprocessing import freeze_support
 from ieeg.viz.ensemble import plot_dist
 from itertools import product
+from functools import partial
 
 
 # ## set up the task
@@ -27,19 +28,19 @@ os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
 if __name__ == '__main__':
     freeze_support()
     sub = GroupData.from_intermediates("SentenceRep", LAB_root, folder='stats')
-    param_grid = {'ranks': [{'min': [0, 1, 0], 'max': [0, 12, 0]},
-                            {'min': [1], 'max': [12]},],
+    param_grid = {'ranks': [{'min': [1, 0], 'max': [8, 0]},
+                            {'min': [1], 'max': [8]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
-                  'masks': [{'train': False, 'test': False},
-                            {'train': True, 'test': True},],
-                  'loss': ['L1Loss','HuberLoss'],
-                  'lr': [1e-3, 1e-4],
-                  'decay': [0.33, 1., 0.2]
+                  'masks': [{'train': False, 'test': False},],
+                            # {'train': True, 'test': True},]
+                  'loss': ['HuberLoss'],
+                  'lr': [1e-3],
+                  'decay': [.1]
                     }
     procs = 1
     threads = 1
-    repeats = 20
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
+    repeats = 5
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm']
     aud_slice = slice(0, 175)
 
     for ranks, group, is_mask, loss, lr, decay in product(
@@ -49,9 +50,9 @@ if __name__ == '__main__':
             n -= 1
             continue
         idx = sorted(list(set(getattr(sub, group))))
-        neural_data_tensor, labels = dataloader(sub, idx, conds)
+        neural_data_tensor, labels = dataloader(sub.array, idx, conds)
         mask = ~torch.isnan(neural_data_tensor)
-        neural_data_tensor, _ = dataloader(sub, idx, conds, do_mixup=True)
+        # neural_data_tensor, _ = dataloader(sub, idx, conds, do_mixup=False)
         neural_data_tensor = neural_data_tensor.to(torch.float32)
 
         ## set up the model
@@ -80,13 +81,19 @@ if __name__ == '__main__':
                                                     # min_std=1e-4,
                                                     # iter_std=10,
                                                     init_bias=0.01,
-                                                    # weight_decay=decay,
+                                                    weight_decay=partial(torch.optim.Adam,
+                                betas=(0.5, 0.5),
+                                amsgrad=True,
+                                eps=1e-10,
+                                weight_decay=0
+                             ),
                                                     initialization='uniform-positive',
                                                     learning_rate=lr,
                                                     max_iter=1000000,
                                                     positive=True,
                                                     verbose=0,
-                                                    # batch_dim=0,
+                                                    batch_dim=0,
+                                                    shuffle_dim=1,
                                                     loss_function=getattr(torch.nn, loss)(reduction='mean'),
                                                     compile=True)
 
