@@ -1,6 +1,8 @@
 import os
 from ieeg.io import get_data
-from ieeg.arrays.label import LabeledArray, combine
+from ieeg.arrays.label import LabeledArray
+from analysis.grouping import GroupData
+from analysis.data import dataloader
 from analysis.decoding.utils import extract
 from ieeg.viz.ensemble import plot_dist
 from analysis.grouping import group_elecs
@@ -45,73 +47,115 @@ else:  # if not then set box directory
     LAB_root = os.path.join(HOME, "Box", "CoganLab")
     n = 1
 
+log_dir = os.path.join(os.path.dirname(LAB_root), 'logs', str(n))
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 layout = get_data('SentenceRep', root=LAB_root)
 
 conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
-folder = 'stats_freq_hilbert'
-filemask = os.path.join(layout.root, 'derivatives', folder, 'combined', 'mask')
-sigs = LabeledArray.fromfile(filemask)
-AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1], sigs.labels[0])
-idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans, 'delay': delay}
-filename = os.path.join(layout.root, 'derivatives', folder, 'combined', 'zscore')
-zscores = LabeledArray.fromfile(filename, mmap_mode='r')
-conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
+
+def load_spec(group, conds):
+    folder = 'stats_freq_hilbert'
+    filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
+                            'mask')
+    sigs = LabeledArray.fromfile(filemask)
+    AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1],
+                                                  sigs.labels[0])
+    idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans,
+            'delay': delay}
+    idx = sorted(idxs[group])
+    filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
+                            'zscore')
+    zscores = LabeledArray.fromfile(filename, mmap_mode='r')
+    neural_data_tensor, mask, labels = load_tensor(zscores, idx,
+                                                   conds, 4, 1)
+    return neural_data_tensor, mask, labels, idxs
+
+def load_hg(group, conds):
+    sub = GroupData.from_intermediates("SentenceRep", LAB_root, folder='stats')
+    idxs = {'SM': sub.SM, 'AUD': sub.AUD, 'PROD': sub.PROD, 'sig_chans': sub.sig_chans,
+            'delay': sub.delay}
+    idx = sorted(idxs[group])
+    neural_data_tensor, labels = dataloader(sub.array, idx, conds)
+    mask = ~torch.isnan(neural_data_tensor)
+
+    return neural_data_tensor, mask, labels, idxs
 
 # %% grid search
 pick_k = True
 if pick_k:
     if __name__ == '__main__':
         freeze_support()
-    param_grid = {'ranks': [{'min': [1, 0, 0], 'max': [10, 0, 0]},
-                            {'min': [1], 'max': [12]},],
+    param_grid = {'lr': [1e-2, 1e-3],
+                'ranks': [{'min': [1, 0], 'max': [10, 0]},
+                            {'min': [1], 'max': [10]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
-                  'masks': [
-                      {'train': False, 'test': False},
-                      # {'train': True, 'test': True},
-                            ],
-                  'loss': ['HuberLoss', 'L1Loss'],
-                  'lr': [1e-3, 1e-4],
-                  'decay': [0.1]
-                    }
+                  'loss': ['HuberLoss', 'L1Loss', 'MSELoss'],
+                  'decay': [0.1, 1],
+                  'batch': [True, False],
+                  'spec': [True, False]}
     procs = 1
     threads = 1
-    repeats = 20
-    conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
+    repeats = 12
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm']
     aud_slice = slice(0, 175)
 
-    for ranks, group, is_mask, loss, lr, decay in product(
-            param_grid['ranks'], param_grid['groups'], param_grid['masks'],
-            param_grid['loss'], param_grid['lr'], param_grid['decay']):
+    for lr, ranks, group, loss, decay, batched, spec in product(
+            param_grid['lr'], param_grid['ranks'], param_grid['groups'],
+            param_grid['loss'], param_grid['decay'],
+    param_grid['batch'], param_grid['spec']):
         if n > 1:
             n -= 1
             continue
         else:
-            print(ranks, group, is_mask, loss, lr, decay)
+            print(ranks, group, loss, lr, decay, batched, spec)
+
+        rank_min = ranks['min']
+        rank_max = ranks['max']
+        if spec:
+            neural_data_tensor, mask, labels, idxs = load_spec(group, conds)
+            trial_ax = 2
+            train_blocks_dimensions = (1, 10, 10)  # Note that the blocks will be of size 2*train_blocks_dimensions + 1
+            test_blocks_dimensions = (1, 5, 5)  # Same, 2*test_blocks_dimensions + 1
+            if len(ranks['min']) > 1:
+                rank_min = ranks['min'] + [0]
+                rank_max = ranks['max'] + [0]
+
+        else:
+            neural_data_tensor, mask, labels, idxs = load_hg(group, conds)
+            trial_ax = 1
+            train_blocks_dimensions = (1, 10)
+            test_blocks_dimensions = (1, 5)
+
         idx = sorted(idxs[group])
-        neural_data_tensor, mask, labels = load_tensor(zscores, idx,
-                                                       conds, 4)
-        # mask = mask.any(2)
-        # trial_av = neural_data_tensor.to(torch.float32).nanmean(2)
+
+        kwargs = {}
+        if batched:
+            kwargs['batch_dim'] = trial_ax
+            kwargs['shuffle_dim'] = 0
+            kwargs['precision'] = '16-mixed'
+            neural_data_tensor = neural_data_tensor.to(torch.float16)
+        else:
+            neural_data_tensor = neural_data_tensor.nanmean(trial_ax, dtype=torch.float32)
 
         ## set up the model
-        if is_mask['train'] and is_mask['test']:
+        if not batched:
             train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
-                                                        train_blocks_dimensions=(1, 10, 1, 10), # Note that the blocks will be of size 2*train_blocks_dimensions + 1
-                                                        test_blocks_dimensions=(1, 5, 1, 5), # Same, 2*test_blocks_dimensions + 1
+                                                        train_blocks_dimensions=train_blocks_dimensions, # Note that the blocks will be of size 2*train_blocks_dimensions + 1
+                                                        test_blocks_dimensions=test_blocks_dimensions, # Same, 2*test_blocks_dimensions + 1
                                                         fraction_test=0.2)
-            test_mask = torch.logical_and(test_mask, mask)
-            train_mask = torch.logical_and(train_mask, mask)
+            # test_mask = torch.logical_and(test_mask, mask)
+            # train_mask = torch.logical_and(train_mask, mask)
         else:
             train_mask = mask
             test_mask = None
-        neural_data_tensor = neural_data_tensor.to(torch.bfloat16)
 
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
-                                                    min_ranks = ranks['min'],
-                                                    max_ranks = ranks['max'],
+                                                    min_ranks = rank_min,
+                                                    max_ranks = rank_max,
                                                     sample_size=repeats,
                                                     mask_train=train_mask,
                                                     mask_test=test_mask,
@@ -119,27 +163,29 @@ if pick_k:
                                                     processes_sample=threads,
                                                     seed=3,
                                                     batch_prop=decay,
-                                                    batch_prop_decay=5 if decay < 1 else 1,
+                                                    batch_prop_decay=3 if decay < 1 else 1,
                                                     # min_std=1e-4,
                                                     # iter_std=10,
                                                     init_bias=0.01,
                                                     weight_decay=partial(
                                                         torch.optim.Adam,
-                                                        betas=(0.5, 0.5),
-                                                        amsgrad=True,
+                                                        # betas=(0.5, 0.5),
+                                                        # amsgrad=True,
                                                         eps=1e-10,
-                                                        weight_decay=0
+                                                        # weight_decay=0
                                                         ),
                                                     initialization='uniform-positive',
                                                     learning_rate=lr,
                                                     max_iter=1000000,
                                                     positive=True,
                                                     verbose=0,
-                                                    batch_dim=2,
                                                     loss_function=getattr(torch.nn, loss)(reduction='mean'),
                                                     compile=True,
-                                                    # log_dir=os.path.join(os.path.dirname(LAB_root), 'logs'),
-                                                    shuffle_dim=0)
+                                                    min_iter=1,
+                                                    # default_root_dir=log_dir,
+                                                    dtype=torch.float32,
+                                                    fast_dev_run=True,
+                                                    **kwargs)
 
         max_r = max(ranks['max'])
         min_r = min(ranks['min'])
@@ -152,8 +198,9 @@ if pick_k:
 
         import pickle
         file_id = group
+        file_id += "_batched" if batched else ""
+        file_id += "_spec" if spec else "_HG"
         file_id += f"_{len(ranks['min'])}ranks"
-        file_id += "_test" if is_mask['test'] else ""
         file_id += f"_{loss}"
         file_id += f"_{lr}"
         file_id += f"_{decay}"
@@ -165,6 +212,18 @@ if pick_k:
 # %% decompose
 decompose = True
 if decompose:
+    folder = 'stats_freq_hilbert'
+    filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
+                            'mask')
+    sigs = LabeledArray.fromfile(filemask)
+    AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1],
+                                                  sigs.labels[0])
+    idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans,
+            'delay': delay}
+    filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
+                            'zscore')
+    zscores = LabeledArray.fromfile(filename, mmap_mode='r')
+    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm']
     # idx_name = 'SM'
     # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
     #           f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
@@ -173,19 +232,21 @@ if decompose:
     # loss_grid = np.array(results['loss']).squeeze()
     # seed_grid = np.array(results['seed']).squeeze()
     # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 5
+    n_components = 4
     # best_seed = seed_grid[
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
     neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
+    # neural_data_jl, _, _ = load_tensor(zscores, SM, conds_jl, 4, 1)
     # trial_av = neural_data_tensor.nanmean(2, dtype=torch.float32)
     # trial_av.to('cuda')
     # idx_name = 'sig_chans'
-    neural_data_tensor = neural_data_tensor.to(torch.bfloat16)
+    # neural_data_tensor = neural_data_tensor.to(torch.bfloat16)
 
     n = 0
     # %%
+    # from tslearn.metrics import SoftDTWLossPyTorch
     losses, model = slicetca.decompose(
         # trial_av,
         neural_data_tensor,
@@ -195,23 +256,23 @@ if decompose:
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
-        learning_rate=1e-2,
+        learning_rate=5e-3,
         max_iter=1000,
         batch_dim=2,
         batch_prop=0.1,
-        batch_prop_decay=10,
+        batch_prop_decay=5,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
         #                      alpha=0.5,
         #                      centered=True,
         #                      weight_decay=1),
-        # weight_decay=partial(torch.optim.Rprop, etas=(0.5, 1.2), step_sizes=(1e-8, 1)),
+        # weight_decay=partial(torch.optim.Rprop),#, etas=(0.5, 1.2), step_sizes=(1e-8, 1)),
         weight_decay=partial(torch.optim.Adam,
-                                betas=(0.5, 0.5),
-                                amsgrad=True,
-                                eps=1e-10,
-                                weight_decay=0
+                                # betas=(0.5, 0.5),
+                                # amsgrad=True,
+                                eps=1e-9,
+                                # weight_decay=0
                              ),
         # weight_decay=partial(torch.optim.LBFGS, max_eval=200,
         #                      tolerance_grad=1e-6,
@@ -219,16 +280,22 @@ if decompose:
         mask=mask,
         init_bias=0.1,
         initialization='uniform-positive',
-        loss_function=torch.nn.L1Loss(
+        loss_function=torch.nn.MSELoss(
             reduction='mean'),
+        # loss_function=SoftDTWLossPyTorch(.1, True, torch.nn.HuberLoss(reduction='none')),
         verbose=0,
         compile=True,
         shuffle_dim=0,
         device='cuda',
         # default_root_dir=os.path.join(os.path.dirname(LAB_root), 'logs'),
-        gradient_clip_val=0.5,
+        gradient_clip_val=1,
         accumulate_grad_batches=3,
-        reload_dataloaders_every_n_epochs=1
+        # reload_dataloaders_every_n_epochs=1,
+        regularization='L2',
+        min_iter=10,
+        precision='16-mixed',
+        dtype=torch.float32,
+        testing=True,
     )
     # torch.save(model, f'model_{'SM'}_freq.pt')
 
@@ -323,7 +390,7 @@ if decompose:
             fig = plot_dist(
                 # H[i],
                 model.construct_single_component(n, i).to(torch.float32).detach().cpu().numpy()[
-                (W[i] / W.sum(0)) > 0.5][
+                (W[i] / W.sum(0)) > 0.3][
                     ..., timings[cond]].reshape(-1, 200),
                 ax=ax, color=colors[i], mode='sem', times=times,
                 label=f"Component {colors[i]}")
