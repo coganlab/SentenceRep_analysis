@@ -184,7 +184,7 @@ if pick_k:
                                                     min_iter=1,
                                                     # default_root_dir=log_dir,
                                                     dtype=torch.float32,
-                                                    fast_dev_run=True,
+                                                    # fast_dev_run=True,
                                                     **kwargs)
 
         max_r = max(ranks['max'])
