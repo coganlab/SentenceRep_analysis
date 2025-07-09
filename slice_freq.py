@@ -80,6 +80,7 @@ def load_hg(group, conds):
             'delay': sub.delay}
     idx = sorted(idxs[group])
     neural_data_tensor, labels = dataloader(sub.array, idx, conds)
+    neural_data_tensor = neural_data_tensor.swapaxes(0, 1).to(torch.float32)
     mask = ~torch.isnan(neural_data_tensor)
 
     return neural_data_tensor, mask, labels, idxs
