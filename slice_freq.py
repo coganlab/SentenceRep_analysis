@@ -183,6 +183,7 @@ if pick_k:
                                                     loss_function=getattr(torch.nn, loss)(reduction='mean'),
                                                     compile=True,
                                                     min_iter=1,
+                                                    gradient_clip_val=1,
                                                     # default_root_dir=log_dir,
                                                     dtype=torch.float32,
                                                     # fast_dev_run=True,
@@ -224,7 +225,7 @@ if decompose:
     filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
                             'zscore')
     zscores = LabeledArray.fromfile(filename, mmap_mode='r')
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm']
+    conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
     # idx_name = 'SM'
     # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
     #           f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
@@ -233,12 +234,13 @@ if decompose:
     # loss_grid = np.array(results['loss']).squeeze()
     # seed_grid = np.array(results['seed']).squeeze()
     # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
-    n_components = 4
+    n_components = 5
     # best_seed = seed_grid[
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
-    neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
+    neural_data_tensor, mask, labels, idxs = load_hg('SM', conds)
+    # neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
     # neural_data_jl, _, _ = load_tensor(zscores, SM, conds_jl, 4, 1)
     # trial_av = neural_data_tensor.nanmean(2, dtype=torch.float32)
     # trial_av.to('cuda')
@@ -247,21 +249,21 @@ if decompose:
 
     n = 0
     # %%
-    # from tslearn.metrics import SoftDTWLossPyTorch
+    from tslearn.metrics import SoftDTWLossPyTorch
     losses, model = slicetca.decompose(
         # trial_av,
         neural_data_tensor,
-        # n_components,
-        (n_components[0], 0, 0),
+        n_components,
+        # (n_components[0], 0, 0),
         seed=best_seed,
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
-        learning_rate=5e-3,
+        learning_rate=1e-3,
         max_iter=1000,
-        batch_dim=2,
-        batch_prop=0.1,
-        batch_prop_decay=5,
+        batch_dim=1,
+        # batch_prop=1,
+        # batch_prop_decay=3,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
@@ -281,9 +283,9 @@ if decompose:
         mask=mask,
         init_bias=0.1,
         initialization='uniform-positive',
-        loss_function=torch.nn.MSELoss(
-            reduction='mean'),
-        # loss_function=SoftDTWLossPyTorch(.1, True, torch.nn.HuberLoss(reduction='none')),
+        # loss_function=torch.nn.HuberLoss(
+        #     reduction='mean'),
+        loss_function=SoftDTWLossPyTorch(1, True, torch.nn.HuberLoss(reduction='none')),
         verbose=0,
         compile=True,
         shuffle_dim=0,
@@ -294,9 +296,9 @@ if decompose:
         # reload_dataloaders_every_n_epochs=1,
         regularization='L2',
         min_iter=10,
-        precision='16-mixed',
+        # precision='16-mixed',
         dtype=torch.float32,
-        testing=True,
+        testing=False,
     )
     # torch.save(model, f'model_{'SM'}_freq.pt')
 
@@ -330,11 +332,19 @@ if decompose:
             t_label = f"Time (s) from Go Cue (:=:)"
         axes = slicetca.plot(model,
                              components=comp,
-                             ignore_component=(),
-                             variables=('channel', 'freq', t_label),
-                             sorting_indices=(None, labels[1].astype(float).argsort()[::-1], None),
-                             ticks=(None, idx2[::-1], [0, 49, 99, 149, 199]),
-                             tick_labels=(labels[0][idx1], labels[1][idx2].astype(float).astype(int), [-0.5, 0, 0.5, 1, 1.5]),
+                             ignore_component=(0,),
+                             variables=('channel',
+                                        # 'freq',
+                                        t_label),
+                             sorting_indices=(None,
+                                              # labels[1].astype(float).argsort()[::-1],
+                                              None),
+                             ticks=(None,
+                                    # idx2[::-1],
+                                    [0, 49, 99, 149, 199]),
+                             tick_labels=(labels[0][idx1],
+                                          # labels[1][idx2].astype(float).astype(int),
+                                          [-0.5, 0, 0.5, 1, 1.5]),
                              cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
