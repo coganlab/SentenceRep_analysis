@@ -91,18 +91,18 @@ pick_k = True
 if pick_k:
     if __name__ == '__main__':
         freeze_support()
-    param_grid = {'lr': [1e-2, 1e-3],
-                'ranks': [{'min': [1, 0], 'max': [10, 0]},
-                            {'min': [1], 'max': [10]},],
+    param_grid = {'lr': [1e-4],
+                'ranks': [{'min': [1, 0], 'max': [10, 0]},],
+                            # {'min': [1], 'max': [10]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
-                  'loss': ['HuberLoss', 'L1Loss', 'MSELoss'],
-                  'decay': [0.1, 1],
-                  'batch': [True, False],
-                  'spec': [True, False]}
+                  'loss': ['HuberLoss'],
+                  'decay': [1],
+                  'batch': [False, True],
+                  'spec': [False]}
     procs = 1
     threads = 1
-    repeats = 12
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm']
+    repeats = 10
+    conds = ['aud_ls', 'go_ls']
     aud_slice = slice(0, 175)
 
     for lr, ranks, group, loss, decay, batched, spec in product(
@@ -112,7 +112,10 @@ if pick_k:
         if n > 1:
             n -= 1
             continue
+        elif n < 1:
+            break
         else:
+            n -= 1
             print(ranks, group, loss, lr, decay, batched, spec)
 
         rank_min = ranks['min']
@@ -134,7 +137,7 @@ if pick_k:
 
         idx = sorted(idxs[group])
 
-        kwargs = {}
+        kwargs = {'regularization': 'L2'}
         if batched:
             kwargs['batch_dim'] = trial_ax
             kwargs['shuffle_dim'] = 0
@@ -185,7 +188,7 @@ if pick_k:
                                                     compile=True,
                                                     min_iter=1,
                                                     gradient_clip_val=1,
-                                                    # default_root_dir=log_dir,
+                                                    default_root_dir=log_dir,
                                                     dtype=torch.float32,
                                                     # fast_dev_run=True,
                                                     **kwargs)
@@ -203,7 +206,7 @@ if pick_k:
         file_id = group
         file_id += "_batched" if batched else ""
         file_id += "_spec" if spec else "_HG"
-        file_id += f"_{len(ranks['min'])}ranks"
+        file_id += f"_{len(rank_min)}ranks"
         file_id += f"_{loss}"
         file_id += f"_{lr}"
         file_id += f"_{decay}"
@@ -213,7 +216,7 @@ if pick_k:
 
 
 # %% decompose
-decompose = True
+decompose = False
 if decompose:
     # folder = 'stats_freq_hilbert'
     # filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
@@ -240,8 +243,9 @@ if decompose:
     #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
     best_seed = None
     n_components = (n_components,)
-    neural_data_tensor, mask, labels, idxs = load_hg('SM', conds)
+    # neural_data_tensor, mask, labels, idxs = load_hg('SM', conds)
     # neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
+    neural_data_tensor, mask, labels, idxs = load_spec('SM', conds)
     # neural_data_jl, _, _ = load_tensor(zscores, SM, conds_jl, 4, 1)
     # trial_av = neural_data_tensor.nanmean(2, dtype=torch.float32)
     # trial_av.to('cuda')
@@ -253,29 +257,29 @@ if decompose:
     losses, model = slicetca.decompose(
         # trial_av,
         neural_data_tensor,
-        n_components,
-        # (n_components[0], 0, 0),
+        # n_components,
+        (n_components[0], 0, 0),
         seed=best_seed,
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
         learning_rate=5e-3,
         max_iter=1000,
-        batch_dim=1,
+        batch_dim=2,
         batch_prop=1,
         batch_prop_decay=3,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
-        #                      alpha=0.5,
+        #                      # alpha=0.5,
         #                      centered=True,
-        #                      weight_decay=1),
+        #                      weight_decay=1e-4),
         # weight_decay=partial(torch.optim.Rprop),#, etas=(0.5, 1.2), step_sizes=(1e-8, 1)),
         weight_decay=partial(torch.optim.Adam,
                                 # betas=(0.5, 0.5),
                                 # amsgrad=True,
-                                eps=1e-9,
-                                # weight_decay=0
+                                # eps=1e-9,
+                                # weight_decay=1e-6
                              ),
         # weight_decay=partial(torch.optim.LBFGS, max_eval=200,
         #                      tolerance_grad=1e-6,
@@ -285,7 +289,7 @@ if decompose:
         initialization='uniform-positive',
         # loss_function=torch.nn.HuberLoss(
         #     reduction='mean'),
-        loss_function=SoftDTWLossPyTorch(0.1, True),#, _euclidean_squared_dist),
+        loss_function=SoftDTWLossPyTorch(1, True),#, _euclidean_squared_dist),
         # loss_function=partial(soft_dtw_normalized, gamma=1.0, normalize=True),
         verbose=0,
         compile=True,
@@ -297,7 +301,7 @@ if decompose:
         # reload_dataloaders_every_n_epochs=1,
         regularization='L2',
         min_iter=10,
-        # precision='16-mixed',
+        precision='16-mixed',
         dtype=torch.float32,
         testing=False,
     )
@@ -388,7 +392,7 @@ if decompose:
     # %% plot the components
     W, H = model.get_components(numpy=True)[n]
     timings = {'aud_ls': range(0, 200),
-               'go_ls': range(600, 800)}
+               'go_ls': range(200, 400)}
     idx_name = 'SM'
     colors = colors[:n_components[n]]
     conds = {'aud_ls': (-0.5, 1.5),
