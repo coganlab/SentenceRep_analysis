@@ -15,6 +15,7 @@ import slicetca
 import matplotlib.pyplot as plt
 from multiprocessing import freeze_support
 from functools import partial
+from tslearn.metrics import SoftDTWLossPyTorch
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
@@ -214,18 +215,18 @@ if pick_k:
 # %% decompose
 decompose = True
 if decompose:
-    folder = 'stats_freq_hilbert'
-    filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
-                            'mask')
-    sigs = LabeledArray.fromfile(filemask)
-    AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1],
-                                                  sigs.labels[0])
-    idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans,
-            'delay': delay}
-    filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
-                            'zscore')
-    zscores = LabeledArray.fromfile(filename, mmap_mode='r')
-    conds = ['aud_ls', 'aud_lm', 'aud_jl', 'go_ls', 'go_lm', 'go_jl']
+    # folder = 'stats_freq_hilbert'
+    # filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
+    #                         'mask')
+    # sigs = LabeledArray.fromfile(filemask)
+    # AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1],
+    #                                               sigs.labels[0])
+    # idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans,
+    #         'delay': delay}
+    # filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
+    #                         'zscore')
+    # zscores = LabeledArray.fromfile(filename, mmap_mode='r')
+    conds = ['aud_ls', 'go_ls']
     # idx_name = 'SM'
     # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
     #           f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
@@ -249,7 +250,6 @@ if decompose:
 
     n = 0
     # %%
-    from tslearn.metrics import SoftDTWLossPyTorch
     losses, model = slicetca.decompose(
         # trial_av,
         neural_data_tensor,
@@ -259,11 +259,11 @@ if decompose:
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
-        learning_rate=1e-3,
+        learning_rate=5e-3,
         max_iter=1000,
         batch_dim=1,
-        # batch_prop=1,
-        # batch_prop_decay=3,
+        batch_prop=1,
+        batch_prop_decay=3,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
@@ -285,7 +285,8 @@ if decompose:
         initialization='uniform-positive',
         # loss_function=torch.nn.HuberLoss(
         #     reduction='mean'),
-        loss_function=SoftDTWLossPyTorch(1, True, torch.nn.HuberLoss(reduction='none')),
+        loss_function=SoftDTWLossPyTorch(0.1, True),#, _euclidean_squared_dist),
+        # loss_function=partial(soft_dtw_normalized, gamma=1.0, normalize=True),
         verbose=0,
         compile=True,
         shuffle_dim=0,
@@ -313,8 +314,8 @@ if decompose:
     idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
     idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
     timings = {'aud_ls': range(0, 200),
-               'go_ls': range(600, 800),
-               'go_lm': range(800, 1000)}
+               'go_ls': range(200, 400),}
+               # 'go_lm': range(800, 1000)}
     components = model.get_components(numpy=True)
     figs = {}
     for cond, timing in timings.items():
