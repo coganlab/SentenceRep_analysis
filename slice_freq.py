@@ -15,7 +15,9 @@ import slicetca
 import matplotlib.pyplot as plt
 from multiprocessing import freeze_support
 from functools import partial
-from tslearn.metrics import SoftDTWLossPyTorch
+from slicetca.run.dtw import SoftDTW
+
+SoftDTW.__module__ = "tslearn.metrics"
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
@@ -75,12 +77,12 @@ def load_spec(group, conds):
                                                    conds, 4, 1)
     return neural_data_tensor, mask, labels, idxs
 
-def load_hg(group, conds):
+def load_hg(group, conds, **kwargs):
     sub = GroupData.from_intermediates("SentenceRep", LAB_root, folder='stats')
     idxs = {'SM': sub.SM, 'AUD': sub.AUD, 'PROD': sub.PROD, 'sig_chans': sub.sig_chans,
             'delay': sub.delay}
     idx = sorted(idxs[group])
-    neural_data_tensor, labels = dataloader(sub.array, idx, conds)
+    neural_data_tensor, labels = dataloader(sub.array, idx, conds, **kwargs)
     neural_data_tensor = neural_data_tensor.swapaxes(0, 1).to(torch.float32)
     mask = ~torch.isnan(neural_data_tensor)
 
@@ -92,16 +94,17 @@ if pick_k:
     if __name__ == '__main__':
         freeze_support()
     param_grid = {'lr': [1e-4],
-                'ranks': [{'min': [1, 0], 'max': [10, 0]},],
-                            # {'min': [1], 'max': [10]},],
+                'ranks': [{'min': [1, 0], 'max': [10, 0]},
+                            {'min': [1], 'max': [10]},],
                   'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
-                  'loss': ['HuberLoss'],
-                  'decay': [1],
+                  'loss': ['HuberLoss', 'MSELoss', 'L1Loss',
+                           SoftDTW(True, 1000, True, 25)],
+                  'decay': [1, 0.1],
                   'batch': [False, True],
-                  'spec': [False]}
+                  'spec': [False, True]}
     procs = 1
     threads = 1
-    repeats = 10
+    repeats = 30
     conds = ['aud_ls', 'go_ls']
     aud_slice = slice(0, 175)
 
@@ -158,6 +161,11 @@ if pick_k:
             train_mask = mask
             test_mask = None
 
+        if isinstance(loss, str):
+            loss_fn = getattr(torch.nn, loss)(reduction='mean')
+        else:
+            loss_fn = loss
+
         loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
                                                     min_ranks = rank_min,
                                                     max_ranks = rank_max,
@@ -184,7 +192,7 @@ if pick_k:
                                                     max_iter=1000000,
                                                     positive=True,
                                                     verbose=0,
-                                                    loss_function=getattr(torch.nn, loss)(reduction='mean'),
+                                                    loss_function=loss_fn,
                                                     compile=True,
                                                     min_iter=1,
                                                     gradient_clip_val=1,
@@ -263,11 +271,11 @@ if decompose:
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
-        learning_rate=5e-3,
+        learning_rate=1e-4,
         max_iter=1000,
         batch_dim=2,
-        batch_prop=1,
-        batch_prop_decay=3,
+        # batch_prop=1,
+        # batch_prop_decay=3,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
@@ -278,7 +286,7 @@ if decompose:
         weight_decay=partial(torch.optim.Adam,
                                 # betas=(0.5, 0.5),
                                 # amsgrad=True,
-                                # eps=1e-9,
+                                eps=1e-9,
                                 # weight_decay=1e-6
                              ),
         # weight_decay=partial(torch.optim.LBFGS, max_eval=200,
@@ -289,7 +297,7 @@ if decompose:
         initialization='uniform-positive',
         # loss_function=torch.nn.HuberLoss(
         #     reduction='mean'),
-        loss_function=SoftDTWLossPyTorch(1, True),#, _euclidean_squared_dist),
+        loss_function=SoftDTW(True, 1000, True, 25),#, _euclidean_squared_dist),
         # loss_function=partial(soft_dtw_normalized, gamma=1.0, normalize=True),
         verbose=0,
         compile=True,
@@ -297,9 +305,9 @@ if decompose:
         device='cuda',
         # default_root_dir=os.path.join(os.path.dirname(LAB_root), 'logs'),
         gradient_clip_val=1,
-        accumulate_grad_batches=3,
+        accumulate_grad_batches=1,
         # reload_dataloaders_every_n_epochs=1,
-        regularization='L2',
+        # regularization='L2',
         min_iter=10,
         precision='16-mixed',
         dtype=torch.float32,
@@ -339,55 +347,57 @@ if decompose:
                              components=comp,
                              ignore_component=(0,),
                              variables=('channel',
-                                        # 'freq',
+                                        'freq',
                                         t_label),
                              sorting_indices=(None,
-                                              # labels[1].astype(float).argsort()[::-1],
+                                              labels[1].astype(float).argsort()[::-1],
                                               None),
                              ticks=(None,
-                                    # idx2[::-1],
+                                    idx2[::-1],
                                     [0, 49, 99, 149, 199]),
                              tick_labels=(labels[0][idx1],
-                                          # labels[1][idx2].astype(float).astype(int),
+                                          labels[1][idx2].astype(float).astype(int),
                                           [-0.5, 0, 0.5, 1, 1.5]),
                              cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
     # %% plot the sensory motors
-    timingss = [{'aud_ls': range(0, 200),
-               'go_ls': range(600, 800)},
-               {'aud_jl': range(400, 600),
-                'go_jl': range(1000, 1200)}]
-    fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
-    ylims = [0, 0]
-    lss = ['-', '--']
-    for i, timings in enumerate(timingss):
-        for j, (cond, time_slice) in enumerate(timings.items()):
-            ax = axs[j]
-            mat = np.nanmean(zscores[cond][:,sorted(SM)].__array__(), axis=(0,2,3))
-            plot_dist(mat,#(trial_av.mean(1)*2).detach().cpu().numpy()[..., time_slice],
-                            ax=ax, color='red', linestyle=lss[i], label=cond[-2:],
-                      times=(-0.5, 1.5))
-            if cond.startswith('go'):
-                event = "Go Cue"
-            elif cond.startswith('aud'):
-                event = "Stimulus"
-            if i == 0:
-                if j == 0:
-                    # ax.legend()
-                    ax.set_ylabel("Z-Score (V)")
-            elif i == 1:
-                if j == 0:
-                    ax.legend(loc='best')
+    plot_sm = False
+    if plot_sm:
+        timingss = [{'aud_ls': range(0, 200),
+                   'go_ls': range(600, 800)},
+                   {'aud_jl': range(400, 600),
+                    'go_jl': range(1000, 1200)}]
+        fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+        ylims = [0, 0]
+        lss = ['-', '--']
+        for i, timings in enumerate(timingss):
+            for j, (cond, time_slice) in enumerate(timings.items()):
+                ax = axs[j]
+                mat = np.nanmean(zscores[cond][:,sorted(SM)].__array__(), axis=(0,2,3))
+                plot_dist(mat,#(trial_av.mean(1)*2).detach().cpu().numpy()[..., time_slice],
+                                ax=ax, color='red', linestyle=lss[i], label=cond[-2:],
+                          times=(-0.5, 1.5))
+                if cond.startswith('go'):
+                    event = "Go Cue"
+                elif cond.startswith('aud'):
+                    event = "Stimulus"
+                if i == 0:
+                    if j == 0:
+                        # ax.legend()
+                        ax.set_ylabel("Z-Score (V)")
+                elif i == 1:
+                    if j == 0:
+                        ax.legend(loc='best')
 
-                ax.set_xlabel("Time(s) from " + event)
-            ylim = ax.get_ylim()
-            ylims[1] = max(ylim[1], ylims[1])
-            ylims[0] = min(ylim[0], ylims[0])
-    for ax in axs:
-        ax.set_ylim(ylims)
-        ax.axhline(0, color='k', linestyle='--')
-    fig.suptitle('Sensory Motor')
+                    ax.set_xlabel("Time(s) from " + event)
+                ylim = ax.get_ylim()
+                ylims[1] = max(ylim[1], ylims[1])
+                ylims[0] = min(ylim[0], ylims[0])
+        for ax in axs:
+            ax.set_ylim(ylims)
+            ax.axhline(0, color='k', linestyle='--')
+        fig.suptitle('Sensory Motor')
 
     # %% plot the components
     W, H = model.get_components(numpy=True)[n]
@@ -478,7 +488,7 @@ if decompose:
     fig.supylabel('Z-Score (V)')
 
     # %% plot the region membership
-    from ieeg.viz.mri import electrode_gradient, plot_on_average
+    from ieeg.viz.mri import electrode_gradient
 
     chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
              ch in labels[0]]

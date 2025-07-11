@@ -70,7 +70,7 @@ def dataloader(array, idx, conds, metric='zscore', do_mixup=False, no_nan=False)
     array = array[metric, conds][:,:,idx].dropna()
     ax = array.ndim - 2
     if no_nan:
-        nan_common_denom(array, True, ax,  10, 1, True)
+        array = nan_common_denom(array, True, ax,  10, 2, True)
     std = np.nanstd(array.__array__())
     if do_mixup:
         mixup(array[metric], ax)
