@@ -84,9 +84,24 @@ def load_hg(group, conds, **kwargs):
     idx = sorted(idxs[group])
     neural_data_tensor, labels = dataloader(sub.array, idx, conds, **kwargs)
     neural_data_tensor = neural_data_tensor.swapaxes(0, 1).to(torch.float32)
+    labels[0], labels[1] = labels[1], labels[0]
     mask = ~torch.isnan(neural_data_tensor)
 
     return neural_data_tensor, mask, labels, idxs
+
+def split_and_stack(tensor, split_dim, stack_pos, num_splits, new_dim: bool = True):
+    # Split tensor along split_dim
+    splits = torch.split(tensor, tensor.shape[split_dim] // num_splits, dim=split_dim)
+    # Stack splits into a new axis
+    stacked = torch.stack(splits, dim=0)
+    # Move new axis to stack_pos
+    permute_order = list(range(stacked.ndim))
+    permute_order.insert(stack_pos, permute_order.pop(0))
+    out = stacked.permute(permute_order)
+    if not new_dim:
+        # new_dim is false, combine the new axis with the next axis
+        out = out.reshape(*out.shape[:stack_pos], -1, *out.shape[stack_pos + 2:])
+    return out
 
 # %% grid search
 pick_k = True
