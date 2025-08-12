@@ -264,8 +264,8 @@ import numpy as np
 suffix = "zscore-epo.fif"
 conds = {'aud': (-0.5,1), 'go': (-0.5,1), 'resp': (-0.5,1)}
 
-zscores = load_dict(layout, conds, 'zscore', False, 'stgrerefgammastats')
-mask = load_dict(layout, conds, 'significance', True, 'stgrerefgammastats')
+zscores = load_dict(layout, conds, 'zscore', False, 'hipprerefthetastats')
+mask = load_dict(layout, conds, 'significance', True, 'hipprerefthetastats')
 zscores = combine(zscores, (0, 3)) # combine subj with channel
 zscoresArray, zscoresLabel = nested_dict_to_ndarray(zscores)
 zscoresLA = LabeledArray(zscoresArray, labels=zscoresLabel)
@@ -429,11 +429,11 @@ true_cat_vcv = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
                  'kab':2, 'kaeg':2, 'kub':2, 'kug':2,
                  'paek':2, 'paep':2, 'paev':2, 'puk':2, 'pup':2,
                  'vaeg':2, 'vaek':2, 'vip':2, 'vug':2, 'vuk':2}
-#decoder_cat = {'b':5, 'g':6, 'k':7, 'p':8}
+decoder_cat = {'b':5, 'g':6, 'k':7, 'p':8}
 #decoder_cat = {'a':1, 'ae':2, 'i':3, 'u':4, 'b':5, 'g':6, 'k':7, 'p':8, 'v':9}
-decoder_cat = {'vcv':1, 'cvc':2}
+#decoder_cat = {'vcv':1, 'cvc':2}
 iter_num = 50
-trial_num = 80
+trial_num = 12
 true_scores_dict = {}
 for i_cond, cond in enumerate(conds.keys()):
     scores_out = np.zeros((iter_num, zscoresLA.shape[-1] - window_len + 1, len(decoder_cat), len(decoder_cat)),
@@ -442,7 +442,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=10)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()} #{0: abae, 1: abi, 2: aeba, 3: aebi, 4: aebu, 5: aega}
-    new_labels = np.array([true_cat_vcv[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(sig_idx_union, axis=0)
     zscoresLA_cond_idx, _ = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_non_nan=trial_num)
     for i_iter in range(iter_num):
@@ -457,7 +457,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV within decoder
     true_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\true_scores_phonemeseq_2way_lingreref_gamma.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\true_scores_phonemeseq_4way_3rdconstant_stgreref_gamma.pkl', 'wb') as f:
     pickle.dump(true_scores_dict, f)
 
 #%% shuffle
@@ -469,7 +469,7 @@ for i_cond, cond in enumerate(conds.keys()):
     decoder = Decoder(decoder_cat, 0.8, 'lda', n_splits=5, n_repeats=10)
     cats, labels = classes_from_labels(zscoresLA.labels[2], crop=slice(0, 4)) #this get out repetitions of same stims
     flipped_cats = {v:k for k,v in cats.items()}
-    new_labels = np.array([true_cat_vcv[flipped_cats[l]] for l in labels]) #convert to true categories
+    new_labels = np.array([true_cat_3rd[flipped_cats[l]] for l in labels]) #convert to true categories
     zscoresLA_cond_idx = zscoresLA_cond.take(sig_idx_union, axis=0)
     zscoresLA_cond_idx, _ = remove_min_nan_ch(zscoresLA_cond_idx, new_labels, min_non_nan=trial_num)
     for i_iter in range(iter_num):
@@ -483,7 +483,7 @@ for i_cond, cond in enumerate(conds.keys()):
         scores_out[i_iter] = np.mean(scores_iter, axis=1) #this averages over CV i.e. shuffles in this case within decoder
     shuffle_scores_dict[cond] = scores_out
 
-with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_lingreref_gamma.pkl', 'wb') as f:
+with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_4way_3rdconstant_stgreref_gamma.pkl', 'wb') as f:
     pickle.dump(shuffle_scores_dict, f)
 
 #%% Approx bipolar referencing
@@ -537,25 +537,25 @@ with open(f'{analysisfolder}\\shuffle_scores_phonemeseq_2way_lingreref_gamma.pkl
 # plot_bipolar_comparison(zscoresLA_cond.__array__(), bipolar_data_aud, idx_hipp, sub_channel_list, num_to_plot=10)
 
 #%%
-# with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_9way_1stphoneme_bipolar.pkl'), 'rb') as f:
-#     true_scores_dict = pickle.load(f)
+with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_4way_3rdconstant_stgreref_gamma.pkl'), 'rb') as f:
+    true_scores_dict = pickle.load(f)
 
 mean_scores_dict = {key: np.mean(scores, axis=0) for key, scores in true_scores_dict.items()}
-mean_scores_dict = {key: np.mean(scores[40:90, :, :], axis=0) for key, scores in mean_scores_dict.items()}
+mean_scores_dict = {key: np.mean(scores[65:115, :, :], axis=0) for key, scores in mean_scores_dict.items()}
 def plot_confusion_matrices(scores_dict):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     conditions = ['aud', 'go', 'resp']
     titles = ['Audio', 'Go', 'Response']
 
     # Define labels for the axes
-    labels = ['VCV', 'CVC']
+    labels = ['b', 'g', 'k', 'p']
 
     for idx, (cond, title) in enumerate(zip(conditions, titles)):
         # Get mean over iterations and time points 40-90
         mean_cm = scores_dict[cond]
 
         # Plot confusion matrix
-        im = axes[idx].imshow(mean_cm, cmap='RdBu_r', vmin=0, vmax=1)
+        im = axes[idx].imshow(mean_cm, cmap='RdBu_r', vmin=0, vmax=0.8)
         axes[idx].set_title(title, fontsize=12)
 
         # Add labels
@@ -574,7 +574,7 @@ def plot_confusion_matrices(scores_dict):
                                       ha="center", va="center", color="black", fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_2way_stgreref_firsthalfsec_gamma.png'), dpi=300,
+    plt.savefig(os.path.join(analysisfolder, 'confusion_matrices_4way_3rdconstant_stgreref_halfsecshift250ms_gamma.png'), dpi=300,
                 bbox_inches='tight')
     plt.show()
 
@@ -629,3 +629,34 @@ plt.tight_layout()
 plt.savefig(os.path.join(analysisfolder, 'phonemeseq_2way_m1reref_gamma.png'), dpi=300,
                 bbox_inches='tight')
 plt.show()
+
+
+
+#%% single trial data plot
+d0064_LMMT5 = zscoresLA.take(76, axis=1)
+reshaped = d0064_LMMT5.reshape(3, 52, 4, 150).__array__()
+import matplotlib.cm as cm
+blues = cm.get_cmap('Blues_r', 4)
+colors = [blues(i) for i in range(4)]
+# Convert labels to clean titles
+# Get just the part before the dash for each label
+titles = np.array([lbl.split('-')[0] for lbl in d0064_LMMT5.labels[1].ravel()])  # shape (208,)
+titles_reshaped = titles.reshape(52, 4)  # Match new shape for labeling
+timepoints = np.linspace(-0.5,1,150)
+# Plot for each of the 3 first-level entries
+for i in range(3):
+    fig, axs = plt.subplots(13, 4, figsize=(16, 32))  # 13x4 = 52 panels
+    axs = axs.flatten()
+    for j in range(52):
+        ax = axs[j]
+        for r in range(4):
+            ax.plot(timepoints, reshaped[i, j, r, :], label=f'Rep {r + 1}', color=colors[r])
+        ax.set_title(titles_reshaped[j, 0], fontsize=8)
+        ax.set_xlim([-0.5, 1])
+        ax.set_xticks([-0.5, 0, 0.5, 1])
+        ax.set_yticks([0,1])
+        ax.tick_params(axis='x', labelsize=6)
+        ax.tick_params(axis='y', labelsize=6)
+    plt.tight_layout()
+    plt.suptitle(f'Epoch {i}', y=1.02, fontsize=16)
+    plt.show()

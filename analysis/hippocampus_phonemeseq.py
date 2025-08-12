@@ -505,11 +505,11 @@ blues = [to_hex(cm.Blues(0.6)), to_hex(cm.Blues(0.4)), to_hex(cm.Blues(0.25))]
 
 positions = ['1st', '2nd', '3rd']
 bar_width = 0.01
-y_base_position = 0.25
+y_base_position = 0.6
 height_spacing = 0.02
 timepoints = np.linspace(-0.4, 0.9, 131)
 xlim = (-0.4, 0.9)
-ylim = (0.05, 0.3)
+ylim = (0.1, 0.7)
 x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
 
 plt.rcParams.update({
@@ -537,12 +537,12 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
 
 fig, axes = plt.subplots(1, 3, figsize=(18, 4))
 for ax in fig.axes:
-    ax.axhline(0.111, color='k', linestyle='--')
+    ax.axhline(0.25, color='k', linestyle='--')
 # Iterate through each phoneme position
 for p_idx, position in enumerate(positions):
-    with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
+    with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_4way_{position}constant_stgreref_gamma.pkl'), 'rb') as f:
         true_scores_dict = pickle.load(f)
-    with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
+    with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_4way_{position}constant_stgreref_gamma.pkl'), 'rb') as f:
         shuffle_scores_dict = pickle.load(f)
 
     for cond_idx, cond in enumerate(true_scores_dict.keys()):
@@ -583,7 +583,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc='lower center', ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
 
 plt.tight_layout()
-plt.savefig("phonemeseq_9way_sequential_bipolar.png", format="png", dpi=300, bbox_inches='tight', transparent=False)
+plt.savefig("phonemeseq_4way_constant_sequential_stgreref_gamma.png", format="png", dpi=300, bbox_inches='tight', transparent=False)
 plt.show()
 
 
