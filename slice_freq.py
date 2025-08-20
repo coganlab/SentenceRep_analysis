@@ -1,3 +1,4 @@
+# %%
 import os
 from ieeg.io import get_data
 from ieeg.arrays.label import LabeledArray
@@ -6,16 +7,14 @@ from analysis.data import dataloader
 from analysis.decoding.utils import extract
 from ieeg.viz.ensemble import plot_dist
 from analysis.grouping import group_elecs
-from itertools import product
-from ieeg.viz.parula import parula_map
 import torch
 import numpy as np
 from functools import reduce
 import slicetca
 import matplotlib.pyplot as plt
-from multiprocessing import freeze_support
 from functools import partial
 from slicetca.run.dtw import SoftDTW
+import pickle
 
 SoftDTW.__module__ = "tslearn.metrics"
 
@@ -23,8 +22,18 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
 torch.set_float32_matmul_precision("medium")
 
-def load_tensor(array, idx, conds, trial_ax, min_nan=5):
+exclude = ["D0063-RAT1", "D0063-RAT2", "D0063-RAT3", "D0063-RAT4",
+           "D0053-LPIF10", "D0053-LPIF11", "D0053-LPIF12", "D0053-LPIF13",
+           "D0053-LPIF14", "D0053-LPIF15", "D0053-LPIF16",
+           "D0027-LPIF6", "D0027-LPIF7", "D0027-LPIF8", "D0027-LPIF9",
+           "D0027-LPIF10"]
+
+def load_tensor(array, idx, conds, trial_ax, min_nan=1):
     idx = sorted(idx)
+    if exclude:
+        idx_map = {k: v for k, v in enumerate(array.labels[2])}
+        idx = [i for i in idx if idx_map[i] not in exclude]
+
     X = extract(array, conds, trial_ax, idx, min_nan)
     std = float(np.nanstd(X.__array__(), dtype='f8'))
     std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
@@ -60,8 +69,8 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
                  "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
                  "go_jl": (-0.5, 1.5)}
 
-def load_spec(group, conds):
-    folder = 'stats_freq_hilbert'
+def load_spec(group, conds, folder='stats_freq_hilbert'):
+    # folder = 'stats_freq_super'
     filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
                             'mask')
     sigs = LabeledArray.fromfile(filemask)
@@ -103,194 +112,180 @@ def split_and_stack(tensor, split_dim, stack_pos, num_splits, new_dim: bool = Tr
         out = out.reshape(*out.shape[:stack_pos], -1, *out.shape[stack_pos + 2:])
     return out
 
-# %% grid search
-pick_k = True
-if pick_k:
-    if __name__ == '__main__':
-        freeze_support()
-    param_grid = {'lr': [1e-4],
-                'ranks': [{'min': [1, 0], 'max': [10, 0]},
-                            {'min': [1], 'max': [10]},],
-                  'groups': ['AUD', 'SM', 'PROD', 'sig_chans'],
-                  'loss': ['HuberLoss', 'MSELoss', 'L1Loss',
-                           SoftDTW(True, 1000, True, 25)],
-                  'decay': [1, 0.1],
-                  'batch': [False, True],
-                  'spec': [False, True]}
-    procs = 1
-    threads = 1
-    repeats = 30
-    conds = ['aud_ls', 'go_ls']
-    aud_slice = slice(0, 175)
+def to_plot(mode, W, H, neural_data, timings, i, cond, j = 0):
+    if mode == 'weights':
+        data = H[i, j, ..., timings[cond]]
+    elif mode == 'components':
+        data = model.construct_single_component(0, i).to(torch.float32).detach().cpu().numpy()[
+        (W[i] / W.sum(0)) > 0.5][
+            :, j, ..., timings[cond]
+        ].reshape(-1, 200)
+    else:
+        data = (neural_data[..., timings[cond]] * W[i, :, None, None, None])[(W[i] / W.sum(0)) > 0.5].nanmean(axis=(1,2)).detach().cpu().numpy()
+    return data
 
-    for lr, ranks, group, loss, decay, batched, spec in product(
-            param_grid['lr'], param_grid['ranks'], param_grid['groups'],
-            param_grid['loss'], param_grid['decay'],
-    param_grid['batch'], param_grid['spec']):
-        if n > 1:
-            n -= 1
+def plot_components(model, mode = 'weights', neural_data = None, plot_latencies = True):
+    assert mode in ('weights', 'components', 'weighted')
+    assert mode in ('weights', 'components') or neural_data is not None
+    colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
+              'darkorange', 'lime', 'blue', 'red', 'purple']
+    W, H = model.get_components(numpy=True)[0]
+    # W2 = (np.cov(
+    #     model.forward().detach().cpu().numpy().reshape(W.shape[1],
+    #                                                    -1)) @ W.T).T
+    # H2 = H @ np.cov(
+    #     model.forward().detach().cpu().numpy().reshape(-1, H.shape[-1]),
+    #     rowvar=False)
+    timings = {'aud_ls': slice(0, 200),
+               'go_ls': slice(200, 400)}
+    n_components = W.shape[0]
+    # idx_name = 'SM'
+    colors = colors[:n_components]
+    conds = {'aud_ls': (-0.5, 1.5),
+             'go_ls': (-0.5, 1.5)}
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+    ylims = [0, 0]
+    # make a plot for each condition in conds as a subgrid
+    for j, (cond, times) in enumerate(conds.items()):
+        ax = axs[j]
+        for i in range(n_components):
+            plot_dist(
+                to_plot(mode, W, H, neural_data, timings, i, cond),
+                # model.construct_single_component(0, i).to(torch.float32).detach().cpu().numpy()[
+                # (W[i] / W.sum(0)) > 0.5][
+                #     ..., 0, timings[cond]
+                # ].reshape(-1, len(timings[cond])),
+                # (all_con[:, 0, :, timings[cond]] * W[i, :, None,
+                #                                    None]).nanmean(axis=0).detach().cpu().numpy(),
+                ax=ax, color=colors[i], mode='sem', times=times,
+                label=f"Component {colors[i]}")
+
+        if cond.startswith('go'):
+            event = "Go Cue"
+        elif cond.startswith('aud'):
+            event = "Stimulus"
+        if j == 0:
+            # ax.legend()
+            ax.set_ylabel("Z-Score (V)")
+
+        ax.set_xlabel("Time(s) from " + event)
+        ylim = ax.get_ylim()
+        ylims[1] = max(ylim[1], ylims[1])
+        ylims[0] = min(ylim[0], ylims[0])
+        # ax.set_title(cond)
+    if not plot_latencies:
+        return fig, axs
+    for j, (cond, times) in enumerate(conds.items()):
+        ax = axs[j]
+        ax.set_ylim(ylims)
+        positions = np.linspace((ylims[0] + ylims[1])* 4 / 5, ylims[1], n_components)
+        width = (positions[1] - positions[0])
+        positions -= width / 2
+        for i in range(n_components):
+            # make a horizontal boxplot of the peak times
+            data = to_plot(mode, W, H, neural_data, timings, i, cond)
+            ttimes = np.linspace(times[0], times[1], data.shape[-1])
+            peak_times = ttimes[data.argmax(axis=-1)]
+            ax.boxplot(peak_times, vert=False, manage_ticks=False,
+                       positions=[positions[i]], # whis=[15, 85],
+                       widths=(positions[1] - positions[0])/2,
+                       patch_artist=True, boxprops=dict(facecolor=colors[i]),
+                       medianprops=dict(color='k', alpha=0.5), showfliers=False)
+    return fig, axs
+
+def plot_data(chn_label: str, labels, data_tensor):
+    chn = labels[0].find(chn_label)
+    freqs = np.array([float(l) for l in labels[1]])
+    data = np.nanmean(data_tensor[chn, np.where(np.logical_and(150 > freqs, freqs > 70)), :, :200].detach().cpu().numpy(), axis=(0, 1))
+    # data = neural_data_tensor[chn, :, :200].detach().cpu().numpy()
+    ax = plot_dist(data,
+                   mode='std', linewidth=4, times=(-0.5, 1.5))
+    plot_dist(data.T[None],
+              mode='std', ax=ax, linewidth=0.5, times=(-0.5, 1.5))
+    fig, axs = plt.subplots(5, 7)
+    j = 0
+    for i in range(data_tensor.shape[2]):
+        idx = i - j
+        ax = axs[idx // 7, idx % 7]
+        data = data_tensor[chn, :, i, :200].detach().cpu().numpy()
+        if np.isnan(data).any():
+            j += 1
             continue
-        elif n < 1:
-            break
-        else:
-            n -= 1
-            print(ranks, group, loss, lr, decay, batched, spec)
-
-        rank_min = ranks['min']
-        rank_max = ranks['max']
-        if spec:
-            neural_data_tensor, mask, labels, idxs = load_spec(group, conds)
-            trial_ax = 2
-            train_blocks_dimensions = (1, 10, 10)  # Note that the blocks will be of size 2*train_blocks_dimensions + 1
-            test_blocks_dimensions = (1, 5, 5)  # Same, 2*test_blocks_dimensions + 1
-            if len(ranks['min']) > 1:
-                rank_min = ranks['min'] + [0]
-                rank_max = ranks['max'] + [0]
-
-        else:
-            neural_data_tensor, mask, labels, idxs = load_hg(group, conds)
-            trial_ax = 1
-            train_blocks_dimensions = (1, 10)
-            test_blocks_dimensions = (1, 5)
-
-        idx = sorted(idxs[group])
-
-        kwargs = {'regularization': 'L2'}
-        if batched:
-            kwargs['batch_dim'] = trial_ax
-            kwargs['shuffle_dim'] = 0
-            kwargs['precision'] = '16-mixed'
-            neural_data_tensor = neural_data_tensor.to(torch.float16)
-        else:
-            neural_data_tensor = neural_data_tensor.nanmean(trial_ax, dtype=torch.float32)
-
-        ## set up the model
-        if not batched:
-            train_mask, test_mask = slicetca.block_mask(dimensions=neural_data_tensor.shape,
-                                                        train_blocks_dimensions=train_blocks_dimensions, # Note that the blocks will be of size 2*train_blocks_dimensions + 1
-                                                        test_blocks_dimensions=test_blocks_dimensions, # Same, 2*test_blocks_dimensions + 1
-                                                        fraction_test=0.2)
-            # test_mask = torch.logical_and(test_mask, mask)
-            # train_mask = torch.logical_and(train_mask, mask)
-        else:
-            train_mask = mask
-            test_mask = None
-
-        if isinstance(loss, str):
-            loss_fn = getattr(torch.nn, loss)(reduction='mean')
-        else:
-            loss_fn = loss
-
-        loss_grid, seed_grid = slicetca.grid_search(neural_data_tensor,
-                                                    min_ranks = rank_min,
-                                                    max_ranks = rank_max,
-                                                    sample_size=repeats,
-                                                    mask_train=train_mask,
-                                                    mask_test=test_mask,
-                                                    processes_grid=procs,
-                                                    processes_sample=threads,
-                                                    seed=3,
-                                                    batch_prop=decay,
-                                                    batch_prop_decay=3 if decay < 1 else 1,
-                                                    # min_std=1e-4,
-                                                    # iter_std=10,
-                                                    init_bias=0.01,
-                                                    weight_decay=partial(
-                                                        torch.optim.Adam,
-                                                        # betas=(0.5, 0.5),
-                                                        # amsgrad=True,
-                                                        eps=1e-10,
-                                                        # weight_decay=0
-                                                        ),
-                                                    initialization='uniform-positive',
-                                                    learning_rate=lr,
-                                                    max_iter=1000000,
-                                                    positive=True,
-                                                    verbose=0,
-                                                    loss_function=loss_fn,
-                                                    compile=True,
-                                                    min_iter=1,
-                                                    gradient_clip_val=1,
-                                                    default_root_dir=log_dir,
-                                                    dtype=torch.float32,
-                                                    # fast_dev_run=True,
-                                                    **kwargs)
-
-        max_r = max(ranks['max'])
-        min_r = min(ranks['min'])
-        x_data = np.repeat(np.arange(max_r), repeats)
-        y_data = loss_grid.flatten()
-        ax = plot_dist(np.atleast_2d(np.squeeze(loss_grid).T))
-        ax.scatter(x_data, y_data, c='k')
-        plt.xticks(np.arange(max_r), np.arange(max_r) + min_r)
-        plt.title(f"Loss for {group}")
-
-        import pickle
-        file_id = group
-        file_id += "_batched" if batched else ""
-        file_id += "_spec" if spec else "_HG"
-        file_id += f"_{len(rank_min)}ranks"
-        file_id += f"_{loss}"
-        file_id += f"_{lr}"
-        file_id += f"_{decay}"
-        plt.savefig(f"loss_dist_{file_id}.png")
-        with open(f"results_grid_{file_id}.pkl", 'wb') as f:
-            pickle.dump({'loss': loss_grid.tolist(), 'seed': seed_grid.tolist()}, f)
+        ax.imshow(data, aspect='auto', origin='lower',)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.axvline(50, color='k', linestyle='--')
+        plot_dist(data,
+                  mode='std', linewidth=4, times=(-0.5, 1.5), ax=ax)
+        plot_dist(data.T[None],
+                  mode='std', ax=ax, linewidth=0.5, times=(-0.5, 1.5))
 
 
 # %% decompose
-decompose = False
+decompose = True
 if decompose:
     # folder = 'stats_freq_hilbert'
     # filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
     #                         'mask')
     # sigs = LabeledArray.fromfile(filemask)
-    # AUD, SM, PROD, sig_chans, delay = group_elecs(sigs, sigs.labels[1],
-    #                                               sigs.labels[0])
     # idxs = {'SM': SM, 'AUD': AUD, 'PROD': PROD, 'sig_chans': sig_chans,
     #         'delay': delay}
     # filename = os.path.join(layout.root, 'derivatives', folder, 'combined',
     #                         'zscore')
     # zscores = LabeledArray.fromfile(filename, mmap_mode='r')
-    conds = ['aud_ls', 'go_ls']
-    # idx_name = 'SM'
-    # with open(r'C:\Users\ae166\Downloads\results2\results_grid_'
-    #           f'{idx_name}_3ranks_test_L1Loss_0.0001_1.pkl',
-    #           'rb') as f:
-    #     results = pickle.load(f)
-    # loss_grid = np.array(results['loss']).squeeze()
-    # seed_grid = np.array(results['seed']).squeeze()
+    conds = ['aud_ls', 'go_ls', 'aud_lm', 'go_lm', 'aud_jl', 'go_jl']
+    idx_name = 'PROD'
+    with open(r'C:\Users\ae166\Downloads\8-19-25\results_'
+              f'{idx_name}_unbatched_spec_4ranks_L1Loss_0.001_1.pkl',
+              'rb') as f:
+        results = pickle.load(f)
+    loss_grid = np.array(list(results.values()))
+    seed_grid = np.array(list(results.keys()))
     # n_components = (np.unravel_index(np.argmin(loss_grid), loss_grid.shape))[0] + 1
     n_components = 5
-    # best_seed = seed_grid[
-    #     n_components - 1, np.argmin(loss_grid[n_components - 1])]
-    best_seed = None
+    best_seed = seed_grid[np.argmin(loss_grid[seed_grid[:,0] == n_components]), -1]
+    # best_seed = None
     n_components = (n_components,)
-    # neural_data_tensor, mask, labels, idxs = load_hg('SM', conds)
+    # _, _, labels, idxs = load_hg('SM', conds)
+
     # neural_data_tensor, mask, labels = load_tensor(zscores, SM, conds, 4, 1)
-    neural_data_tensor, mask, labels, idxs = load_spec('SM', conds)
+    neural_data_tensor, mask, labels, idxs = load_spec(idx_name, conds, 'stats_freq_hilbert')
+    # plot_data('D0005-PST3', labels, neural_data_tensor)
     # neural_data_jl, _, _ = load_tensor(zscores, SM, conds_jl, 4, 1)
-    # trial_av = neural_data_tensor.nanmean(2, dtype=torch.float32)
-    # trial_av.to('cuda')
-    # idx_name = 'sig_chans'
+    # trial_av = neural_data_tensor.nanmean(1, dtype=torch.float32)
+    all_con = split_and_stack(neural_data_tensor, -1, 1, 3)
+    # all_con = torch.cat([all_con[..., :150], all_con[..., 200:]], dim=-1)
+    all_mask = split_and_stack(mask, -1, 1, 3)
+    # all_mask = torch.cat([all_mask[..., :150], all_mask[..., 200:]], dim=-1)
+    trial_av = torch.zeros(all_con.shape[:-2] + (all_con.shape[-1],), dtype=torch.float32)
+    for i in range(all_con.shape[0]):
+        trial_av[i] = all_con[i].nanmean(-2, dtype=torch.float32)
+    # trial_av = all_con.nanmean(-2, dtype=torch.float32)
+    # from tslearn.metrics import gamma_soft_dtw
+    # gammas = torch.tensor([
+    #     gamma_soft_dtw(torch.nanmean(all_con[i, 0], 1).detach().cpu().numpy(), 400)
+    #     for i in range(all_con.shape[0])
+    # ])
     # neural_data_tensor = neural_data_tensor.to(torch.bfloat16)
 
     n = 0
     # %%
+    # raise RuntimeError("Stop here")
     losses, model = slicetca.decompose(
-        # trial_av,
-        neural_data_tensor,
+        trial_av,
+        # neural_data_tensor,
+        # all_con,
         # n_components,
-        (n_components[0], 0, 0),
+        (n_components[0], 0, 0, 0),
         seed=best_seed,
         positive=True,
         # min_std=9e-3,
         # iter_std=20,
         learning_rate=1e-4,
-        max_iter=1000,
-        batch_dim=2,
-        # batch_prop=1,
-        # batch_prop_decay=3,
+        max_iter=100000,
+        # batch_dim=3,
+        # batch_prop=0.1,
+        # batch_prop_decay=5,
         # weight_decay=partial(torch.optim.RMSprop,
         #                      eps=1e-9,
         #                      momentum=0.9,
@@ -307,24 +302,25 @@ if decompose:
         # weight_decay=partial(torch.optim.LBFGS, max_eval=200,
         #                      tolerance_grad=1e-6,
         #                      line_search_fn='strong_wolfe'),
-        mask=mask,
+        # mask=mask,
+        # mask=all_mask,
         init_bias=0.1,
         initialization='uniform-positive',
-        # loss_function=torch.nn.HuberLoss(
-        #     reduction='mean'),
-        loss_function=SoftDTW(True, 1000, True, 25),#, _euclidean_squared_dist),
+        loss_function=torch.nn.L1Loss(reduction='mean'),#MovingAverageLoss(10),
+        # loss_function=SoftDTW(True, 100, True, 20,
+        #                       torch.nn.L1Loss(reduction='none')),#, _euclidean_squared_dist),
         # loss_function=partial(soft_dtw_normalized, gamma=1.0, normalize=True),
         verbose=0,
         compile=True,
-        shuffle_dim=0,
+        # shuffle_dim=(0, 1),
         device='cuda',
         # default_root_dir=os.path.join(os.path.dirname(LAB_root), 'logs'),
         gradient_clip_val=1,
-        accumulate_grad_batches=1,
+        # accumulate_grad_batches=3,
         # reload_dataloaders_every_n_epochs=1,
         # regularization='L2',
-        min_iter=10,
-        precision='16-mixed',
+        min_iter=5,
+        # precision='16-mixed',
         dtype=torch.float32,
         testing=False,
     )
@@ -332,138 +328,118 @@ if decompose:
 
     # plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
+    plt.plot(np.arange(10000, len(model.losses)), model.losses[10000:], 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
     plt.tight_layout()
-    # %% plot the model
-    idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
-    idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
-    timings = {'aud_ls': range(0, 200),
-               'go_ls': range(200, 400),}
-               # 'go_lm': range(800, 1000)}
-    components = model.get_components(numpy=True)
-    figs = {}
-    for cond, timing in timings.items():
-        comp = model.get_components(numpy=True)
-        # comp[n] = [comp[n][1][..., timing]]
-        comp[n][1] = comp[n][1][..., timing]
-        # comp[n][0] = np.array([])
-        if cond.startswith('aud_l'):
-            t_label = f"Time (s) from Stimulus"
-        elif cond.startswith('go_lm'):
-            t_label = f"Time (s) from Go Cue (Mime)"
-        elif cond.startswith('go_ls'):
-            t_label = f"Time (s) from Go Cue (Speak)"
-        elif cond.startswith('go_jl'):
-            t_label = f"Time (s) from Go Cue (:=:)"
-        axes = slicetca.plot(model,
-                             components=comp,
-                             ignore_component=(0,),
-                             variables=('channel',
-                                        'freq',
-                                        t_label),
-                             sorting_indices=(None,
-                                              labels[1].astype(float).argsort()[::-1],
-                                              None),
-                             ticks=(None,
-                                    idx2[::-1],
-                                    [0, 49, 99, 149, 199]),
-                             tick_labels=(labels[0][idx1],
-                                          labels[1][idx2].astype(float).astype(int),
-                                          [-0.5, 0, 0.5, 1, 1.5]),
-                             cmap=parula_map)
+    # # %% plot the model
+    # idx1 = np.linspace(0, labels[0].shape[0], 8).astype(int)[1:-1]
+    # idx2 = np.linspace(0, labels[1].shape[0], 6).astype(int)[1:-1]
+    # timings = {'aud_ls': range(0, 200),
+    #            'go_ls': range(200, 400),}
+    #            # 'go_lm': range(800, 1000)}
+    # components = model.get_components(numpy=True)
+    # figs = {}
+    # for cond, timing in timings.items():
+    #     comp = model.get_components(numpy=True)
+    #     comp[n] = [comp[n][1][..., timing]]
+    #     # comp[n][1] = comp[n][2][..., timing]
+    #     # comp[n][0] = np.array([])
+    #     if cond.startswith('aud_l'):
+    #         t_label = f"Time (s) from Stimulus"
+    #     elif cond.startswith('go_lm'):
+    #         t_label = f"Time (s) from Go Cue (Mime)"
+    #     elif cond.startswith('go_ls'):
+    #         t_label = f"Time (s) from Go Cue (Speak)"
+    #     elif cond.startswith('go_jl'):
+    #         t_label = f"Time (s) from Go Cue (:=:)"
+    #     axes = slicetca.plot(model,
+    #                          components=comp,
+    #                          ignore_component=(0,),
+    #                          variables=('channel',
+    #                                     'freq',
+    #                                     t_label),
+    #                          sorting_indices=(None,
+    #                                           None,
+    #                                           # labels[1].astype(float).argsort()[::-1],
+    #                                           None),
+    #                          ticks=(None,
+    #                                 None,
+    #                                 # idx2[::-1],
+    #                                 [0, 49, 99, 149, 199]),
+    #                          tick_labels=(labels[0][idx1],
+    #                                       None,
+    #                                       # labels[1][idx2].astype(float).astype(int),
+    #                                       [-0.5, 0, 0.5, 1, 1.5]),
+    #                          cmap=parula_map)
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple']
-    # %% plot the sensory motors
-    plot_sm = False
-    if plot_sm:
-        timingss = [{'aud_ls': range(0, 200),
-                   'go_ls': range(600, 800)},
-                   {'aud_jl': range(400, 600),
-                    'go_jl': range(1000, 1200)}]
-        fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
-        ylims = [0, 0]
-        lss = ['-', '--']
-        for i, timings in enumerate(timingss):
-            for j, (cond, time_slice) in enumerate(timings.items()):
-                ax = axs[j]
-                mat = np.nanmean(zscores[cond][:,sorted(SM)].__array__(), axis=(0,2,3))
-                plot_dist(mat,#(trial_av.mean(1)*2).detach().cpu().numpy()[..., time_slice],
-                                ax=ax, color='red', linestyle=lss[i], label=cond[-2:],
-                          times=(-0.5, 1.5))
-                if cond.startswith('go'):
-                    event = "Go Cue"
-                elif cond.startswith('aud'):
-                    event = "Stimulus"
-                if i == 0:
-                    if j == 0:
-                        # ax.legend()
-                        ax.set_ylabel("Z-Score (V)")
-                elif i == 1:
-                    if j == 0:
-                        ax.legend(loc='best')
-
-                    ax.set_xlabel("Time(s) from " + event)
-                ylim = ax.get_ylim()
-                ylims[1] = max(ylim[1], ylims[1])
-                ylims[0] = min(ylim[0], ylims[0])
-        for ax in axs:
-            ax.set_ylim(ylims)
-            ax.axhline(0, color='k', linestyle='--')
-        fig.suptitle('Sensory Motor')
+    # # %% plot the sensory motors
+    # plot_sm = False
+    # if plot_sm:
+    #     timingss = [{'aud_ls': range(0, 200),
+    #                'go_ls': range(600, 800)},
+    #                {'aud_jl': range(400, 600),
+    #                 'go_jl': range(1000, 1200)}]
+    #     fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+    #     ylims = [0, 0]
+    #     lss = ['-', '--']
+    #     for i, timings in enumerate(timingss):
+    #         for j, (cond, time_slice) in enumerate(timings.items()):
+    #             ax = axs[j]
+    #             mat = np.nanmean(zscores[cond][:,sorted(SM)].__array__(), axis=(0,2,3))
+    #             plot_dist(mat,#(trial_av.mean(1)*2).detach().cpu().numpy()[..., time_slice],
+    #                             ax=ax, color='red', linestyle=lss[i], label=cond[-2:],
+    #                       times=(-0.5, 1.5))
+    #             if cond.startswith('go'):
+    #                 event = "Go Cue"
+    #             elif cond.startswith('aud'):
+    #                 event = "Stimulus"
+    #             if i == 0:
+    #                 if j == 0:
+    #                     # ax.legend()
+    #                     ax.set_ylabel("Z-Score (V)")
+    #             elif i == 1:
+    #                 if j == 0:
+    #                     ax.legend(loc='best')
+    #
+    #                 ax.set_xlabel("Time(s) from " + event)
+    #             ylim = ax.get_ylim()
+    #             ylims[1] = max(ylim[1], ylims[1])
+    #             ylims[0] = min(ylim[0], ylims[0])
+    #     for ax in axs:
+    #         ax.set_ylim(ylims)
+    #         ax.axhline(0, color='k', linestyle='--')
+    #     fig.suptitle(idx_name)
 
     # %% plot the components
-    W, H = model.get_components(numpy=True)[n]
-    timings = {'aud_ls': range(0, 200),
-               'go_ls': range(200, 400)}
-    idx_name = 'SM'
-    colors = colors[:n_components[n]]
-    conds = {'aud_ls': (-0.5, 1.5),
-             'go_ls': (-0.5, 1.5)}
-    fig, axs = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
-    ylims = [0, 0]
-    # make a plot for each condition in conds as a subgrid
-    for j, (cond, times) in enumerate(conds.items()):
-        ax = axs[j]
-        for i in range(n_components[n]):
-            fig = plot_dist(
-                # H[i],
-                model.construct_single_component(n, i).to(torch.float32).detach().cpu().numpy()[
-                (W[i] / W.sum(0)) > 0.3][
-                    ..., timings[cond]].reshape(-1, 200),
-                ax=ax, color=colors[i], mode='sem', times=times,
-                label=f"Component {colors[i]}")
-
-
-        if cond.startswith('go'):
-            event = "Go Cue"
-        elif cond.startswith('aud'):
-            event = "Stimulus"
-        if j == 0:
-            # ax.legend()
-            ax.set_ylabel("Z-Score (V)")
-
-        ax.set_xlabel("Time(s) from " + event)
-        ylim = ax.get_ylim()
-        ylims[1] = max(ylim[1], ylims[1])
-        ylims[0] = min(ylim[0], ylims[0])
-        # ax.set_title(cond)
-    for ax in axs:
-        ax.set_ylim(ylims)
+    mode = 'weighted'
+    plot_components(model, 'components', all_con[:, 0], True)
     plt.suptitle(f"Components")
 
     # %% plot the components
-    W, H = model.get_components(numpy=True)[n]
-    timingss = [{'aud-Listen-Speak': range(0, 200),
-               'go-Listen-Speak': range(600, 800)},
-               {'aud_jl': range(400, 600),
-                'go-Just-Listen': range(1000, 1200)}]
-    idx_name = 'SM'
-    colors = colors[:n_components[n]]
-    # conds = {'aud_ls': (-0.5, 1.5),
-    #          'go_ls': (-0.5, 1.5)}
+    W, H = model.get_components(numpy=True)[0]
+    # W2 = (np.cov(
+    #     model.forward().detach().cpu().numpy().reshape(W.shape[1],
+    #                                                    -1)) @ W.T).T
+    # H2 = H @ np.cov(
+    #     model.forward().detach().cpu().numpy().reshape(-1, H.shape[-1]),
+    #     rowvar=False)
+    timingss = [{'aud_ls': slice(0, 200),
+               'go_ls': slice(200, 400)},
+                {'aud_lm': slice(0, 200),
+                 'go_lm': slice(200, 400)},
+                {'aud_jl': slice(0, 200),
+                 'go_jl': slice(200, 400)}
+                ]
+    colors = colors[:n_components[0]]
+    conds = {'aud_ls': (-0.5, 1.5),
+             'go_ls': (-0.5, 1.5),
+                'aud_lm': (-0.5, 1.5),
+                'go_lm': (-0.5, 1.5),
+             'aud_jl': (-0.5, 1.5),
+             'go_jl': (-0.5, 1.5)}
     fig, axs = plt.subplots(n_components[n], 2, dpi=100)
     ylims = [[], []]
     # make a plot for each condition in conds as a subgrid
@@ -473,19 +449,18 @@ if decompose:
                 ax = axs[k, j]
                 if i == 0:
                     ls = '-'
-                else:
+                elif i == 1:
                     ls = '--'
+                else:
+                    ls = ':'
                 plot_dist(
-                    # H[k],
-                    model.construct_single_component(n, k).detach().cpu().numpy()[
-                    (W[k] / W.sum(0)) > 0.5][
-                        ..., times].reshape(-1, 200),
+                    to_plot(mode, W, H, all_con[:, i], timings, k, cond, i),
                     ax=ax, color=colors[k], mode='sem', times=(-0.5, 1.5),
                     linestyle=ls, label=cond[3:])
                 ylim = ax.get_ylim()
                 ylims[1].append(ylim[1])
                 ylims[0].append(ylim[0])
-                if j == 1 and i == 1:
+                if j == 1 and i == 2:
                     ax.legend()
 
             if cond.startswith('go'):
@@ -503,12 +478,15 @@ if decompose:
     fig.supylabel('Z-Score (V)')
 
     # %% plot the region membership
-    from ieeg.viz.mri import electrode_gradient
-
+    from ieeg.viz.mri import electrode_gradient, plot_on_average
+    W, H = model.get_components(numpy=True)[0]
+    W2 = (np.cov(
+        model.forward().detach().cpu().numpy().reshape(W.shape[1],
+                                                       -1)) @ W.T).T
     chans = ['-'.join([f"D{int(ch.split('-')[0][1:])}", ch.split('-')[1]]) for
              ch in labels[0]]
     subj = sorted(set(ch.split('-')[0] for ch in chans))
-    electrode_gradient(layout.get_subjects(), W*2, chans, colors, mode='both', fig_dims=(W.shape[0],1))
+    electrode_gradient(layout.get_subjects(), W * 2, chans, colors, mode='both', fig_dims=(W.shape[0],1))
 
     # %%
     from ieeg.viz.mri import gen_labels, subject_to_info, Atlas
@@ -525,7 +503,12 @@ if decompose:
     fig, axs = plt.subplots(n_components[0], 1)
     split = (l.split('-') for l in labels[0])
     lzfilled = (f"D{s[1:].zfill(4)}-{ch}" for s, ch in split)
-    sm_idx = [zscores.labels[2].tolist().index(l) for l in lzfilled]
+    sm_idx = [labels[0].tolist().index(l) for l in lzfilled]
+    plot_on_average(layout.get_subjects(),
+                    picks=[f"D{int(xi[1:5])}{xi[5:]}" for xi in
+                           labels[0][torch.tensor(sm_idx)[
+                               (W[1] / W.sum(0)) > 0.45]]], hemi='both',
+                    size=W[0, (W[1] / W.sum(0)) > 0.45], label_every=1)
     idxs = [torch.tensor(sm_idx)[
                 (W[i] / W.sum(0)) > 0.4
                 # W.argmax(0) == i
@@ -533,7 +516,7 @@ if decompose:
     ylims = [0, 0]
     all_groups = []
     for idx in idxs:
-        sm_elecs = zscores.labels[2][idx]
+        sm_elecs = labels[0][idx]
         groups = {r: [] for r in rois}
         for subj in layout.get_subjects():
             subj_old = f"D{int(subj[1:])}"
@@ -579,10 +562,19 @@ if decompose:
     for ax in axs:
         ax.set_ylim(ylims)
 
-    # %% plot each component
+    # %% plot each component trials
+    W, H = model.get_components(numpy=True)[0]
+    colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
+              'darkorange', 'lime', 'blue', 'red', 'purple'
+                ]
+    colors = colors[:W.shape[0]]
+    timings = {'aud_ls': range(0, 200),
+                'go_ls': range(200, 400)}
+    conds = {'aud_ls': (-0.5, 1.5),
+             'go_ls': (-0.5, 1.5)}
     n_comp = W.shape[0]
     fig, axs = plt.subplots(2*len(timings), n_comp)
-    data = neural_data_tensor.mean((1, 2)).detach().cpu().numpy()
+    data = neural_data_tensor.nanmean((1, 2)).detach().cpu().numpy()
     for j, (cond, times) in enumerate(timings.items()):
         j *= 2
         ylims = [0, 0]
@@ -598,7 +590,7 @@ if decompose:
             ylims[1] = max(ax.get_ylim()[1], ylims[1])
             ylims[0] = min(ax.get_ylim()[0], ylims[0])
 
-            scale = np.mean(sorted_trimmed) + 2 * np.std(sorted_trimmed)
+            scale = np.mean(sorted_trimmed) + 1.5 * np.std(sorted_trimmed)
             axs[1 + j, i].imshow(sorted_trimmed, aspect='auto', cmap='inferno',
                                  vmin=0, vmax=scale,
                                  extent=[conds[cond][0], conds[cond][-1], 0,
