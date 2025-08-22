@@ -4,84 +4,151 @@
 import numpy as np
 import os
 
-from analysis.grouping import GroupData
+from analysis.grouping import group_elecs
 from analysis.data import dataloader
-from ieeg.calc.stats import time_perm_cluster
-from analysis.decoding import (Decoder, get_scores, plot_all_scores, classes_from_labels)
+from ieeg.decoding.decode import (Decoder, plot_all_scores)
+from ieeg.decoding.models import PcaLdaClassification
+from ieeg.calc.stats import time_perm_cluster, dist
+from ieeg.viz.ensemble import plot_dist_bound
+from analysis.utils.plotting import plot_horizontal_bars
+from analysis.decoding.utils import get_scores
 import torch
 import matplotlib.pyplot as plt
-import slicetca
 from ieeg.viz.ensemble import plot_dist
-from ieeg.calc.mat import LabeledArray, lcs
+from ieeg.arrays.label import LabeledArray, lcs
+import slicetca
+from functools import partial
+from ieeg.io import get_data
+from analysis.load import load_data, load_spec
 
 
-def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
-    # Get the keys and shapes
-    keys = list(dict_matrices.keys())
-    shape = dict_matrices[keys[0]].shape
+def weighted_preserve_stats(data, weights, axis=2):
+    """
+    Multiplies data along the specified axis by weights, then rescales
+    to preserve the original mean and variance.
 
-    # Create a data type for the structured array
-    dt = np.dtype([(key, dict_matrices[key].dtype, shape) for key in keys])
+    Parameters:
+        data (np.ndarray): The input data array.
+        weights (np.ndarray): The weight vector.
+        axis (int): The axis along which to multiply.
 
-    # Create the structured array
-    structured_array = np.zeros((1,), dtype=dt)
+    Returns:
+        np.ndarray: The weighted and rescaled data.
+    """
+    where = ~np.isnan(data)
+    kwargs = {'where': where, 'dtype': 'f4'}
+    orig_mean = np.mean(data, **kwargs)
+    orig_std = np.std(data, **kwargs)
 
-    # Fill the structured array
-    for key in keys:
-        structured_array[key] = dict_matrices[key]
+    # Multiply along the specified axis
+    data *= weights.reshape([1 if i != axis else -1 for i in range(data.ndim)])
 
-    # Save the structured array to a file
-    np.save(filename, structured_array)
-
-
-def score1(categories, test_size, method, n_splits, n_repeats, sub, idxs, names,
-          conds, window_kwargs, scores_dict, shuffle=False):
-    decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-    while len(scores_dict) > 0:
-        scores_dict.popitem()
-    for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
-        print(key)
-        scores_dict[key] = values
-    return scores_dict
-
-
-def score2(categories, test_size, method, n_splits, n_repeats, sub, idxs,
-          conds, window_kwargs, scores_dict, shuffle=False):
-    decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-    names = list(scores_dict.keys())
-    while len(scores_dict) > 0:
-        scores_dict.popitem()
-    for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
-        print(key)
-        scores_dict[key] = values
-    return scores_dict
+    # Rescale to preserve mean and variance
+    weighted_mean = np.mean(data, **kwargs)
+    weighted_std = np.std(data, **kwargs)
+    data -= weighted_mean
+    data *= orig_std / weighted_std
+    data += orig_mean
 
 
-def flatten_nested_dict(nested_dict, parent_key='', sep='-'):
-    items = []
-    for k, v in nested_dict.items():
-        new_key = parent_key + sep + k if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_nested_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+
+# def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
+#     # Get the keys and shapes
+#     keys = list(dict_matrices.keys())
+#     shape = dict_matrices[keys[0]].shape
+#
+#     # Create a data type for the structured array
+#     dt = np.dtype([(key, dict_matrices[key].dtype, shape) for key in keys])
+#
+#     # Create the structured array
+#     structured_array = np.zeros((1,), dtype=dt)
+#
+#     # Fill the structured array
+#     for key in keys:
+#         structured_array[key] = dict_matrices[key]
+#
+#     # Save the structured array to a file
+#     np.save(filename, structured_array)
+#
+#
+# def score1(categories, test_size, method, n_splits, n_repeats, sub, idxs, names,
+#           conds, window_kwargs, scores_dict, shuffle=False):
+#     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
+#     while len(scores_dict) > 0:
+#         scores_dict.popitem()
+#     for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
+#         print(key)
+#         scores_dict[key] = values
+#     return scores_dict
+#
+#
+# def score2(categories, test_size, method, n_splits, n_repeats, sub, idxs,
+#           conds, window_kwargs, scores_dict, shuffle=False):
+#     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
+#     names = list(scores_dict.keys())
+#     while len(scores_dict) > 0:
+#         scores_dict.popitem()
+#     for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
+#         print(key)
+#         scores_dict[key] = values
+#     return scores_dict
+#
+#
+# def flatten_nested_dict(nested_dict, parent_key='', sep='-'):
+#     items = []
+#     for k, v in nested_dict.items():
+#         new_key = parent_key + sep + k if parent_key else k
+#         if isinstance(v, dict):
+#             items.extend(flatten_nested_dict(v, new_key, sep=sep).items())
+#         else:
+#             items.append((new_key, v))
+#     return dict(items)
 
 
 if __name__ == '__main__':
 
-    fpath = os.path.expanduser("~/Box/CoganLab")
-    sub = GroupData.from_intermediates("SentenceRep", fpath, folder='stats')
-    idx = sorted(list(sub.SM))
-    aud_slice = slice(0, 175)
-    colors = ['orange', 'y', 'k', 'c', 'm']
-    colors_new = ['m', 'c', 'k', 'orange', 'y']
-    conds = ['aud_ls', 'aud_lm', 'go_ls', 'go_lm', 'resp']
-    scores = {c: None for c in colors}
-    neural_data_tensor, labels = dataloader(sub, idx, conds)
-    data = LabeledArray(neural_data_tensor.numpy(), labels)
-    # mask = ~torch.isnan(neural_data_tensor)
-    # neural_data_tensor[torch.isnan(neural_data_tensor)] = 0
+
+    exclude = ["D0063-RAT1", "D0063-RAT2", "D0063-RAT3", "D0063-RAT4",
+               "D0053-LPIF10", "D0053-LPIF11", "D0053-LPIF12", "D0053-LPIF13",
+               "D0053-LPIF14", "D0053-LPIF15", "D0053-LPIF16",
+               "D0027-LPIF6", "D0027-LPIF7", "D0027-LPIF8", "D0027-LPIF9",
+               "D0027-LPIF10"]
+
+    HOME = os.path.expanduser("~")
+    if 'SLURM_ARRAY_TASK_ID' in os.environ.keys():
+        LAB_root = os.path.join(HOME, "workspace", "CoganLab")
+        n = int(os.environ['SLURM_ARRAY_TASK_ID'])
+        print(n)
+    else:  # if not then set box directory
+        LAB_root = os.path.join(HOME, "Box", "CoganLab")
+        n = 1
+
+    log_dir = os.path.join(os.path.dirname(LAB_root), 'logs', str(n))
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    layout = get_data('SentenceRep', root=LAB_root)
+
+    conds_all = {"aud_ls": (-0.5, 1.5),
+                     "aud_lm": (-0.5, 1.5),
+                        "aud_jl": (-0.5, 1.5),
+                     "go_ls": (-0.5, 1.5),
+                 "go_lm": (-0.5, 1.5),
+                    "go_jl": (-0.5, 1.5),
+                 }
+
+    group = 'sig_chans'
+    folder = 'stats_freq_hilbert'
+
+    sigs = load_data(layout, folder, "mask")
+    AUD, SM, PROD, sig_chans, delay = group_elecs(sigs,
+                                                  [s for s in
+                                                   sigs.labels[1]
+                                                   if s not in exclude],
+                                                  sigs.labels[0])
+    # idxs = {'SM': sorted(SM), 'AUD': sorted(AUD), 'PROD': sorted(PROD),
+    #         'sig_chans': sorted(sig_chans), 'delay': sorted(delay)}
+    # idx = idxs[group]
+    zscores = load_data(layout, folder, "zscore")
 
     n_components = (5,)
     best_seed = 123457
@@ -91,150 +158,137 @@ if __name__ == '__main__':
     # #
     # %% decompose the optimal model
 
-    # losses, model = slicetca.decompose(neural_data_tensor,
-    #                                    n_components,
-    #                                    # (0, n_components[0], 0),
-    #                                    seed=best_seed,
-    #                                    positive=True,
-    #                                    # min_std=5e-5,
-    #                                    # iter_std=1000,
-    #                                    learning_rate=1e-2,
-    #                                    max_iter=10000,
-    #                                    # batch_dim=0,
-    #                                    batch_prop=0.33,
-    #                                    batch_prop_decay=3,
-    #                                    # weight_decay=1e-3,
-    #                                    mask=mask,
-    #                                    init_bias=0.01,
-    #                                    initialization='uniform-positive',
-    #                                    loss_function=torch.nn.HuberLoss(reduction='sum'),
-    #                                    verbose=0
-    #                                    )
-    model = torch.load('model1.pt')
+    labels = load_spec(group, list(conds_all.keys()), layout, folder=folder,
+                       min_nan=1, n_jobs=-2)[-2]
 
-    T, W, H = model.get_components(numpy=True)[0]
-    # %% plot the components
-    cond_times = {'aud_ls': (-0.5, 1.5),
-             'go_ls': (-0.5, 1.5),
-             'resp': (-1, 1)}
-    epochs = {'aud': ['aud_ls', 'aud_lm'],
-              'go': ['go_ls', 'go_lm'],
-                'resp': ['resp']}
-    results = {}
-    timings = {'aud_ls': range(0, 200),
-               'aud_lm': range(200, 400),
-               'go_ls': range(400, 600),
-               'go_lm': range(600, 800),
-               'resp': range(800, 1000)}
-    fig, axs = plt.subplots(1, 3)
+    state = torch.load('model_All_freq.pt')
+    shape = state['vectors.0.0'].shape[1:] + state['vectors.0.1'].shape[1:]
+    n_components = (state['vectors.0.0'].shape[0],)
+    model = slicetca.core.SliceTCA(
+        dimensions=shape,
+        ranks=(n_components[0], 0, 0, 0),
+        positive=True,
+        initialization='uniform-positive',
+        dtype=torch.float32,
+        lr=5e-4,
+        weight_decay=partial(torch.optim.Adam, eps=1e-9),
+        loss=torch.nn.L1Loss(reduction='mean'),
+        init_bias=0.1,
+        threshold=None,
+        patience=None
+    )
+    model.load_state_dict(state)
+    # model = torch.load('model_sig_chans.pt')
 
-    # make a plot for each condition in conds as a subgrid
-    for j, (cond, times) in enumerate(cond_times.items()):
-        ax = axs[j]
+    W, H = model.get_components(numpy=True)[0]
+
+    # raise RuntimeError("stop")
+
+    # %% Time Sliding decoding for word tokens
+    model = PcaLdaClassification(explained_variance=0.90, da_type='lda')
+    decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
+                      5, 10, 1, 'train', model=model)
+    true_scores = {}
+    shuffle_score = {}
+    colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
+              'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
+
+    # fig, axs = plt.subplots(2, 3)
+    # from itertools import combinations
+    # for i, (w1, w2) in enumerate(combinations(range(4), 2)):
+    #     ax = axs.flat[i]
+    #     ax.scatter(W[w1], W[w2])
+    #     ax.set_title(f'{colors[w1]} vs {colors[w2]}')
+    #     ax.set_xlabel(f'{colors[w1]}')
+    #     ax.set_ylabel(f'{colors[w2]}')
+    #     ax.set_ylim(0, .5)
+    #     ax.set_xlim(0, .5)
+    names = colors
+    idx = [zscores.labels[2].find(c) for c in
+           labels[0]]
+    idxs = {c: idx for c in colors}
+    window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
+                     'n_jobs': 1,
+                     'average_repetitions': False, 'step': 8}
+    conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
+    # colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
+    # raise RuntimeError('stop')
+
+    true_name = 'true_scores_freqmult_zscore_weighted_2'
+
+    if not os.path.exists(true_name + '.npz'):
         for i in range(n_components[0]):
-            fig = plot_dist(
-                # H[i],
-                model.construct_single_component(0, i).detach().cpu().numpy()[:, (W[i] / W.sum(0)) > 0.4][
-                    ..., timings[cond]].reshape(-1, 200),
-                ax=ax, color=colors[i], mode='sem', times=times)
-        if j == 0:
-            ax.legend()
-            ax.set_ylabel("Z-Score (V)")
-            ylims = ax.get_ylim()
-        elif j == 1:
-            ax.set_xlabel("Time(s)")
-        ax.set_ylim(ylims)
-        ax.set_title(cond)
+            subset = W[i] > 0.2
+            in_data = zscores[:,:,labels[0][subset]]
+            weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
+            for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
+                                     [names[i]], on_gpu=True, shuffle=False,
+                                     **window_kwargs):
+                key = decoder.current_job
+                true_scores[key] = values
 
-    # %% Time Sliding decoding for word tokens
-    names = ['AUD', 'SM', 'PROD', 'sig_chans']
-    idxs = [sorted(list(getattr(sub, group))) for group in names]
-    scores = {}
-    decode_conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-    scores1 = score1({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 30, 'lda', 5, 10, sub, idxs, decode_conds,
-                                window_kwargs, scores, shuffle=False)
-    dict_to_structured_array(scores, 'true_scores.npy')
+        np.savez(true_name, **true_scores)
+    else:
+        true_scores = dict(np.load(true_name + '.npz', allow_pickle=True))
 
-    # %% Time Sliding decoding for word tokens
-    idxs = [torch.tensor(idx)[(W[i] / W.sum(0)) > 0.4].tolist() for i in range(5) ]
-    scores = {c: None for c in colors}
-    decode_conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
-    scores2 = score2({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 30, 'lda', 5, 2, sub, idxs, decode_conds,
-                                window_kwargs, scores, shuffle=False)
-    dict_to_structured_array(scores, 'true_scores.npy')
-
-    # %% Time sliding decoding for reconstruction
-    # sub2 = sub.copy()
-    scores = {c: None for c in colors}
-    # idxs = [sorted(list(sub.SM)) for _ in range(5)]
-    decode_conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], ['resp']]
-    # decoder = Decoder({'heat': 1, 'hoot': 2, 'hot': 3, 'hut': 4}, 0.8, 'lda', n_splits=5, n_repeats=10)
-    for i, c in enumerate(colors):
-        scores[c] = {}
-        # comp = model.construct_single_component(0, i).detach().cpu().numpy()
-        for conds in decode_conds:
-            model = torch.load('model_SM.pt')
-            # comp = model.construct_single_component(0, i).detach().cpu().numpy()
-            # T, W, H = model.get_components(numpy=False)[0]
-            # comp = torch.outer(T[i], H[i]).detach().cpu().numpy()
-            comp = model.get_components(numpy=False)[1][1][i]
-            name = lcs(*conds)
-            data = np.concatenate([comp[..., timings[cond]] for cond in conds], axis=0)
-            cats, these_labels = classes_from_labels(np.concatenate([labels[0]] * len(conds)))
-            decoder = Decoder(cats, None, 'lda', n_splits=5, n_repeats=10)
-            decoder.model = decoder.model['discriminant']
-            scores[c][name] = decoder.cv_cm(data[None], these_labels,
-                                            **window_kwargs, oversample=False)
-
-    scores3 = flatten_nested_dict(scores)
-
-    # %% Plotting
-    data_dir = ''
-    # true_scores = np.load(data_dir + 'true_scores_short.npy', allow_pickle=True)[0]
-    # true_scores = {name: true_scores[name] for name in true_scores.dtype.names}
-
-    decode_conds = [lcs(*conds) for conds in decode_conds]
     plots = {}
-    for key, values in scores3.items():
+    for key, values in true_scores.items():
         if values is None:
             continue
-        keys = key.split('-')
-        keys.insert(2, keys.pop(-1))
-        key = '-'.join(keys)
         plots[key] = np.mean(values.T[np.eye(4).astype(bool)].T, axis=2)
-    fig, axs = plot_all_scores(plots, decode_conds, {n: i for n, i in zip(colors, idxs)}, colors, "Word Decoding")
+    fig, axs = plot_all_scores(plots, conds,
+                               {n: i for n, i in zip(names, idxs)},
+                               colors, "Word Decoding")
+
+    decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
+                      5, 20, 1, 'train', model=model)
+    shuffle_name = 'shuffle_scores_freqmult_zscore_super'
+    if not os.path.exists(shuffle_name + '.npz'):
+        for values in get_scores(zscores, decoder, idxs, conds,
+                                 names, on_gpu=True, shuffle=True,
+                                 **window_kwargs):
+            key = decoder.current_job
+            shuffle_score[key] = values
+
+        # shuffle_score['All-aud_ls-aud_lm'] = shuffle_score['Auditory-aud_ls-aud_lm']
+        # shuffle_score['All-go_ls-go_lm'] = shuffle_score['Production-go_ls-go_lm']
+        # shuffle_score['All-resp'] = shuffle_score['Production-resp']
+
+        np.savez(shuffle_name, **shuffle_score)
+    else:
+        shuffle_score = dict(np.load(shuffle_name + '.npz', allow_pickle=True))
+
+    # %% Time Sliding decoding significance
+
+    signif = {}
+    for cond, score in true_scores.items():
+        true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
+        shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T,
+                          axis=2)
+        signif[cond] = time_perm_cluster(
+            true.T, shuffle.T, 0.01,
+            stat_func=lambda x, y, axis: np.mean(x, axis=axis))[0]
+
+    # %% Plot significance
+    for cond, ax in zip(conds, axs):
+        bars = []
+        if isinstance(cond, list):
+            cond = "-".join(cond)
+        for i, idx in enumerate(idxs):
+            name = "-".join([names[i], cond])
+            if name.endswith('resp'):
+                times = (-1, 1)
+            else:
+                times = (-0.5, 1.5)
+            shuffle = np.mean(shuffle_score[name].T[np.eye(4).astype(bool)].T,
+                              axis=2)
+            # smooth the shuffle using a window
+            window = np.lib.stride_tricks.sliding_window_view(shuffle, 20, 0)
+            shuffle = np.mean(window, axis=-1)
+            plot_dist_bound(shuffle, 'std', 'both', times, 0, ax=ax,
+                            color=colors[i], alpha=0.3)
+            bars.append(signif[name])
+        plot_horizontal_bars(ax, bars, 0.05, 'below')
 
     for ax in fig.axes:
         ax.axhline(0.25, color='k', linestyle='--')
-        # remove legend
-        ax.legend().remove()
-
-    # # %% Time Sliding decoding significance
-    #
-    # shuffle_score = np.load(data_dir + 'shuffle_score_short.npy', allow_pickle=True)[0]
-    # shuffle_score = {name: shuffle_score[name] for name in shuffle_score.dtype.names}
-    # signif = {}
-    # for cond, score in scores.items():
-    #     true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
-    #     shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T, axis=2)
-    #     signif[cond] = time_perm_cluster(true.T, shuffle.T, 0.001, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
-    #
-    #
-    # # %% Plot significance
-    # for cond, ax in zip(conds, axs):
-    #     bars = []
-    #     if isinstance(cond, list):
-    #         cond = "-".join(cond)
-    #     for i, idx in enumerate(idxs):
-    #         name = "-".join([names[i], cond])
-    #         if name.endswith('resp'):
-    #             times = (-1, 1)
-    #         else:
-    #             times = (-0.5, 1.5)
-    #         shuffle = np.mean(shuffle_score[name].T[np.eye(4).astype(bool)].T, axis=2)
-    #         # smooth the shuffle using a window
-    #         window = np.lib.stride_tricks.sliding_window_view(shuffle, 20, 0)
-    #         shuffle = np.mean(window, axis=-1)
-    #         plot_dist_bound(shuffle, 'std', 'both', times, 0, ax=ax, color=colors[i], alpha=0.3)
-    #         bars.append(signif[name])
-    #     plot_horizontal_bars(ax, bars, 0.05, 'below')
