@@ -6,7 +6,7 @@ from sklearn import config_context
 from ieeg.decoding.decode import (
     Decoder, flatten_list, classes_from_labels, nan_common_denom
 )
-from ieeg.arrays.label import LabeledArray
+from ieeg.arrays.label import LabeledArray, normalize_index
 try:
     import cupy as cp
 except ImportError:
@@ -70,8 +70,10 @@ def extract(array: LabeledArray, conds: list[str], trial_ax: int,
             idx: list[int] = slice(None), common: int = 5,
             crop_nan: bool = False) -> LabeledArray:
     """Extract data from GroupData object"""
-    reduced = array[conds, ][:, :, idx]
-    reduced = reduced.dropna()
+    cond_coords = normalize_index(([array.labels[0].find(cond)
+                                    for cond in conds],))
+    chan_coords = normalize_index((slice(None), slice(None), idx))
+    reduced = array[cond_coords][chan_coords].dropna()
     # also sorts the trials by nan or not
     reduced = nan_common_denom(reduced, True, trial_ax, common, 2, crop_nan)
     comb = reduced.combine((1, trial_ax))
