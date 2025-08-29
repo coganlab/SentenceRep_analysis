@@ -70,7 +70,7 @@ def extract(array: LabeledArray, conds: list[str], trial_ax: int,
             idx: list[int] = slice(None), common: int = 5,
             crop_nan: bool = False) -> LabeledArray:
     """Extract data from GroupData object"""
-    cond_coords = normalize_index(([array.labels[0].find(cond)
+    cond_coords = normalize_index(([array.find(cond, 0)
                                     for cond in conds],))
     chan_coords = normalize_index((slice(None), slice(None), idx))
     reduced = array[cond_coords][chan_coords].dropna()
