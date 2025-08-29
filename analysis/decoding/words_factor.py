@@ -160,7 +160,6 @@ if __name__ == '__main__':
 
     labels = load_spec(group, list(conds_all.keys()), layout, folder=folder,
                        min_nan=1, n_jobs=-2)[-2]
-
     state = torch.load('model_All_freq.pt')
     shape = state['vectors.0.0'].shape[1:] + state['vectors.0.1'].shape[1:]
     n_components = (state['vectors.0.0'].shape[0],)
@@ -185,40 +184,30 @@ if __name__ == '__main__':
     # raise RuntimeError("stop")
 
     # %% Time Sliding decoding for word tokens
-    model = PcaLdaClassification(explained_variance=0.90, da_type='lda')
+    model = PcaLdaClassification(explained_variance=0.80, da_type='lda')
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
                       5, 10, 1, 'train', model=model)
     true_scores = {}
-    shuffle_score = {}
+    shuffle_scores = {}
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
 
-    # fig, axs = plt.subplots(2, 3)
-    # from itertools import combinations
-    # for i, (w1, w2) in enumerate(combinations(range(4), 2)):
-    #     ax = axs.flat[i]
-    #     ax.scatter(W[w1], W[w2])
-    #     ax.set_title(f'{colors[w1]} vs {colors[w2]}')
-    #     ax.set_xlabel(f'{colors[w1]}')
-    #     ax.set_ylabel(f'{colors[w2]}')
-    #     ax.set_ylim(0, .5)
-    #     ax.set_xlim(0, .5)
     names = colors
     idx = [zscores.labels[2].find(c) for c in
            labels[0]]
     idxs = {c: idx for c in colors}
     window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
                      'n_jobs': 1,
-                     'average_repetitions': False, 'step': 8}
+                     'average_repetitions': False, 'step': 5}
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     # colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
     # raise RuntimeError('stop')
 
-    true_name = 'true_scores_freqmult_zscore_weighted_2'
+    true_name = 'true_scores_freqmult_zscore_weighted_3'
 
     if not os.path.exists(true_name + '.npz'):
         for i in range(n_components[0]):
-            subset = W[i] > 0.2
+            subset = W[i] > 0.1
             in_data = zscores[:,:,labels[0][subset]]
             weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
@@ -241,35 +230,40 @@ if __name__ == '__main__':
                                colors, "Word Decoding")
 
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5, 20, 1, 'train', model=model)
-    shuffle_name = 'shuffle_scores_freqmult_zscore_super'
+                      5, 7, 1, 'train', model=model)
+    shuffle_name = 'shuffle_scores_freqmult_zscore_weighted_3'
+
     if not os.path.exists(shuffle_name + '.npz'):
-        for values in get_scores(zscores, decoder, idxs, conds,
-                                 names, on_gpu=True, shuffle=True,
-                                 **window_kwargs):
-            key = decoder.current_job
-            shuffle_score[key] = values
+        for i in range(n_components[0]):
+            subset = W[i] > 0.2
+            in_data = zscores[:,:,labels[0][subset]]
+            weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
+            for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
+                                     [names[i]], on_gpu=True, shuffle=True,
+                                     **window_kwargs):
+                key = decoder.current_job
+                shuffle_scores[key] = values
+
+        np.savez(shuffle_name, **shuffle_scores)
+    else:
+        shuffle_scores = dict(np.load(shuffle_name + '.npz', allow_pickle=True))
 
         # shuffle_score['All-aud_ls-aud_lm'] = shuffle_score['Auditory-aud_ls-aud_lm']
         # shuffle_score['All-go_ls-go_lm'] = shuffle_score['Production-go_ls-go_lm']
         # shuffle_score['All-resp'] = shuffle_score['Production-resp']
 
-        np.savez(shuffle_name, **shuffle_score)
-    else:
-        shuffle_score = dict(np.load(shuffle_name + '.npz', allow_pickle=True))
-
-    # %% Time Sliding decoding significance
+    # Time Sliding decoding significance
 
     signif = {}
     for cond, score in true_scores.items():
         true = np.mean(score.T[np.eye(4).astype(bool)].T, axis=2)
-        shuffle = np.mean(shuffle_score[cond].T[np.eye(4).astype(bool)].T,
+        shuffle = np.mean(shuffle_scores[cond].T[np.eye(4).astype(bool)].T,
                           axis=2)
         signif[cond] = time_perm_cluster(
             true.T, shuffle.T, 0.01,
             stat_func=lambda x, y, axis: np.mean(x, axis=axis))[0]
 
-    # %% Plot significance
+    # Plot significance
     for cond, ax in zip(conds, axs):
         bars = []
         if isinstance(cond, list):
@@ -280,7 +274,7 @@ if __name__ == '__main__':
                 times = (-1, 1)
             else:
                 times = (-0.5, 1.5)
-            shuffle = np.mean(shuffle_score[name].T[np.eye(4).astype(bool)].T,
+            shuffle = np.mean(shuffle_scores[name].T[np.eye(4).astype(bool)].T,
                               axis=2)
             # smooth the shuffle using a window
             window = np.lib.stride_tricks.sliding_window_view(shuffle, 20, 0)
