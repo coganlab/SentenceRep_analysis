@@ -21,11 +21,12 @@ exclude = [
 def load_tensor(array, idx, conds, trial_ax, min_nan=1):
     idx = sorted(idx)
     X = extract(array, conds, trial_ax, idx, min_nan)
-    std = float(np.nanstd(X.__array__(), dtype='f8'))
+    # std = float(np.nanstd(X.__array__(), dtype='f8'))
     std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
+    std = float(np.mean(std_ch))
     combined = reduce(lambda x, y: x.concatenate(y, -1), [X[c] for c in conds])
-    if (std_ch < (2 * std)).any():
-        combined = combined[std_ch < (2 * std),]
+    if (ch_mask := std_ch < (2 * std)).any():
+        combined = combined[ch_mask,]
     std = float(np.nanstd(combined.__array__(), dtype='f8'))
     out_tensor = torch.from_numpy(combined.__array__() / std)
     mask = torch.isnan(out_tensor)
