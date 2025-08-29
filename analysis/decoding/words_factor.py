@@ -193,7 +193,8 @@ if __name__ == '__main__':
               'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
 
     names = colors
-    idx = [zscores.labels[2].find(c) for c in
+    assert W.shape[1] == len(labels[0])
+    idx = [zscores.find(c, 2) for c in
            labels[0]]
     idxs = {c: idx for c in colors}
     window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
@@ -207,8 +208,8 @@ if __name__ == '__main__':
 
     if not os.path.exists(true_name + '.npz'):
         for i in range(n_components[0]):
-            subset = W[i] > 0.1
-            in_data = zscores[:,:,labels[0][subset]]
+            subset = np.nonzero(W[i] > 0.1)[0]
+            in_data = zscores[:,:,[labels[0][s] for s in subset]]
             weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
                                      [names[i]], on_gpu=True, shuffle=False,
