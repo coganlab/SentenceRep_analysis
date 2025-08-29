@@ -511,13 +511,23 @@ def sparse_matrix(ndarray_with_nan: np.ndarray) -> sparse.spmatrix:
 
 def group_elecs(all_sig: dict[str, np.ndarray] | LabeledArray, names: list[str],
                 conds: tuple[str], wide: bool = False
-                ) -> (set[int], set[int], set[int], set[int]):
+                ) -> tuple[set[int], set[int], set[int], set[int], set[int]]:
+
+    if isinstance(all_sig, LabeledArray):
+        all_names = all_sig.labels[1]
+    elif isinstance(all_sig, dict):
+        all_names = list(all_sig.keys())
+    else:
+        raise TypeError(f"Expected LabeledArray or dict, got {type(all_sig)}")
+
     sig_chans = set()
     AUD = set()
     SM = set()
     PROD = set()
     delay = set()
-    for i, name in enumerate(names):
+    for i, name in enumerate(all_names):
+        if name not in names:
+            continue
         for cond in conds:
             idx = i
             if wide:
