@@ -117,3 +117,61 @@ binary_envelopes['cvc'] = binary_envelopes['cvc']/cvc_count
 
 with open(f'{analysisfolder}\\binary_envelopes.pkl', 'wb') as f:
     pickle.dump(binary_envelopes, f)
+
+
+#%%
+with open(f'{analysisfolder}\\padded_envelopes.pkl', 'rb') as f:
+    padded_envelopes = pickle.load(f)
+
+import matplotlib.pyplot as plt
+
+# X-axis (151 points from -0.5 to 1)
+x = np.linspace(-0.5, 1, 151)
+
+# Pad all traces for plotting
+vcv_traces = [np.append(padded_envelopes[item],0)
+              for item in padded_envelopes.keys() if true_cat_vcv[item] == 1]
+cvc_traces = [np.append(padded_envelopes[item],0)
+              for item in padded_envelopes.keys() if true_cat_vcv[item] == 2]
+
+# Mean traces (pad again to match x-axis)
+vcv_mean = np.mean(vcv_traces,axis=0)
+cvc_mean = np.mean(cvc_traces,axis=0)
+
+# ---- Plot ----
+fig, axes = plt.subplots(1, 2, figsize=(8, 3), sharey=True)
+
+plt.rcParams.update({
+    "font.size": 12,
+    "figure.dpi": 300
+})
+
+# VCV subplot
+for trace in vcv_traces:
+    axes[0].plot(x, trace, color="steelblue", linewidth=0.5, alpha=0.3)
+axes[0].plot(x, vcv_mean, color="navy", linewidth=1.0)
+axes[0].set_title("VCV", fontsize=14)
+axes[0].set_xlabel("Time (s)")
+axes[0].set_ylabel("Amplitude (a.u.)")
+axes[0].set_xticks([-0.5,0,0.5,1])
+axes[0].set_yticks([0,0.5])
+axes[0].spines["top"].set_visible(False)
+axes[0].spines["right"].set_visible(False)
+
+# CVC subplot
+for trace in cvc_traces:
+    axes[1].plot(x, trace, color="steelblue", linewidth=0.5, alpha=0.3)
+axes[1].plot(x, cvc_mean, color="navy", linewidth=1.0)
+axes[1].set_title("CVC", fontsize=14)
+axes[1].set_xlabel("Time (s)")
+axes[1].set_xticks([-0.5,0,0.5,1])
+axes[1].set_yticks([0,0.5])
+axes[1].spines["top"].set_visible(False)
+axes[1].spines["right"].set_visible(False)
+
+# Tight layout
+plt.tight_layout()
+
+# Save as SVG
+plt.savefig(f"{analysisfolder}\\binary_envelopes.svg", format="svg", dpi=300)
+plt.close()

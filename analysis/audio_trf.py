@@ -49,7 +49,7 @@ for i, cond in enumerate(conds.keys()):
 sig_idx_union = list(set(sig_idx['aud'])|set(sig_idx['go'])|set(sig_idx['resp']))
 zscoresLA = zscoresLA.combine((1,3))
 
-#%%
+#%% checking fit, not used
 i_cond = 0
 fs = 100
 tmin, tmax = -0.1, 0.7
@@ -93,7 +93,7 @@ plt.tight_layout()
 plt.show()
 
 
-#%%
+#%% some PCA prep
 #Channel stim level setup
 from analysis.decoding import classes_from_labels
 from analysis.check.chan_utils import remove_min_nan_ch, equal_valid_trials_ch, left_adjust_by_stim
@@ -108,7 +108,6 @@ true_cat_vcv = {'abae':1, 'abi':1, 'aka':1, 'aku':1, 'ava':1, 'avae':1,
                  'vaeg':2, 'vaek':2, 'vip':2, 'vug':2, 'vuk':2}
 with open(f'{analysisfolder}\\binary_envelopes.pkl', 'rb') as f:
     binary_envelopes = pickle.load(f)
-
 
 def batch_concatenate(data, group_size=5, drop_incomplete=True):
     """
@@ -130,14 +129,12 @@ encoder_cat_flipped = {v: k for k, v in encoder_cat.items()}
 weights_out = {}
 
 #TRF setup
-i_cond = 0
+i_cond = 2
 fs = 100
 tmin, tmax = -0.1, 0.7
 zscoresLA_cond = zscoresLA.take(i_cond, axis=0)
 regularization = np.logspace(-4, 5, 10)
 n_folds = 5
-plt.figure(figsize=(10, 5))
-
 
 cats, labels = classes_from_labels(zscoresLA_cond.labels[1], crop=slice(0, 4)) #this get out repetitions of same stims
 flipped_cats = {v:k for k,v in cats.items()} #{0: abae, 1: abi, 2: aeba, 3: aebi, 4: aebu, 5: aega, ...}
@@ -198,7 +195,7 @@ def compute_bootstrap_sem(data1, data2, n_resamples=1000):
 
     sems = []
     for t in diff:
-        res = bootstrap((t,), np.mean, confidence_level=0.68, n_resamples=n_resamples, method='basic')
+        res = bootstrap((t,), np.mean, confidence_level=0.95, n_resamples=n_resamples, method='basic')
         sems.append((res.standard_error))
 
     return np.mean(diff, axis=1), np.array(sems)
@@ -208,98 +205,69 @@ def plot_with_sem(ax, x, mean, sem, label=None, color=None):
     ax.plot(x, mean, label=label, color=color)
     ax.fill_between(x, mean - sem, mean + sem, alpha=0.3, color=color)
 
+
+
 def process_and_plot(data):
     """
-    Given a 3D array of shape (179, 100, 150), generate 3 subplots:
-    - Top 50 rows
-    - Bottom 50 rows
+    Given a 3D array of shape (subjects, 100, 150), generate 3 subplots:
+    - Top 50 trials
+    - Bottom 50 trials
     - Difference (Top - Bottom) with bootstrapped SEM
     """
-    x = np.linspace(-0.5, 1.0, 150)
-    n_subjects, n_trials, n_timepoints = data.shape
-    fig, axs = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+    x = np.linspace(-0.5, 1.0, data.shape[2])
+    n_ch = data.shape[0]
 
-    for i in range(n_subjects):
-        subj_data = data[i]  # shape: (100, 150)
-        top = subj_data[:50, :]    # (50, 150)
-        bottom = subj_data[50:, :] # (50, 150)
-
-        # Subplot 0: Top 50
-        mean_top, sem_top = compute_mean_sem(top, axis=0)
-        plot_with_sem(axs[0], x, mean_top, sem_top)
-
-        # Subplot 1: Bottom 50
-        mean_bot, sem_bot = compute_mean_sem(bottom, axis=0)
-        plot_with_sem(axs[1], x, mean_bot, sem_bot)
-
-        # Subplot 2: Difference with bootstrap SEM
-        mean_diff, sem_diff = compute_bootstrap_sem(top, bottom)
-        plot_with_sem(axs[2], x, mean_diff, sem_diff)
-
-    axs[0].set_title("VCV: Mean ± SEM")
-    axs[1].set_title("CVC: Mean ± SEM")
-    axs[2].set_title("Difference: Mean ± Bootstrapped SEM")
+    # Set up figure with improved styling
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4), sharey=True, constrained_layout=True)
+    titles = ["VCV", "CVC", "VCV-CVC"]
+    xticks = [-0.5, 0, 0.5, 1.0]
 
     for ax in axs:
-        ax.set_ylabel("HG (Z-score)")
-        ax.grid(True)
+        ax.set_xticks(xticks)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.tick_params(labelsize=10)
 
-    axs[-1].set_xlabel("Time (s)")
-    plt.tight_layout()
+    # Plot per-subject data
+    for i in range(n_ch):
+        ch_data = data[i]  # shape: (100, 150)
+        top = ch_data[:50]
+        bottom = ch_data[50:]
+
+        # Compute means and SEMs
+        mean_top, sem_top = compute_mean_sem(top, axis=0)
+        mean_bot, sem_bot = compute_mean_sem(bottom, axis=0)
+        mean_diff, sem_diff = compute_bootstrap_sem(top, bottom)
+
+        # Plot with original style
+        plot_with_sem(axs[0], x, mean_top, sem_top)  # VCV
+        plot_with_sem(axs[1], x, mean_bot, sem_bot)  # CVC
+        plot_with_sem(axs[2], x, mean_diff, sem_diff)  # Diff
+
+    # Titles and labels
+    for ax, title in zip(axs, titles):
+        ax.set_title(title, fontsize=12)
+        ax.set_xlabel("Time (s)", fontsize=11)
+    axs[0].set_ylabel("High Gamma (Z-score)", fontsize=11)
+    plt.savefig(f"{analysisfolder}\\pca_stgrerefgamma.svg", format="svg", dpi=300)
     plt.show()
 
 process_and_plot(zscores_cropped.__array__())
 
 #%%
 # Define function to apply PCA to each run's data
-from sklearn.decomposition import PCA
-# def apply_pca_flexible(data, axis=0, n_components=10):
-#     """
-#     Apply PCA to a 3D array (n_channels, n_trials, n_samples) along axis 0 (channels) or 1 (trials).
-#
-#     Parameters:
-#         data (np.ndarray): Input array with shape (n_channels, n_trials, n_samples)
-#         axis (int): 0 for PCA across channels, 1 for PCA across trials
-#         n_components (int): Number of principal components to retain
-#
-#     Returns:
-#         transformed_data (np.ndarray): PCA-reduced data
-#             - shape: (n_components, n_trials, n_samples) if axis=0
-#             - shape: (n_channels, n_components, n_samples) if axis=1
-#         pca (PCA object): Fitted PCA model
-#     """
-#     if axis not in [0, 1]:
-#         raise ValueError("Axis must be 0 (channels) or 1 (trials)")
-#
-#     # Transpose so that the PCA axis is first, and flatten all other axes per item
-#     if axis == 0:  # PCA across channels
-#         data_reshaped = data.reshape(data.shape[0], -1)  # shape: (n_channels, n_trials * n_samples)
-#     else:  # axis == 1: PCA across trials
-#         data = np.transpose(data, (1, 0, 2))  # shape: (n_trials, n_channels, n_samples)
-#         data_reshaped = data.reshape(data.shape[0], -1)  # shape: (n_trials, n_channels * n_samples)
-#
-#     # Fit PCA
-#     pca = PCA(n_components=n_components)
-#     transformed = pca.fit_transform(data_reshaped.T)  # shape: (n_components, n_trials*samples) or similar
-#
-#     # Restore shape
-#     new_shape = (pca.n_components_,) + data.shape[1:] if axis == 0 else (
-#     data.shape[1], pca.n_components_, data.shape[2])
-#     transformed_data = transformed.reshape(new_shape)
-#
-#     # Reverse transpose if we transposed for axis 1
-#     if axis == 1:
-#         transformed_data = np.transpose(transformed_data, (1, 0, 2))  # back to (channels, trials, samples)
-#
-#     explained_variance = 100 * np.sum(pca.explained_variance_ratio_)
-#     print(f"PCA along axis {axis} with {pca.n_components_} components explains {explained_variance:.2f}% of variance")
-#
-#     return transformed_data, pca
-#
-#
+from sklearn.decomposition import PCA, NMF
 # # Apply PCA to EEG data
 # zscores_cropped_pca = apply_pca_flexible(zscores_cropped.__array__(), axis = 0, n_components = 10)
-
+from matplotlib.colors import to_rgb
+import colorsys
+def generate_shaded_colors(base_color, n):
+    """Generate 'n' perceptually distinct variations of a base color"""
+    base_rgb = to_rgb(base_color)
+    h, l, s = colorsys.rgb_to_hls(*base_rgb)
+    lightness_vals = np.linspace(0.25, 0.85, n)  # wider range for stronger contrast
+    colors = [colorsys.hls_to_rgb(h, l_val, s) for l_val in lightness_vals]
+    return colors
 
 def apply_pca_with_channel_loadings(data, label_names, axis=0, n_components=10, show_pies=True, pie_threshold=0.01):
     """
@@ -340,8 +308,11 @@ def apply_pca_with_channel_loadings(data, label_names, axis=0, n_components=10, 
         X = data_trans.reshape(n_trials, -1).T  # (n_channels * n_samples, n_trials)
 
     # Fit PCA
+
     pca = PCA(n_components=n_components)
     scores = pca.fit_transform(X)  # (n_observations, n_components)
+    # nmf = NMF(n_components=n_components, init="nndsvda", random_state=0)
+    # scores = nmf.fit_transform(X)
 
     # Extract loadings: components_ is (n_components, n_features)
     loadings = pca.components_  # signed weights
@@ -357,25 +328,43 @@ def apply_pca_with_channel_loadings(data, label_names, axis=0, n_components=10, 
         temp = scores.T.reshape(n_components, n_channels, n_samples)  # (components, channels, samples)
         transformed_data = np.transpose(temp, (1, 0, 2))  # (channels, components, samples)
 
-    explained_variance = 100 * np.sum(pca.explained_variance_ratio_)
-    print(f"PCA along axis {axis} with {pca.n_components_} components explains {explained_variance:.2f}% of variance")
+    explained_variance = 100 * pca.explained_variance_ratio_
 
     if show_pies:
-        n_pies = n_components
+        n_pies = min(n_components, 10)
+        base_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red',
+                       'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray',
+                       'tab:olive', 'tab:cyan']
+
+        fig, axs = plt.subplots(n_pies, 1, figsize=(4, 2 * n_pies), constrained_layout=True)
+
         for comp in range(n_pies):
-            plt.figure(figsize=(5,5))
+            ax = axs[comp] if n_pies > 1 else axs
             slices = normalized_squared_loadings[comp]
-            labels = label_names
-            display_labels = [lbl if val >= pie_threshold else '' for lbl, val in zip(labels, slices)]
-            plt.pie(slices, labels=display_labels, autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else '', startangle=90)
-            plt.title(f"Component {comp+1} contributions (squared loadings)")  # 1-indexed
-            plt.tight_layout()
-            plt.show()
+            display_labels = [lbl if val >= pie_threshold else '' for lbl, val in zip(label_names, slices)]
+            pie_colors = generate_shaded_colors(base_colors[comp % len(base_colors)], len(slices))
+
+            wedges, texts, autotexts = ax.pie(
+                slices,
+                labels=display_labels,
+                autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else '',
+                colors=pie_colors,
+                startangle=90,
+                textprops={'fontsize': 6},  # smaller font for labels
+                wedgeprops=dict(linewidth=0)  # no white borders
+            )
+            ax.set_title(f"PC {comp + 1} ({explained_variance[comp]:.2f}% total variance)", fontsize=8)
+
+        plt.suptitle("Electrode Loadings in PC", fontsize=10)
+        plt.tight_layout()
+        plt.savefig(f"{analysisfolder}\\pc_loadings_stgrerefgamma_resp.svg", format="svg", dpi=300)
+        plt.show()
 
     return transformed_data, pca, normalized_squared_loadings
 
 ch_name_list = zscoresLA_cond_reduced.labels[0]
-pca_data, pca_fitted, _ = apply_pca_with_channel_loadings(zscores_cropped.__array__(), ch_name_list, n_components=5)
+#indices = [i for i, s in enumerate(ch_name_list) if 'D0042-RPST' not in s]
+pca_data, pca_fitted, _ = apply_pca_with_channel_loadings(zscores_cropped.__array__(), ch_name_list, n_components=4)
 process_and_plot(pca_data)
 
 #%%
@@ -394,8 +383,6 @@ comp_idxs = {
 }
 
 #%% CV for regularization and inspection
-
-
 # Determine number of figures needed
 n_figs = (n_channels + channels_per_fig - 1) // channels_per_fig  # equivalent to ceil(n_channels / channels_per_fig)
 
