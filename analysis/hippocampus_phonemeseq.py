@@ -505,11 +505,11 @@ blues = [to_hex(cm.Blues(0.6)), to_hex(cm.Blues(0.4)), to_hex(cm.Blues(0.25))]
 
 positions = ['1st', '2nd', '3rd']
 bar_width = 0.01
-y_base_position = 0.6
+y_base_position = 0.25
 height_spacing = 0.02
 timepoints = np.linspace(-0.4, 0.9, 131)
 xlim = (-0.4, 0.9)
-ylim = (0.1, 0.7)
+ylim = (0.05, 0.3)
 x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
 
 plt.rcParams.update({
@@ -522,7 +522,6 @@ plt.rcParams.update({
     'xtick.major.width': 0.8,
     'ytick.major.width': 0.8,
     'font.size': 10,
-    'legend.frameon': False,
     'figure.dpi': 300,
     'savefig.dpi': 300,
 })
@@ -535,14 +534,14 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-fig, axes = plt.subplots(1, 3, figsize=(18, 4))
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 for ax in fig.axes:
-    ax.axhline(0.25, color='k', linestyle='--')
+    ax.axhline(0.111, color='k', linestyle='--')
 # Iterate through each phoneme position
 for p_idx, position in enumerate(positions):
-    with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_4way_{position}constant_stgreref_gamma.pkl'), 'rb') as f:
+    with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
         true_scores_dict = pickle.load(f)
-    with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_4way_{position}constant_stgreref_gamma.pkl'), 'rb') as f:
+    with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
         shuffle_scores_dict = pickle.load(f)
 
     for cond_idx, cond in enumerate(true_scores_dict.keys()):
@@ -555,7 +554,7 @@ for p_idx, position in enumerate(positions):
         plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffle - {position} position')
 
         # Calculate significance
-        signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm=10000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+        signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm=5000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
         # Plot stacked significance bars
         y_position = y_base_position + p_idx * height_spacing
@@ -570,20 +569,22 @@ for i, cond in enumerate(true_scores_dict.keys()):
     axes[i].set_title(f'{cond}')
     axes[i].set_xlim(xlim)
     axes[i].set_ylim(ylim)
-    # if i == 0:
-    #     axes[i].legend(
-    axes[i].legend().set_visible(False)
+    if i != 0:
+        axes[i].legend().set_visible(False)
+    else:
+        axes[i].legend(loc='lower left', fontsize=6, frameon=True)
     # Remove top and right spines (borders)
     axes[i].spines['top'].set_visible(False)
     axes[i].spines['right'].set_visible(False)
 
-handles, labels = axes[0].get_legend_handles_labels()
-
-# Add a single legend to the whole figure
-fig.legend(handles, labels, loc='lower center', ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+# handles, labels = axes[0].get_legend_handles_labels()
+# axes[0].legend(handles, labels, loc='upper right', fontsize=9, frameon=False)
+#
+# # Add a single legend to the whole figure
+# fig.legend(handles, labels, loc='lower center', ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
 
 plt.tight_layout()
-plt.savefig("phonemeseq_4way_constant_sequential_stgreref_gamma.png", format="png", dpi=300, bbox_inches='tight', transparent=False)
+plt.savefig(f"{analysisfolder}\\phonemeseq_9way_sequential_hippreref_gamma.svg", format="svg", dpi=300, bbox_inches='tight', transparent=False)
 plt.show()
 
 
