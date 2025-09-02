@@ -592,13 +592,16 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_2way_m1reref_gamma.pkl'), 'rb') as f:
+with open(os.path.join(analysisfolder, 'true_scores_phonemeseq_2way_bipolar.pkl'), 'rb') as f:
     true_scores_dict = pickle.load(f)
-with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_2way_m1reref_gamma.pkl'), 'rb') as f:
+with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_2way_bipolar.pkl'), 'rb') as f:
     shuffle_scores_dict = pickle.load(f)
 
+blue = "#377eb8"
+red = "#e41a1c"
+
 timepoints = np.linspace(-0.4, 0.9, 131)
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 bar_width = 0.01  # LDA run every 10ms intervals with 200ms window
 y_position = 0.8
 xlim = (-0.4, 0.9)
@@ -608,25 +611,29 @@ for ax in fig.axes:
 for i, cond in enumerate(true_scores_dict.keys()):
     true_traces = np.mean(np.diagonal(true_scores_dict[cond], axis1=2, axis2=3), axis=2)  # traces of average decoding accuracy
     shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
-    signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm = 5000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
+    signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm = 10000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
-    plot_mean_with_std(true_traces, timepoints, ax = axes[i], color = 'red', label = 'true')
-    plot_mean_with_std(shuffle_traces, timepoints, ax = axes[i], color = 'blue', label = 'shuffle')
+    plot_mean_with_std(true_traces, timepoints, ax = axes[i], color = red, label = 'true')
+    plot_mean_with_std(shuffle_traces, timepoints, ax = axes[i], color = blue, label = 'shuffle')
 
     # Set labels and title for each subplot
     axes[i].set_xlabel('Time (s)')
-    axes[i].set_ylabel('Decoding Score')
-    axes[i].set_title(f'Score Trace for {cond}')
+    axes[i].set_ylabel('Accuracy (%)')
+    # axes[i].set_title(f'Score Trace for {cond}')
     axes[i].set_xlim(xlim)
     axes[i].set_ylim(ylim)
-    axes[i].legend()
+    axes[i].set_xticks([0,0.5])
+    axes[i].spines['top'].set_visible(False)
+    axes[i].spines['right'].set_visible(False)
+    if i == 0:
+        axes[i].legend(fontsize=10, frameon=True)
     x_axis = np.append(np.arange(xlim[0], xlim[1], bar_width), xlim[1])
     for idx, bool_value in enumerate(signif[0]):
         if bool_value:
             axes[i].barh(y=y_position, width=bar_width, height=0.01, left=x_axis[idx], color='black')
-plt.suptitle('Non-M1(mouth/larynx) re-referencing')
+# plt.suptitle('Non-M1(mouth/larynx) re-referencing')
 plt.tight_layout()
-plt.savefig(os.path.join(analysisfolder, 'phonemeseq_2way_m1reref_gamma.png'), dpi=300,
+plt.savefig(os.path.join(analysisfolder, 'phonemeseq_2way_hippreref_gamma.png'), dpi=300,
                 bbox_inches='tight')
 plt.show()
 
