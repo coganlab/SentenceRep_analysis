@@ -30,8 +30,8 @@ from analysis.check.chan_utils import nested_dict_to_ndarray
 suffix = "zscore-epo.fif"
 conds = {'aud': (-0.5,1), 'go': (-0.5,1), 'resp': (-0.5,1)}
 
-zscores = load_dict(layout, conds, 'zscore', False, 'stgrerefgammastats')
-mask = load_dict(layout, conds, 'significance', True, 'stgrerefgammastats')
+zscores = load_dict(layout, conds, 'zscore', False, 'hipprerefgammastats')
+mask = load_dict(layout, conds, 'significance', True, 'hipprerefgammastats')
 zscores = combine(zscores, (0, 3)) # combine subj with channel
 zscoresArray, zscoresLabel = nested_dict_to_ndarray(zscores)
 zscoresLA = LabeledArray(zscoresArray, labels=zscoresLabel)
@@ -129,7 +129,7 @@ encoder_cat_flipped = {v: k for k, v in encoder_cat.items()}
 weights_out = {}
 
 #TRF setup
-i_cond = 2
+i_cond = 0
 fs = 100
 tmin, tmax = -0.1, 0.7
 zscoresLA_cond = zscoresLA.take(i_cond, axis=0)
@@ -249,7 +249,7 @@ def process_and_plot(data):
         ax.set_title(title, fontsize=12)
         ax.set_xlabel("Time (s)", fontsize=11)
     axs[0].set_ylabel("High Gamma (Z-score)", fontsize=11)
-    plt.savefig(f"{analysisfolder}\\pca_stgrerefgamma.svg", format="svg", dpi=300)
+    plt.savefig(f"{analysisfolder}\\pca_hipprerefgamma.svg", format="svg", dpi=300)
     plt.show()
 
 process_and_plot(zscores_cropped.__array__())
@@ -357,7 +357,7 @@ def apply_pca_with_channel_loadings(data, label_names, axis=0, n_components=10, 
 
         plt.suptitle("Electrode Loadings in PC", fontsize=10)
         plt.tight_layout()
-        plt.savefig(f"{analysisfolder}\\pc_loadings_stgrerefgamma_resp.svg", format="svg", dpi=300)
+        plt.savefig(f"{analysisfolder}\\pc_loadings_hipprerefgamma_aud.svg", format="svg", dpi=300)
         plt.show()
 
     return transformed_data, pca, normalized_squared_loadings
