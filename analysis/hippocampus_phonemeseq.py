@@ -569,6 +569,7 @@ for i, cond in enumerate(true_scores_dict.keys()):
     axes[i].set_title(f'{cond}')
     axes[i].set_xlim(xlim)
     axes[i].set_ylim(ylim)
+    axes[i].set_xticks([0, 0.5])
     if i != 0:
         axes[i].legend().set_visible(False)
     else:
