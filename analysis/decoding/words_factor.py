@@ -20,6 +20,9 @@ import slicetca
 from functools import partial
 from ieeg.io import get_data
 from analysis.load import load_data, load_spec
+from sklearn import set_config
+
+set_config(enable_metadata_routing=True)
 
 
 def weighted_preserve_stats(data, weights, axis=2):
@@ -98,8 +101,8 @@ if __name__ == '__main__':
 
     n_components = (5,)
     best_seed = 123457
-    window_kwargs = {'window': 20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': -2,
-                    'average_repetitions': False, 'step': 10}
+    window_kwargs = {'window': 16, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
+                    'average_repetitions': False, 'step': 8}
 
     # #
     # %% decompose the optimal model
@@ -132,7 +135,7 @@ if __name__ == '__main__':
     # %% Time Sliding decoding for word tokens
     model = PcaLdaClassification(explained_variance=0.80, da_type='lda', weighted=True)
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5, 10, 1, 'train', model=model)
+                      5, 5, 1, 'train', model=model)
     true_scores = {}
     shuffle_scores = {}
     colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
@@ -143,9 +146,9 @@ if __name__ == '__main__':
     idx = [zscores.find(c, 2) for c in
            labels[0]]
     idxs = {c: idx for c in colors}
-    window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
+    window_kwargs = {'window': 10, 'obs_axs': 2, 'normalize': 'true',
                      'n_jobs': 1, 'oversample': False,
-                     'average_repetitions': False, 'step': 8}
+                     'average_repetitions': False, 'step': 5}
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     # colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
     # raise RuntimeError('stop')
@@ -154,7 +157,7 @@ if __name__ == '__main__':
 
     if not os.path.exists(true_name + '.npz'):
         for i in range(n_components[0]):
-            subset = np.nonzero(W[i] > 0.4)[0]
+            subset = np.nonzero(W[i] > 0.5)[0]
             in_data = zscores[:,:,[labels[0][s] for s in subset]]
             window_kwargs['weights'] = W[i, subset]
             # weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
