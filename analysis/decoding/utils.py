@@ -52,6 +52,12 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
 
             # Decoding
             decoder.current_job = "-".join([names[i], cond])
+
+            if 'weights' in decoder_kwargs:
+                sub_idx = [i for i, label in enumerate(array.labels[2])
+                           if label in x_data.labels[1]]
+                w = decoder_kwargs['weights'][sub_idx, None, None, None]
+                decoder_kwargs['weights'] = np.broadcast_arrays(w, X)[0]
             if on_gpu:
                 if cp is None:
                     raise ImportError("CuPy is not installed.")
@@ -63,7 +69,7 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
                     score = decoder.cv_cm(data, labels, **decoder_kwargs)
                 yield score.get()
             else:
-                yield decoder.cv_cm(X.__array__(), labels, **decoder_kwargs)
+                yield decoder.cv_cm(np.array(X), labels, **decoder_kwargs)
 
 
 def extract(array: LabeledArray, conds: list[str], trial_ax: int,
@@ -73,8 +79,12 @@ def extract(array: LabeledArray, conds: list[str], trial_ax: int,
     cond_coords = normalize_index(([array.find(cond, 0)
                                     for cond in conds],))
     chan_coords = normalize_index((slice(None), slice(None), idx))
+    print(f"Extracting {len(idx)} channels and {len(conds)} conditions")
     reduced = array[cond_coords][chan_coords].dropna()
     # also sorts the trials by nan or not
+    print(f"Data shape before nan reduction: {reduced.shape}")
     reduced = nan_common_denom(reduced, True, trial_ax, common, 2, crop_nan)
+    print(f"Data shape after nan reduction: {reduced.shape}")
+    # combine conditions back into one axis
     comb = reduced.combine((1, trial_ax))
     return comb.dropna()

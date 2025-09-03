@@ -51,60 +51,6 @@ def weighted_preserve_stats(data, weights, axis=2):
     data += orig_mean
 
 
-
-# def dict_to_structured_array(dict_matrices, filename='structured_array.npy'):
-#     # Get the keys and shapes
-#     keys = list(dict_matrices.keys())
-#     shape = dict_matrices[keys[0]].shape
-#
-#     # Create a data type for the structured array
-#     dt = np.dtype([(key, dict_matrices[key].dtype, shape) for key in keys])
-#
-#     # Create the structured array
-#     structured_array = np.zeros((1,), dtype=dt)
-#
-#     # Fill the structured array
-#     for key in keys:
-#         structured_array[key] = dict_matrices[key]
-#
-#     # Save the structured array to a file
-#     np.save(filename, structured_array)
-#
-#
-# def score1(categories, test_size, method, n_splits, n_repeats, sub, idxs, names,
-#           conds, window_kwargs, scores_dict, shuffle=False):
-#     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-#     while len(scores_dict) > 0:
-#         scores_dict.popitem()
-#     for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
-#         print(key)
-#         scores_dict[key] = values
-#     return scores_dict
-#
-#
-# def score2(categories, test_size, method, n_splits, n_repeats, sub, idxs,
-#           conds, window_kwargs, scores_dict, shuffle=False):
-#     decoder = Decoder(categories, test_size, method, n_splits=n_splits, n_repeats=n_repeats)
-#     names = list(scores_dict.keys())
-#     while len(scores_dict) > 0:
-#         scores_dict.popitem()
-#     for key, values in get_scores(sub, decoder, idxs, conds, names, shuffle=shuffle, **window_kwargs):
-#         print(key)
-#         scores_dict[key] = values
-#     return scores_dict
-#
-#
-# def flatten_nested_dict(nested_dict, parent_key='', sep='-'):
-#     items = []
-#     for k, v in nested_dict.items():
-#         new_key = parent_key + sep + k if parent_key else k
-#         if isinstance(v, dict):
-#             items.extend(flatten_nested_dict(v, new_key, sep=sep).items())
-#         else:
-#             items.append((new_key, v))
-#     return dict(items)
-
-
 if __name__ == '__main__':
 
 
@@ -184,7 +130,7 @@ if __name__ == '__main__':
     # raise RuntimeError("stop")
 
     # %% Time Sliding decoding for word tokens
-    model = PcaLdaClassification(explained_variance=0.80, da_type='lda')
+    model = PcaLdaClassification(explained_variance=0.80, da_type='lda', weighted=True)
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
                       5, 10, 1, 'train', model=model)
     true_scores = {}
@@ -198,19 +144,20 @@ if __name__ == '__main__':
            labels[0]]
     idxs = {c: idx for c in colors}
     window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
-                     'n_jobs': 1,
-                     'average_repetitions': False, 'step': 5}
+                     'n_jobs': 1, 'oversample': False,
+                     'average_repetitions': False, 'step': 8}
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm'], 'resp']
     # colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
     # raise RuntimeError('stop')
 
-    true_name = 'true_scores_freqmult_zscore_weighted_3'
+    true_name = 'true_scores_freqmult_zscore_weighted'
 
     if not os.path.exists(true_name + '.npz'):
         for i in range(n_components[0]):
-            subset = np.nonzero(W[i] > 0.1)[0]
+            subset = np.nonzero(W[i] > 0.4)[0]
             in_data = zscores[:,:,[labels[0][s] for s in subset]]
-            weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
+            window_kwargs['weights'] = W[i, subset]
+            # weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
                                      [names[i]], on_gpu=True, shuffle=False,
                                      **window_kwargs):
@@ -231,13 +178,13 @@ if __name__ == '__main__':
                                colors, "Word Decoding")
 
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5, 7, 1, 'train', model=model)
+                      5, 12, 1, 'train', model=model)
     shuffle_name = 'shuffle_scores_freqmult_zscore_weighted_3'
 
     if not os.path.exists(shuffle_name + '.npz'):
         for i in range(n_components[0]):
-            subset = W[i] > 0.2
-            in_data = zscores[:,:,labels[0][subset]]
+            subset = np.nonzero(W[i] > 0.2)[0]
+            in_data = zscores[:,:,[labels[0][s] for s in subset]]
             weighted_preserve_stats(in_data.__array__(), W[i, subset], 2)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
                                      [names[i]], on_gpu=True, shuffle=True,
