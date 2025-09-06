@@ -536,7 +536,7 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 for ax in fig.axes:
     ax.axhline(0.111, color='k', linestyle='--')
     ax.axvline(0, color='k', linestyle=':', alpha = 0.3)
@@ -555,8 +555,8 @@ for p_idx, position in enumerate(positions):
         shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
 
         # Plot with pastel shades
-        plot_mean_with_std(true_traces, timepoints, ax=ax, color=reds[p_idx], label=f'True - {position} phoneme')
-        plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffle')
+        plot_mean_with_std(true_traces, timepoints, ax=ax, color=reds[p_idx], label=f'{position} phoneme')
+        plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffled')
 
         # Calculate significance
         signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm=5000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))

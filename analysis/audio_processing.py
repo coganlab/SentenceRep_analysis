@@ -139,7 +139,7 @@ vcv_mean = np.mean(vcv_traces,axis=0)
 cvc_mean = np.mean(cvc_traces,axis=0)
 
 # ---- Plot ----
-fig, axes = plt.subplots(1, 2, figsize=(8, 3), sharey=True)
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), sharey=True)
 
 plt.rcParams.update({
     "font.size": 12,

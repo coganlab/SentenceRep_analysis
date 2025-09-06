@@ -703,7 +703,7 @@ bar_width = 0.01
 base_y = 0.42
 spacing = 0.02
 
-fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
 # Common lines
 for ax in axes:
