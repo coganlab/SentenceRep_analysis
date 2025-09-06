@@ -308,7 +308,7 @@ with open(f'{analysisfolder}\\maxhipp_channel_label_phonemeseq.pkl', 'wb') as f:
     pickle.dump(maxhipp_ch_label, f)
 
 #%%  plot
-sub.plot_groups_on_average([idx_hipp, idx_hippsig], colors = ['#F4A6A6','#D46A6A'])
+brainobj = sub.plot_groups_on_average([idx_stg, idx_m1, idx_hipp], colors = ["#1B9E77", "#D95F02", "#7570B3"], transparency=0.1)
 
 #%% Prep data to labeledarray
 from ieeg.calc.mat import LabeledArray, combine
@@ -365,6 +365,8 @@ sig_idx_aud = list(set(sig_idx['aud']))
 idx_gmsig_aud = [i for i in idx_gm if i in sig_idx_aud]
 sig_idx_resp = list(set(sig_idx['resp']))
 idx_gmsig_resp = [i for i in idx_gm if i in sig_idx_resp]
+idx_stg = [i for i, label in enumerate(orig_ch_label) if 'A41' in label]
+idx_m1 = [i for i, label in enumerate(orig_ch_label) if 'A4hf' in label]
 
 # %% Time sliding decoding for reconstruction
 from analysis.decoding import classes_from_labels
@@ -503,9 +505,9 @@ from matplotlib.colors import to_hex
 reds = [to_hex(cm.Reds(0.6)), to_hex(cm.Reds(0.4)), to_hex(cm.Reds(0.25))]
 blues = [to_hex(cm.Blues(0.6)), to_hex(cm.Blues(0.4)), to_hex(cm.Blues(0.25))]
 
-positions = ['1st', '2nd', '3rd']
+positions = ['1st']
 bar_width = 0.01
-y_base_position = 0.25
+y_base_position = 0.07
 height_spacing = 0.02
 timepoints = np.linspace(-0.4, 0.9, 131)
 xlim = (-0.4, 0.9)
@@ -534,24 +536,27 @@ def plot_mean_with_std(data, timepoints, ax, color, label):
     ax.fill_between(timepoints, mean_trace - std_trace, mean_trace + std_trace,
                     color=color, alpha=0.2, linewidth=0)
 
-fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+fig, axes = plt.subplots(1, 2, figsize=(8, 4))
 for ax in fig.axes:
     ax.axhline(0.111, color='k', linestyle='--')
+    ax.axvline(0, color='k', linestyle=':', alpha = 0.3)
 # Iterate through each phoneme position
 for p_idx, position in enumerate(positions):
     with open(os.path.join(analysisfolder, f'true_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
         true_scores_dict = pickle.load(f)
     with open(os.path.join(analysisfolder, f'shuffle_scores_phonemeseq_9way_{position}phoneme_bipolar.pkl'), 'rb') as f:
         shuffle_scores_dict = pickle.load(f)
-
+    ax_idx = 0
     for cond_idx, cond in enumerate(true_scores_dict.keys()):
-        ax = axes[cond_idx]
+        if cond_idx == 1:
+            continue
+        ax = axes[ax_idx]
         true_traces = np.mean(np.diagonal(true_scores_dict[cond], axis1=2, axis2=3), axis=2)
         shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
 
         # Plot with pastel shades
-        plot_mean_with_std(true_traces, timepoints, ax=ax, color=reds[p_idx], label=f'True - {position} position')
-        plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffle - {position} position')
+        plot_mean_with_std(true_traces, timepoints, ax=ax, color=reds[p_idx], label=f'True - {position} phoneme')
+        plot_mean_with_std(shuffle_traces, timepoints, ax=ax, color=blues[p_idx], label=f'Shuffle')
 
         # Calculate significance
         signif = time_perm_cluster(true_traces, shuffle_traces, 0.05, n_perm=5000, stat_func=lambda x, y, axis: np.mean(x, axis=axis))
@@ -561,11 +566,15 @@ for p_idx, position in enumerate(positions):
         for i, value in enumerate(signif[0]):
             if value:
                 ax.barh(y=y_position, width=bar_width, height=0.005, left=x_axis[i], color=reds[p_idx])
+        ax_idx += 1
 
 # Final touches
-for i, cond in enumerate(true_scores_dict.keys()):
+i = 0
+for ax_i, cond in enumerate(true_scores_dict.keys()):
+    if ax_i == 1:
+        continue
     axes[i].set_xlabel('Time from Onset (s)')
-    axes[i].set_ylabel('Accuracy (%)')
+    axes[i].set_ylabel('Accuracy')
     axes[i].set_title(f'{cond}')
     axes[i].set_xlim(xlim)
     axes[i].set_ylim(ylim)
@@ -573,10 +582,11 @@ for i, cond in enumerate(true_scores_dict.keys()):
     if i != 0:
         axes[i].legend().set_visible(False)
     else:
-        axes[i].legend(loc='lower left', fontsize=6, frameon=True)
+        axes[i].legend(loc='upper left', fontsize=12, frameon=False)
     # Remove top and right spines (borders)
     axes[i].spines['top'].set_visible(False)
     axes[i].spines['right'].set_visible(False)
+    i += 1
 
 # handles, labels = axes[0].get_legend_handles_labels()
 # axes[0].legend(handles, labels, loc='upper right', fontsize=9, frameon=False)
