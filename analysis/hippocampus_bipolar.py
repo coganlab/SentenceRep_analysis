@@ -694,7 +694,7 @@ with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_2way_stgreref_
 
 # Colors and labels
 colors = ["#1B9E77", "#D95F02", "#7570B3", "#80B1D3"]
-names = ["STG (BA41/42)", "vPrecG (BA4)", "Hippocampus", "Shuffled"]
+names = ["Primary auditory (BA41/42)", "Primary motor (BA4)", "Hippocampus", "Shuffled"]
 
 timepoints = np.linspace(-0.4, 0.9, 131)
 xlim = (-0.4, 0.9)
