@@ -693,15 +693,15 @@ with open(os.path.join(analysisfolder, 'shuffle_scores_phonemeseq_2way_stgreref_
     shuffle_scores_dict = pickle.load(f)
 
 # Colors and labels
-colors = ["#1B9E77", "#D95F02", "#7570B3", "#80B1D3"]
-names = ["Primary auditory (BA41/42)", "Primary motor (BA4)", "Hippocampus", "Shuffled"]
+colors = ["#7570B3", "#1B9E77", "#D95F02", "#80B1D3"]
+names = ["Hippocampus", "Primary auditory (BA41/42)", "Primary motor (BA4)", "Shuffled"]
 
 timepoints = np.linspace(-0.4, 0.9, 131)
 xlim = (-0.4, 0.9)
 ylim = (0.4, 1)
 bar_width = 0.01
-base_y = 0.42
-spacing = 0.02
+base_y = 0.46
+spacing = -0.02
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
@@ -729,17 +729,17 @@ for i, cond in enumerate(shuffle_scores_dict.keys()):
     shuffle_traces = np.mean(np.diagonal(shuffle_scores_dict[cond], axis1=2, axis2=3), axis=2)
 
     # Compute significance
-    signif_m1 = time_perm_cluster(true_traces_m1, shuffle_traces, 0.05, n_perm=10000,
+    signif_m1 = time_perm_cluster(true_traces_m1, shuffle_traces, 0.05, n_perm=5000,
                                   stat_func=lambda x, y, axis: np.mean(x, axis=axis))
-    signif_stg = time_perm_cluster(true_traces_stg, shuffle_traces, 0.05, n_perm=10000,
+    signif_stg = time_perm_cluster(true_traces_stg, shuffle_traces, 0.05, n_perm=5000,
                                    stat_func=lambda x, y, axis: np.mean(x, axis=axis))
-    signif_hipp = time_perm_cluster(true_traces_hipp, shuffle_traces, 0.05, n_perm=10000,
+    signif_hipp = time_perm_cluster(true_traces_hipp, shuffle_traces, 0.05, n_perm=5000,
                                     stat_func=lambda x, y, axis: np.mean(x, axis=axis))
 
     # Plot traces
-    traces = [true_traces_stg, true_traces_m1, true_traces_hipp]
+    traces = [true_traces_hipp, true_traces_stg, true_traces_m1]
     trace_colors = colors[:3]
-    signifs = [signif_stg, signif_m1, signif_hipp]
+    signifs = [signif_hipp, signif_stg, signif_m1]
 
     for j, (tr, sig, col) in enumerate(zip(traces, signifs, trace_colors)):
         plot_mean_with_std(tr, timepoints, ax=axes[axes_idx], color=col)
@@ -764,7 +764,7 @@ for i, cond in enumerate(shuffle_scores_dict.keys()):
     if axes_idx == 0:
         legend_elements = [Line2D([0], [0], color=c, lw=2, label=l)
                            for c, l in zip(colors, names)]
-        axes[0].legend(handles=legend_elements, loc="upper left", frameon=False)
+        axes[0].legend(handles=legend_elements, loc="upper left", frameon=False, fontsize =10)
 
     axes_idx += 1
 
