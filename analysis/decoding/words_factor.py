@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # model = torch.load('model_sig_chans.pt')
 
     W, H = model.get_components(numpy=True)[0]
-    names = ['Auditory', 'WM', 'Motor', 'Visual']
+    # names = ['Auditory', 'WM', 'Motor', 'Visual']
     names = ['Auditory', 'Visual', 'WM', 'Motor']
     # fig, ax = plt.subplots(1,1)
     # for i in range(n_components[0]):
@@ -154,13 +154,13 @@ if __name__ == '__main__':
     # raise RuntimeError("stop")
 
     # %% Time Sliding decoding for word tokens
-    # decode_model = PcaLdaClassification(explained_variance=0.80, da_type='lda')
-    decode_model = PcaEstimateDecoder(0.80, clf_params={'max_iter': 10000})
+    decode_model = PcaLdaClassification(explained_variance=0.85, da_type='lda')
+    # decode_model = PcaEstimateDecoder(0.80, clf_params={'max_iter': 10000})
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5, 4, 1, 'train', model=decode_model)
+                      5, 3, 1, 'train', model=decode_model)
     true_scores = {}
     shuffle_scores = {}
-    colors = ['orange', 'k', 'c', 'y', 'm', 'deeppink',
+    colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
               'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
 
     real_names = ['Auditory', 'Visual', 'WM', 'Motor']
@@ -169,7 +169,7 @@ if __name__ == '__main__':
            labels[0]]
     idxs = {c: idx for c in colors}
     window_kwargs = {'window': 20, 'obs_axs': 2, 'normalize': 'true',
-                     'n_jobs': 10, 'oversample': True,
+                     'n_jobs': 1, 'oversample': True,
                      'average_repetitions': False, 'step': 5}
     # conds = list(map(list, list(combinations(['aud_ls', 'aud_lm', 'aud_jl'], 2))
     #                   + list(
@@ -195,7 +195,6 @@ if __name__ == '__main__':
             weights_go = np.nanmean(weights[None, ..., None, 200:], axis=2)
             weighted_preserve_stats(in_data['aud_ls'], weights_aud)
             weighted_preserve_stats(in_data['aud_lm'], weights_aud)
-
             weighted_preserve_stats(in_data['aud_jl'], weights_aud)
             weighted_preserve_stats(in_data['go_ls'], weights_go)
             weighted_preserve_stats(in_data['go_lm'], weights_go)
@@ -203,7 +202,7 @@ if __name__ == '__main__':
             # weighted_preserve_stats(in_data['resp'], W[i, subset], 1)
             # weighted_preserve_stats(in_data, weights, 2)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
-                                     [names[i]], on_gpu=False, shuffle=False,
+                                     [names[i]], on_gpu=True, shuffle=False,
                                      which=-2, **window_kwargs):
                 key = decoder.current_job
                 true_scores[key] = values

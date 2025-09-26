@@ -33,7 +33,7 @@ def concatenate_conditions(data, conditions, axis=1, trial_axis=2):
 
 def get_scores(array, decoder: Decoder, idxs: list[list[int]],
                conds: list[str], names: list[str], on_gpu: bool = False,
-               **decoder_kwargs) -> Generator[ndarray, Any, None]:
+               crop: slice = slice(None),which: int = 0, **decoder_kwargs) -> Generator[ndarray, Any, None]:
     ax = array.ndim - 2
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
@@ -42,13 +42,16 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
 
         for cond in conds:
             if isinstance(cond, list):
-                X = concatenate_conditions(x_data, cond, 0, ax-1)
+                X = x_data[cond].combine((0, ax-1))
                 cond = "-".join(cond)
             else:
                 X = x_data[cond,].dropna()
             cats, labels = classes_from_labels(X.labels[ax-2],
-                                               crop=slice(0, 4),
-                                               cats=decoder.categories)
+                                               crop=crop, which=which)
+                                               # cats=decoder.categories)
+            decoder.categories = cats
+            print(f"Decoding {names[i]} {cond} with {len(cats)} classes and ")
+            print(f"Categories: {cats}")
 
             # Decoding
             decoder.current_job = "-".join([names[i], cond])
@@ -56,7 +59,7 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
             if 'weights' in decoder_kwargs:
                 sub_idx = [i for i, label in enumerate(array.labels[2])
                            if label in x_data.labels[1]]
-                w = decoder_kwargs['weights'][sub_idx, None, None, None]
+                w = decoder_kwargs['weights'][sub_idx, None, None]
                 decoder_kwargs['weights'] = np.broadcast_arrays(w, X)[0]
             if on_gpu:
                 if cp is None:
@@ -66,6 +69,9 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
                                     skip_parameter_validation=True):
                     data = cp.asarray(X.__array__())
                     labels = cp.asarray(labels)
+                    if 'weights' in decoder_kwargs:
+                        decoder_kwargs['weights'] = cp.asarray(
+                            decoder_kwargs['weights'])
                     score = decoder.cv_cm(data, labels, **decoder_kwargs)
                 yield score.get()
             else:
