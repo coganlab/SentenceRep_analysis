@@ -14,7 +14,8 @@ exclude = [
     "D0053-LPIF10", "D0053-LPIF11", "D0053-LPIF12", "D0053-LPIF13",
     "D0053-LPIF14", "D0053-LPIF15", "D0053-LPIF16",
     "D0027-LPIF6", "D0027-LPIF7", "D0027-LPIF8", "D0027-LPIF9",
-    "D0027-LPIF10"
+    "D0027-LPIF10", "D0026-RPG20", "D0026-RPG21", "D0026-RPG28",
+    "D0026-RPG29", "D0026-RPG36","D0026-RPST2", "D0007-RFG44"
 ]
 
 def load_tensor(array, idx, conds, trial_ax, min_nan=1):
@@ -25,9 +26,9 @@ def load_tensor(array, idx, conds, trial_ax, min_nan=1):
     std_ch = np.nanstd(X.__array__(), (0,2,3,4), dtype='f8')
     std = float(np.mean(std_ch))
     combined = np.concatenate([X[c] for c in conds], axis=-1)
-    if (std_ch < (2 * std)).any():
-        combined = combined[std_ch < (2 * std),]
-        std = float(np.nanstd(combined.__array__(), dtype='f8'))
+    if not (goods := std_ch < (2 * std)).all():
+        combined = combined[goods,]
+        std = float(np.mean(std_ch[goods]))
     out_tensor = torch.from_numpy(combined.__array__() / std)
     mask = torch.isnan(out_tensor)
     return out_tensor, ~mask, list(map(list, combined.labels))
@@ -72,13 +73,14 @@ def split_and_stack(tensor, split_dim, stack_pos, num_splits, new_dim: bool = Tr
 
 def load_data(layout, folder: str, datatype: str,
               conds: dict[str, Doubles] = None, ch_dim: int = None,
-              out_type: type | str = float, average: bool = True, n_jobs: int = 12):
+              out_type: type | str = float, average: bool = True,
+              n_jobs: int = 12, combined_folder: str = 'combined') -> LabeledArray:
     """
     Loads and combines zscore or other data for all subjects and conditions.
     Returns a LabeledArray.
     """
-    filemask = os.path.join(layout.root, 'derivatives', folder, 'combined',
-                            datatype)
+    filemask = os.path.join(layout.root, 'derivatives', folder,
+                            combined_folder, datatype)
     if not os.path.exists(filemask + ".npy"):
         missing = [name for name, val in [('conds', conds),
                                           ('ch_dim', ch_dim)] if val is None]

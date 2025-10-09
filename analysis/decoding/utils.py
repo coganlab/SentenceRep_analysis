@@ -37,7 +37,7 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
     ax = array.ndim - 2
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
-        x_data = extract(array, all_conds, ax, idx, decoder.n_splits,
+        x_data = extract(array, all_conds, ax, idx, min(3, decoder.n_splits),
                          False)
 
         for cond in conds:

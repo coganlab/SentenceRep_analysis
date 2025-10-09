@@ -3,6 +3,7 @@
 
 import numpy as np
 import os
+from numpy.lib.stride_tricks import sliding_window_view
 
 from analysis.grouping import group_elecs
 from ieeg.decoding.decode import (Decoder, plot_all_scores)
@@ -36,8 +37,8 @@ def weighted_preserve_stats(data, weights, axis=None):
     Returns:
         np.ndarray: The weighted and rescaled data.
     """
-    where = ~np.isnan(data)
-    kwargs = {'where': where, 'dtype': 'f4'}
+    # where = ~np.isnan(data)
+    # kwargs = {'where': where, 'dtype': 'f4'}
     w = weights / np.mean(weights)
 
     # Multiply along the specified axis
@@ -45,13 +46,6 @@ def weighted_preserve_stats(data, weights, axis=None):
         data *= w
     else:
         data *= w.reshape([1 if i != axis else -1 for i in range(data.ndim)])
-
-    # # Rescale to preserve mean and variance
-    # weighted_mean = np.mean(data, **kwargs)
-    # weighted_std = np.std(data, **kwargs)
-    # data -= weighted_mean
-    # data *= orig_std / weighted_std
-    # data += orig_mean
 
 
 if __name__ == '__main__':
@@ -101,7 +95,7 @@ if __name__ == '__main__':
 
     n_components = (4,)
     best_seed = 123457
-    window_kwargs = {'window': 16, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
+    window_kwargs = {'window':20, 'obs_axs': 1, 'normalize': 'true', 'n_jobs': 1,
                     'average_repetitions': False, 'step': 8}
 
     # #
@@ -115,7 +109,7 @@ if __name__ == '__main__':
         labels = load_spec(group, list(conds_all.keys()), layout, folder=folder,
                            min_nan=1, n_jobs=-2)[-2]
         pickle.dump(labels, open(filename, 'wb'))
-    state = torch.load('model_SM_freq.pt')
+    state = torch.load('model_SM2_freq.pt')
     shape = state['vectors.0.0'].shape[1:] + state['vectors.0.1'].shape[1:]
     n_components = (state['vectors.0.0'].shape[0],)
     model = slicetca.core.SliceTCA(
@@ -134,36 +128,46 @@ if __name__ == '__main__':
     model.load_state_dict(state)
     model[0]
     # model = torch.load('model_sig_chans.pt')
-
+    colors = ['orange', 'k', 'c', 'y']
+    names = ['Auditory', 'WM', 'Motor', 'Visual']
     W, H = model.get_components(numpy=True)[0]
     # names = ['Auditory', 'WM', 'Motor', 'Visual']
-    names = ['Auditory', 'Visual', 'WM', 'Motor']
-    # fig, ax = plt.subplots(1,1)
-    # for i in range(n_components[0]):
-    #     subset = np.nonzero(W[i] / W.mean() > 0.05)[0]
-    #     # subset = np.nonzero(W[i]/W.sum(0) > 0.5)[0]
-    #     # subset = np.nonzero(W[i] == np.max(W, 0))[0]
-    #     in_data = zscores[:, :, [labels[0][s] for s in subset]]
-    #     print(f"{names[i]} component, {len(subset)} channels")
-    #     weights = model.construct_single_component(0, i).detach().numpy()[
-    #         subset]
-    #     weights_aud = np.nanmean(weights[None, ..., None, :200], axis=2)
-    #     weights_go = np.nanmean(weights[None, ..., None, 200:], axis=2)
-    #     weighted_preserve_stats(in_data['aud_ls'], weights_aud)
-    #     plot_dist(np.nanmean(in_data['aud_ls'].__array__(), axis=(0, 2, 3)), ax=ax)
+    # conds = ['ls', 'lm', 'jl']
+    # names = ['Auditory', 'Visual', 'WM', 'Motor']
+    # fig, ax = plt.subplots(1,3)
+    # for j, cond in enumerate(conds):
+    #     for i in range(n_components[0]):
+    #         subset = np.nonzero(W[i] / W.mean() > 0.05)[0]
+    #         # subset = np.nonzero(W[i]/W.sum(0) > 0.5)[0]
+    #         # subset = np.nonzero(W[i] == np.max(W, 0))[0]
+    #         in_data = zscores[:, :, [labels[0][s] for s in subset]]
+    #         print(f"{names[i]} component, {len(subset)} channels")
+    #         weights = model.construct_single_component(0, i).detach().numpy()[
+    #             subset]
+    #         weights_aud = np.nanmean(weights[None, ..., None, :200], axis=2)
+    #         weights_go = np.nanmean(weights[None, ..., None, 200:], axis=2)
+    #         weighted_preserve_stats(in_data['go_' + cond], weights_go)
+    #         plot_dist(np.nanmean(in_data['go_' +cond].__array__(), axis=(0, 2, 3)), ax=ax[j], color=colors[i], label=names[i], times=(-0.5, 1.5))
+    #     ax[j].set_title(f'go_{cond}')
+    #     ax[j].set_xlabel('Time (s)')
+    # ax[0].ylabel('Z-Score')
+    # plt.legend()
     # raise RuntimeError("stop")
 
     # %% Time Sliding decoding for word tokens
-    decode_model = PcaLdaClassification(explained_variance=0.85, da_type='lda')
-    # decode_model = PcaEstimateDecoder(0.80, clf_params={'max_iter': 10000})
+    decode_model = PcaLdaClassification(explained_variance=100, da_type='lda', PCA_kwargs={
+        'svd_solver': 'full',
+        # 'whiten': True
+    })
+    # decode_model = PcaEstimateDecoder(100, clf_params={'max_iter': -1, 'kernel': 'sigmoid', 'C': 0.01, 'gamma': 0.00001})
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5, 3, 1, 'train', model=decode_model)
+                      10, 5, 2, 'train', model=decode_model)
     true_scores = {}
     shuffle_scores = {}
-    colors = ['orange', 'y', 'k', 'c', 'm', 'deeppink',
-              'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
+    # colors = ['orange', 'k', 'c', 'y', 'm', 'deeppink',
+    #           'darkorange', 'lime', 'blue', 'red', 'purple'][:n_components[0]]
 
-    real_names = ['Auditory', 'Visual', 'WM', 'Motor']
+    # real_names = ['Auditory', 'Visual', 'WM', 'Motor']
     assert W.shape[1] == len(labels[0])
     idx = [zscores.find(c, 2) for c in
            labels[0]]
@@ -177,9 +181,11 @@ if __name__ == '__main__':
     conds = [['aud_ls', 'aud_lm'], ['go_ls', 'go_lm']]
     # colors = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5]]
     # raise RuntimeError('stop')
-    suffix ='_freqmult_zscore_weighted_words'
+    suffix ='_zscore_weighted_words10'
     n_classes = 4
     true_name = 'true_scores' + suffix
+    aud_len = 175
+    wh = -2
 
     baseline = 1 / n_classes
 
@@ -188,22 +194,21 @@ if __name__ == '__main__':
             subset = np.nonzero(W[i] / W.mean() > 0.05)[0]
             # subset = np.nonzero(W[i]/W.sum(0) > 0.5)[0]
             # subset = np.nonzero(W[i] == np.max(W, 0))[0]
-            in_data = zscores[:,:,[labels[0][s] for s in subset]]
+            in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
             print(f"{names[i]} component, {len(subset)} channels")
             weights = model.construct_single_component(0, i).detach().numpy()[subset]
-            weights_aud = np.nanmean(weights[None, ..., None, :200], axis=2)
-            weights_go = np.nanmean(weights[None, ..., None, 200:], axis=2)
-            weighted_preserve_stats(in_data['aud_ls'], weights_aud)
-            weighted_preserve_stats(in_data['aud_lm'], weights_aud)
-            weighted_preserve_stats(in_data['aud_jl'], weights_aud)
-            weighted_preserve_stats(in_data['go_ls'], weights_go)
-            weighted_preserve_stats(in_data['go_lm'], weights_go)
-            weighted_preserve_stats(in_data['go_jl'], weights_go)
+            weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
+            weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
+            for c in ['ls', 'lm', 'jl']:
+                weighted_preserve_stats(in_data['aud_' + c], weights_aud)
+                weighted_preserve_stats(in_data['go_' + c], weights_go)
             # weighted_preserve_stats(in_data['resp'], W[i, subset], 1)
             # weighted_preserve_stats(in_data, weights, 2)
-            for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
+            for values in get_scores(np.nanmean(in_data, axis=-3, keepdims=True),
+                                     # in_data,
+                                     decoder, [list(range(subset.sum()))], conds,
                                      [names[i]], on_gpu=True, shuffle=False,
-                                     which=-2, **window_kwargs):
+                                     which=wh, **window_kwargs):
                 key = decoder.current_job
                 true_scores[key] = values
                 np.savez(true_name, **true_scores)
@@ -235,28 +240,19 @@ if __name__ == '__main__':
 
     if not os.path.exists(shuffle_name + '.npz'):
         for i in range(n_components[0]):
-            subset = np.nonzero(W[i]/W.sum(0) > 0.05)[0]
+            subset = np.nonzero(W[i]/W.mean() > 0.05)[0]
             # subset = np.nonzero(W[i] == np.max(W, 0))[0]
 
-            in_data = zscores[:,:,[labels[0][s] for s in subset]]
+            in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
             weights = model.construct_single_component(0, i).detach().numpy()[subset]
-            weights_aud = np.nanmean(weights[None, ..., None, :200], axis=2)
-            weights_go = np.nanmean(weights[None, ..., None, 200:], axis=2)
-            weighted_preserve_stats(in_data['aud_ls'],
-                                    weights_aud)
-            weighted_preserve_stats(in_data['aud_lm'],
-                                    weights_aud)
-            weighted_preserve_stats(in_data['aud_jl'],
-                                    weights_aud)
-            weighted_preserve_stats(in_data['go_ls'],
-                                    weights_go)
-            weighted_preserve_stats(in_data['go_lm'],
-                                    weights_go)
-            weighted_preserve_stats(in_data['go_jl'],
-                                    weights_go)
+            weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
+            weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
+            for c in ['ls', 'lm', 'jl']:
+                weighted_preserve_stats(in_data['aud_' + c], weights_aud)
+                weighted_preserve_stats(in_data['go_' + c], weights_go)
             for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
                                      [names[i]], on_gpu=True, shuffle=True,
-                                     which=0, **window_kwargs):
+                                     which=wh, **window_kwargs):
                 key = decoder.current_job
                 shuffle_scores[key] = values
 
@@ -276,9 +272,9 @@ if __name__ == '__main__':
         true = np.mean(score.T[np.eye(n_classes).astype(bool)].T, axis=2)
         shuffle = np.mean(shuffle_scores[cond].T[np.eye(n_classes).astype(bool)].T,
                           axis=2)
-        signif[cond], pvals[cond] = time_perm_cluster(
+        signif[cond], pvals[cond] = time_perm_cluster(#true.T,
             true.mean(axis=1, keepdims=True).T,
-            shuffle.T, 0.05, n_perm=50000,
+            shuffle.T, 0.05, n_perm=10000,
             stat_func=lambda x, y, axis: np.mean(x, axis=axis)
         )
 
