@@ -22,6 +22,9 @@ from analysis.load import load_data, load_spec
 from sklearn import set_config
 from sklearn.decomposition import PCA
 from sklearn.svm import SVC
+import joblib
+from dask.distributed import Client, LocalCluster
+from dask_jobqueue import SLURMCluster
 
 set_config(enable_metadata_routing=True)
 
@@ -156,6 +159,38 @@ if __name__ == '__main__':
     # plt.legend()
     # raise RuntimeError("stop")
 
+    # %% Dask Distributed (SLURM) backend configuration
+    # Set your SLURM/Dask parameters here
+    USE_LOCAL = True          # set True to use a local Dask cluster for debugging
+    USERNAME = "ae166"  # set your username (for /scratch paths)
+    JOB_CPUS = 5               # cpus-per-task on each SLURM job
+    SLURM_PARTITION = "common,scavenger"   # set partition/queue
+    SLURM_ACCOUNT = "ae166"       # set project/account if required
+    NUM_WORKERS = 20            # desired concurrent jobs (cluster size)
+
+    if USE_LOCAL:
+        cluster = LocalCluster(
+            n_workers=NUM_WORKERS,
+            threads_per_worker=1,
+            processes=True
+        )
+        client = Client(cluster)
+    else:
+        cluster = SLURMCluster(
+            queue=SLURM_PARTITION,
+            account=SLURM_ACCOUNT,
+            cores=JOB_CPUS,
+            processes=JOB_CPUS,
+            memory="30GB",
+            job_extra=[
+                f"--cpus-per-task={JOB_CPUS}",
+                f"--job-name=words_factor_{USERNAME}"
+            ],
+            local_directory=os.path.join("/scratch", USERNAME, "dask-tmp")
+        )
+        cluster.scale(NUM_WORKERS)
+        client = Client(cluster)
+
     # %% Time Sliding decoding for word tokens
     # decode_model = PcaLdaClassification(explained_variance=0.9, da_type='lda', PCA_kwargs={
     # #     # 'svd_solver': 'full',
@@ -209,42 +244,43 @@ if __name__ == '__main__':
     baseline = 1 / n_classes
 
     if not os.path.exists(true_name + '.npz'):
-        for i in range(n_components[0]):
-            subset = np.nonzero(W[i] / W.mean() > 0.05)[0]
-            # subset = np.nonzero(W[i]/W.sum(0) > 0.5)[0]
-            # subset = np.nonzero(W[i] == np.max(W, 0))[0]
-            in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
-            print(f"{names[i]} component, {len(subset)} channels")
-            weights = model.construct_single_component(0, i).detach().numpy()[subset]
-            weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
-            weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
-            for c in ['ls', 'lm', 'jl']:
-                weighted_preserve_stats(in_data['aud_' + c], weights_aud)
-                weighted_preserve_stats(in_data['go_' + c], weights_go)
+        with joblib.parallel_backend('dask'):
+            for i in range(n_components[0]):
+                subset = np.nonzero(W[i] / W.mean() > 0.05)[0]
+                # subset = np.nonzero(W[i]/W.sum(0) > 0.5)[0]
+                # subset = np.nonzero(W[i] == np.max(W, 0))[0]
+                in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
+                print(f"{names[i]} component, {len(subset)} channels")
+                weights = model.construct_single_component(0, i).detach().numpy()[subset]
+                weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
+                weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
+                for c in ['ls', 'lm', 'jl']:
+                    weighted_preserve_stats(in_data['aud_' + c], weights_aud)
+                    weighted_preserve_stats(in_data['go_' + c], weights_go)
 
-            # Frequency averaging if requested (axis may be absent)
-            if freq_avg is True or freq_avg == 1:
-                in_data = np.nanmean(in_data, axis=-3,
-                                     keepdims=True)
-            elif isinstance(freq_avg, float) and 1 > freq_avg > 1 / \
-                    in_data.shape[-3]:
-                # moving average to partial reduce frequency dimension
-                window = int(round(1 / freq_avg))
-                idx = [slice(None)] * in_data.ndim
-                idx[-3] = slice(0, None, window)
-                in_data = np.nanmean(sliding_window_view(
-                    in_data, window_shape=window, axis=-3,
-                    subok=True)[tuple(idx)], axis=-1)
+                # Frequency averaging if requested (axis may be absent)
+                if freq_avg is True or freq_avg == 1:
+                    in_data = np.nanmean(in_data, axis=-3,
+                                         keepdims=True)
+                elif isinstance(freq_avg, float) and 1 > freq_avg > 1 / \
+                        in_data.shape[-3]:
+                    # moving average to partial reduce frequency dimension
+                    window = int(round(1 / freq_avg))
+                    idx = [slice(None)] * in_data.ndim
+                    idx[-3] = slice(0, None, window)
+                    in_data = np.nanmean(sliding_window_view(
+                        in_data, window_shape=window, axis=-3,
+                        subok=True)[tuple(idx)], axis=-1)
 
-            # weighted_preserve_stats(in_data['resp'], W[i, subset], 1)
-            # weighted_preserve_stats(in_data, weights, 2)
-            for values in get_scores(in_data,
-                                     decoder, [list(range(subset.sum()))], conds,
-                                     [names[i]], on_gpu=False, shuffle=False,
-                                     which=wh, **window_kwargs):
-                key = decoder.current_job
-                true_scores[key] = values
-                np.savez(true_name, **true_scores)
+                # weighted_preserve_stats(in_data['resp'], W[i, subset], 1)
+                # weighted_preserve_stats(in_data, weights, 2)
+                for values in get_scores(in_data,
+                                         decoder, [list(range(subset.sum()))], conds,
+                                         [names[i]], on_gpu=False, shuffle=False,
+                                         which=wh, **window_kwargs):
+                    key = decoder.current_job
+                    true_scores[key] = values
+                    np.savez(true_name, **true_scores)
     else:
         true_scores = dict(np.load(true_name + '.npz', allow_pickle=True))
 
@@ -272,24 +308,25 @@ if __name__ == '__main__':
     shuffle_name = 'shuffle_scores' + suffix
 
     if not os.path.exists(shuffle_name + '.npz'):
-        for i in range(n_components[0]):
-            subset = np.nonzero(W[i]/W.mean() > 0.05)[0]
-            # subset = np.nonzero(W[i] == np.max(W, 0))[0]
+        with joblib.parallel_backend('dask'):
+            for i in range(n_components[0]):
+                subset = np.nonzero(W[i]/W.mean() > 0.05)[0]
+                # subset = np.nonzero(W[i] == np.max(W, 0))[0]
 
-            in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
-            weights = model.construct_single_component(0, i).detach().numpy()[subset]
-            weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
-            weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
-            for c in ['ls', 'lm', 'jl']:
-                weighted_preserve_stats(in_data['aud_' + c], weights_aud)
-                weighted_preserve_stats(in_data['go_' + c], weights_go)
-            for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
-                                     [names[i]], on_gpu=False, shuffle=True,
-                                     which=wh, **window_kwargs):
-                key = decoder.current_job
-                shuffle_scores[key] = values
+                in_data = zscores[:,:,[labels[0][s] for s in subset], ..., :aud_len]
+                weights = model.construct_single_component(0, i).detach().numpy()[subset]
+                weights_aud = np.nanmean(weights[None, ..., None, :aud_len], axis=2)
+                weights_go = np.nanmean(weights[None, ..., None, aud_len:], axis=2)
+                for c in ['ls', 'lm', 'jl']:
+                    weighted_preserve_stats(in_data['aud_' + c], weights_aud)
+                    weighted_preserve_stats(in_data['go_' + c], weights_go)
+                for values in get_scores(in_data, decoder, [list(range(subset.sum()))], conds,
+                                         [names[i]], on_gpu=False, shuffle=True,
+                                         which=wh, **window_kwargs):
+                    key = decoder.current_job
+                    shuffle_scores[key] = values
 
-                np.savez(shuffle_name, **shuffle_scores)
+                    np.savez(shuffle_name, **shuffle_scores)
     else:
         shuffle_scores = dict(np.load(shuffle_name + '.npz', allow_pickle=True))
 
@@ -310,6 +347,17 @@ if __name__ == '__main__':
             shuffle.T, 0.05, n_perm=10000,
             stat_func=lambda x, y, axis: np.mean(x, axis=axis)
         )
+
+    # Clean up Dask client/cluster
+    try:
+        if client is not None:
+            client.close()
+    finally:
+        if 'cluster' in locals():
+            try:
+                cluster.close()
+            except Exception:
+                pass
 
     # Plot significance
     for cond, ax in zip(conds, axs):
