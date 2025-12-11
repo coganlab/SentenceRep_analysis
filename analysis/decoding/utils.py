@@ -8,9 +8,9 @@ from ieeg.decoding.decode import (
 )
 from ieeg.arrays.label import LabeledArray, normalize_index
 try:
-    import cupy as cp
+    import torch
 except ImportError:
-    cp = None
+    torch = None
 
 def decode_and_score(decoder, data, labels, scorer='acc', **decoder_kwargs):
     """Perform decoding and scoring"""
@@ -33,7 +33,7 @@ def concatenate_conditions(data, conditions, axis=1, trial_axis=2):
 
 def get_scores(array, decoder: Decoder, idxs: list[list[int]],
                conds: list[str], names: list[str], on_gpu: bool = False,
-               crop: slice = slice(None),which: int = 0, **decoder_kwargs) -> Generator[ndarray, Any, None]:
+               crop: slice = slice(None), which: int = 0, **decoder_kwargs) -> Generator[ndarray, Any, None]:
     ax = array.ndim - 2
     for i, idx in enumerate(idxs):
         all_conds = flatten_list(conds)
@@ -56,24 +56,16 @@ def get_scores(array, decoder: Decoder, idxs: list[list[int]],
             # Decoding
             decoder.current_job = "-".join([names[i], cond])
 
-            if 'weights' in decoder_kwargs:
-                sub_idx = [i for i, label in enumerate(array.labels[2])
-                           if label in x_data.labels[1]]
-                w = decoder_kwargs['weights'][sub_idx, None, None]
-                decoder_kwargs['weights'] = np.broadcast_arrays(w, X)[0]
             if on_gpu:
-                if cp is None:
+                if torch is None:
                     raise ImportError("CuPy is not installed.")
                 with config_context(array_api_dispatch=True,
                                     enable_metadata_routing=True,
                                     skip_parameter_validation=True):
-                    data = cp.asarray(X.__array__())
-                    labels = cp.asarray(labels)
-                    if 'weights' in decoder_kwargs:
-                        decoder_kwargs['weights'] = cp.asarray(
-                            decoder_kwargs['weights'])
+                    data = torch.from_numpy(X.__array__()).to('cuda')
+                    labels = torch.from_numpy(labels).to('cuda')
                     score = decoder.cv_cm(data, labels, **decoder_kwargs)
-                yield score.get()
+                yield score.detach().cpu().numpy()
             else:
                 yield decoder.cv_cm(np.array(X), labels, **decoder_kwargs)
 

@@ -34,7 +34,7 @@ def load_tensor(array, idx, conds, trial_ax, min_nan=1):
     return out_tensor, ~mask, list(map(list, combined.labels))
 
 def load_spec(group, conds, layout, folder='stats_freq_hilbert',
-              min_nan: int = 1, n_jobs: int = 1):
+              min_nan: int = 1, n_jobs: int = 1, folder2='combined'):
     sigs = load_data(layout, folder, "mask", conds, 2,
                      bool, True, n_jobs)
     AUD, SM, PROD, sig_chans, delay = group_elecs(sigs,
@@ -46,7 +46,7 @@ def load_spec(group, conds, layout, folder='stats_freq_hilbert',
             'sig_chans': sorted(sig_chans), 'delay': sorted(delay)}
     idx = idxs[group]
     zscores = load_data(layout, folder, "zscore", conds, 3,
-                        "float16", False, n_jobs)
+                        "float16", False, n_jobs, folder2)
     neural_data_tensor, mask, labels = load_tensor(zscores, idx, conds, 4, min_nan)
     return neural_data_tensor, mask, labels, idxs
 
@@ -74,7 +74,8 @@ def split_and_stack(tensor, split_dim, stack_pos, num_splits, new_dim: bool = Tr
 def load_data(layout, folder: str, datatype: str,
               conds: dict[str, Doubles] = None, ch_dim: int = None,
               out_type: type | str = float, average: bool = True,
-              n_jobs: int = 12, combined_folder: str = 'combined') -> LabeledArray:
+              n_jobs: int = 12, combined_folder: str = 'combined',
+              freqs=None) -> LabeledArray:
     """
     Loads and combines zscore or other data for all subjects and conditions.
     Returns a LabeledArray.
@@ -87,7 +88,7 @@ def load_data(layout, folder: str, datatype: str,
         if missing:
             raise ValueError(f"Missing required arguments: {', '.join(missing)}")
 
-        loader = DataLoader(layout, conds, datatype, average, folder, '.h5')
+        loader = DataLoader(layout, conds, datatype, average, folder, '.h5', freqs=freqs)
         zscore = loader.load_dict(dtype=out_type, n_jobs=n_jobs)
         # Combine along subject and channel axis (0, 3)
         zscore_ave = combine(zscore, (0, ch_dim))
