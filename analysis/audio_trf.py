@@ -1,6 +1,5 @@
 import os
 import numpy as np
-from isort.core import process
 from matplotlib import pyplot as plt
 import pickle
 import mtrf
