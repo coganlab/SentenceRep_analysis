@@ -1,18 +1,15 @@
 name: analysis
-channels:
-  - pytorch
-  - nvidia
 dependencies:
-  - python
+  - python<3.14
   - pip
-  - numpy
-  - torchvision
-  - torchaudio
-  - pytorch
-  - pytorch-cuda
-  - conda-forge::lightning
-  - conda-forge::nimfa
+  - numpy<2.4
   - pip:
+    - numba-cuda[cu13]
+    - cupy-cuda13x
+    - openpyxl
+    - torch --index-url https://download.pytorch.org/whl/cu130
+    - torchvision --index-url https://download.pytorch.org/whl/cu130
+    - torchaudio --index-url https://download.pytorch.org/whl/cu130
     - -e ../../IEEG_Pipelines
+    - -r ../../IEEG_Pipelines/envs/dev/testing-reqs.txt
     - -e ../../slicetca
-
