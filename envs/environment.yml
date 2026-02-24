@@ -1,15 +1,25 @@
 name: analysis
+channels:
+  - conda-forge
+  - defaults
 dependencies:
-  - python<3.14
+  - python>3.11
+  # - python <3.14
   - pip
   - numpy<2.4
+  - numpy>2
+  - scipy>1.15
+  - tslearn>0.7
+  - cupy
+  - numba-cuda
   - pip:
-    - numba-cuda[cu13]
-    - cupy-cuda13x
-    - openpyxl
-    - torch --index-url https://download.pytorch.org/whl/cu130
-    - torchvision --index-url https://download.pytorch.org/whl/cu130
-    - torchaudio --index-url https://download.pytorch.org/whl/cu130
-    - -e ../../IEEG_Pipelines
-    - -r ../../IEEG_Pipelines/envs/dev/testing-reqs.txt
-    - -e ../../slicetca
+      - "numpy<2.4"
+      - scipy-stubs
+      - openpyxl
+      - specparam
+      - torch --index-url https://download.pytorch.org/whl/cu130
+      - torchvision --index-url https://download.pytorch.org/whl/cu130
+      - torchaudio --index-url https://download.pytorch.org/whl/cu130
+      - -e ../../IEEG_Pipelines
+      - -r ../../IEEG_Pipelines/envs/dev/testing-reqs.txt
+      - -e ../../slicetca
