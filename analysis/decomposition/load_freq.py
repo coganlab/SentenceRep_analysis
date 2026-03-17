@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import mne
-from itertools import combinations
+from sklearn.linear_model import RidgeClassifier
 
 from ieeg.io import get_data
 from analysis.grouping import group_elecs
@@ -11,9 +11,10 @@ from analysis.decoding.utils import get_scores
 
 # Add missing imports for decoding and plotting
 from ieeg.decoding.decode import Decoder, plot_all_scores
-from ieeg.decoding.models import PcaLdaClassification
+from ieeg.decoding.models import PcaLdaClassification, CovarianceReducingClassifier
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist_bound
+from ieeg.viz.parula import parula_map
 from analysis.utils.plotting import plot_horizontal_bars
 
 exclude = [
@@ -35,7 +36,7 @@ conds_all = {
     "go_ls": (-0.5, 1.5), "go_lm": (-0.5, 1.5),
     "go_jl": (-0.5, 1.5)
 }
-folder = 'stats_freq_hilbert'
+folder = 'stats_freq_multitaper_short'
 
 
 def average_tfr_channels(tfr: mne.time_frequency.tfr.AverageTFR):
@@ -55,7 +56,8 @@ conds_all = {"resp": (-1, 1), "aud_ls": (-0.5, 1.5),
 sigs = load_data(layout,folder, "mask", conds_all, 2,
                      out_type=bool, average=True, n_jobs=1)
 zscores = load_data(layout, folder, "zscore", conds_all, 3,
-                    out_type="float16", average=False, n_jobs=1)
+                    out_type="float16", average=False, n_jobs=1,)
+                    # combined_folder="low_freq", freqs=np.geomspace(4, 150, 35))
 
 
 AUD, SM, PROD, sig_chans, delay = group_elecs(sigs,
@@ -66,43 +68,49 @@ AUD, SM, PROD, sig_chans, delay = group_elecs(sigs,
 idxs = {'SM': sorted(SM), 'AUD': sorted(AUD), 'PROD': sorted(PROD),
         'sig_chans': sorted(sig_chans), 'delay': sorted(delay)}
 
-SM = sorted(SM)
-AUD = sorted(AUD)
-PROD = sorted(PROD)
-sig_chans = sorted(sig_chans)
+# SM = sorted(SM)
+# AUD = sorted(AUD)
+# PROD = sorted(PROD)
+# sig_chans = sorted(sig_chans)
 
 # %% plot data
-do_plot=False
+do_plot=True
 if do_plot:
     avg = np.nanmean(zscores, axis=(1, 4))
     times = np.linspace(-0.5, 1.5, 200)
-    info = mne.create_info(ch_names=avg.labels[1].tolist(), sfreq=100)
+    info = mne.create_info(ch_names=avg.labels[1], sfreq=100)
     events = np.array([[0 + 200 * i, 0, i] for i in range(7)])
     event_id = dict(zip(avg.labels[0], range(7)))
     picked = mne.time_frequency.EpochsTFRArray(
-        info, avg.__array__(), times, avg.labels[2],
+        info, avg.__array__(), times, list(avg.labels[2]),
         events=events, event_id=event_id, drop_log=tuple(() for _ in range(7)))
     x = picked['aud_ls'].pick(sorted(SM)).average()
-    mne.time_frequency.AverageTFRArray(x.copy().pick(0).info,
+    plot_obj = mne.time_frequency.AverageTFRArray(x.copy().pick(0).info,
                                        np.mean(x.data, axis=0, keepdims=True),
-                                       x.times, x.freqs).plot(0)
+                                       x.times, x.freqs)
+    plot_obj.plot(0, cmap=parula_map, vlim=(0, 0.15))
 
 # %% plot brain
 plot_brain = False
 if plot_brain:
     from ieeg.viz.mri import plot_on_average
     br = None
-    for i, idx in enumerate([delay]):
+    for i, idx in enumerate([AUD, SM, PROD, sig_chans]):
         picks = name_from_idx(idx, zscores.labels[2])
         rgb = [1 if j == i else 0 for j in range(3)]
         br = plot_on_average(subjects, picks=picks, hemi='both', color=[rgb]*len(idx), fig=br)
 
 # %% word decoding
-decode = True
+decode = False
 if decode:
-    model = PcaLdaClassification(explained_variance=0.90, da_type='lda')
+    model = PcaLdaClassification(explained_variance=0.80, da_type='lda')
+    model = CovarianceReducingClassifier(
+        pca=None,
+        classifier=RidgeClassifier(alpha=1.0, solver='svd')
+        # classifier=GaussianNB()
+    )
     decoder = Decoder({'heat': 0, 'hoot': 1, 'hot': 2, 'hut': 3},
-                      5,10, 2, 'train', model=model)
+                      10,5, 2, 'train', model=model)
     # decoder = Decoder({'ls': 0, 'lm': 1, 'jl': 2},
     #                   5, 10, 1, 'train', model=model)
     n_classes = 4
@@ -125,12 +133,13 @@ if decode:
              'resp']
     colors = [[0, 0, 1],
         [1, 0, 0], [0, 1, 0], [0.5, 0.5, 0.5], [1, 0, 1]]
-    suffix = '_zscore_nofreqmult_word_AUDSMPROD'
+    suffix = '_zscore_nofreqmult_word_AUDSMPROD4'
     true_name = 'true_scores' + suffix
     print('averaging...')
-    data = np.nanmean(zscores, axis=-3, keepdims=True)
     print('done')
     if not os.path.exists(true_name + '.npz'):
+        # data = np.nanmean(zscores, axis=-3, keepdims=True)
+        data = zscores
         for values in get_scores(data
                                  , decoder, idxs, conds,
                                  names, on_gpu=True, shuffle=False,
