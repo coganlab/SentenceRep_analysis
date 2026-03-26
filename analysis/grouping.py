@@ -441,26 +441,6 @@ class GroupData:
         assert all(cond in newconds for cond in conds)
         return np.concatenate(list(gen), axis=-1)
 
-    def nmf(self, dtype: str = 'significance', n_components: int = 4,
-            idx: list[int] = None,
-            conds: list[str] = ('aud_ls', 'go_ls', 'resp')) -> Doubles:
-        import nimfa
-        data = self.get_training_data(dtype, conds, idx)
-        data = data - np.min(data)
-        if dtype == 'significance':
-            model = nimfa.Bmf(data, seed="nndsvd", rank=n_components, max_iter=100000,
-                            lambda_w=1.01, lambda_h=1.01, options=dict(flag=2))
-        else:
-            # data = sparse_matrix(data)
-            model = nimfa.Nmf(data, seed="nndsvd",
-                              rank=n_components,
-                              max_iter=100000, update='euclidean',
-                              objective='div', options=dict(flag=2))
-        model()
-        W = np.array(model.W)
-        H = np.array(model.H)
-        return W, H, model
-
 
     def get_condition(self, condition: str):
         assert condition in self.conds.keys()

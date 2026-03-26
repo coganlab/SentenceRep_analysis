@@ -3,6 +3,7 @@ from ieeg import Signal
 import pandas as pd
 import dataclasses
 import itertools
+import pathlib
 
 
 @dataclasses.dataclass(frozen=True, order=True, slots=True)
@@ -196,12 +197,14 @@ def fix_annotations(annotations: mne.Annotations, events: list[Event, ...]):
     for a in annotations:
 
         orig = a.pop('orig_time')
+        t = a.get('extras', [])
+        a['extras'] = None if len(t) == 0 else list(t)
         if 'boundary' in a['description']:
             annot.append(**a)
             continue
         else:
             event = events.pop(0)
-            assert Event(**a) == event, f"onset mismatch {a['onset']} != {event.onset}"
+            assert Event(a['onset'], a['duration'], a['description'] ) == event, f"onset mismatch {a['onset']} != {event.onset}"
             # assert a['duration'] - event.duration < 0.001, f"duration mismatch {a['duration']} != {event.duration}"
             a['description'] = event.description
 
@@ -216,7 +219,13 @@ def fix_annotations(annotations: mne.Annotations, events: list[Event, ...]):
 
 def add_stim_conds(inst: Signal):
     """Read the events files and add stim label to Audio events"""
-    e_fnames = (f.replace('ieeg.edf', 'events.tsv') for f in inst.filenames)
+    # check if events files are strings or File objects
+    if isinstance(inst.filenames[0], pathlib.Path):
+        e_fnames = (f.with_name(f.stem.replace('ieeg', 'events') + '.tsv')
+                     for f in inst.filenames)
+    else:
+        e_fnames = (f.replace('ieeg.edf', 'events.tsv') for f in
+                    inst.filenames)
 
     # read all the events files into a dataframe and concatenate
     df = pd.concat([pd.read_csv(f, sep='\t') for f in e_fnames],
@@ -235,6 +244,8 @@ def add_stim_conds(inst: Signal):
     annot = None
     stim = None
     for event in inst.annotations:
+        t = event.get('extras', [])
+        event['extras'] = None if len(t) == 0 else list(t)
         if 'Audio' in event['description']:
             stim = stim_labels.pop(0)
             event['description'] += stim
@@ -297,7 +308,7 @@ if __name__ == "__main__":
     subjects = layout.get(return_type="id", target="subject")
 
     for subj in subjects:
-        if int(subj[1:]) != 30:
+        if int(subj[1:]) == 30:
             continue
         raw = raw_from_layout(layout, subject=subj, extension=".edf",
                               desc=None, preload=True)
