@@ -2,11 +2,11 @@
 
 Layout:
   Left  (both rows) : Venn diagram — AUD (green) / PROD (blue) / SM overlap
-                      (red) — with a left-hemisphere brain-render inset clipped
-                      to each circle.
+                      (red) — vertical orientation, with a left-hemisphere
+                      brain-render inset clipped to each region.
   Right top  (1×3)  : Frequency-averaged z-scored HG power for aud_ls, go_ls,
                       resp (AUD / SM / PROD coloured lines).
-  Right bot  (1×3)  : Matching example spectrograms (one electrode per group),
+  Right bot  (3×3)  : Matching example spectrograms (one electrode per group),
                       sharing the x-axis with the row above.
 
 Data source: stats_freq_hilbert combined LabeledArrays (see slice_freq.py).
@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import mne.time_frequency
 import numpy as np
 from matplotlib.patches import Circle
-from matplotlib_venn import venn2
 
 from pyvistaqt import BackgroundPlotter
 
@@ -77,12 +76,7 @@ def _chans_for_plot(idx_set: set) -> list[str]:
 
 
 def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
-    """Render group electrodes on fsaverage brain, return cropped RGB array.
-
-    Mirrors the pattern in slice_freq.py / electrode_ratio_gradient:
-    build the brain with show=False, copy actors into a BackgroundPlotter,
-    then screenshot that plotter with return_img=True.
-    """
+    """Render group electrodes on fsaverage brain, return cropped RGBA array."""
     plotter = BackgroundPlotter(shape=(1, 1))
     brain = plot_on_average(layout.get_subjects(),
                             picks=_chans_for_plot(idx_set),
@@ -96,39 +90,22 @@ def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
     img = plotter.screenshot(return_img=True)
     plotter.close()
     brain.close()
-    # Convert image to uint8 RGB(A) and build an alpha mask where background is
-    # white (255). This makes non-brain (white) pixels transparent so the
-    # underlying Venn diagram / axis content shows through when the inset is
-    # drawn on top.
     if img.dtype != np.uint8:
-        # normalize floats to 0-255
         try:
             img = (img * 255).astype(np.uint8)
         except Exception:
             img = img.astype(np.uint8)
-
-    # Ensure we have at least RGB channels
     if img.ndim == 2:
-        # grayscale -> RGB
         img = np.dstack([img, img, img])
-
     rgb = img[..., :3]
-
-    # Non-white mask (any channel != 255)
     nw = (rgb != 255).any(-1)
-
-    # Build alpha channel: opaque where any channel != 255, transparent otherwise
     alpha = np.where(nw, 255, 0).astype(np.uint8)
-
-    # If original image had an alpha channel, combine conservatively
     if img.shape[-1] == 4:
         orig_a = img[..., 3].astype(np.uint8)
         new_a = np.maximum(orig_a, alpha)
         rgba = np.dstack((rgb, new_a))
     else:
         rgba = np.dstack((rgb, alpha))
-
-    # Crop to content bbox (use the non-white mask computed above)
     rows = np.where(nw.any(1))[0]
     cols = np.where(nw.any(0))[0]
     if rows.size and cols.size:
@@ -145,7 +122,6 @@ COND_LIST = [
     ("resp",   (-1.0, 1.0), "Response"),
 ]
 
-# One representative electrode per group (AUD col-0, SM col-1, PROD col-2)
 GROUPS = [
     ("AUD",  AUD,  "green"),
     ("SM",   SM,   "red"),
@@ -154,6 +130,18 @@ GROUPS = [
 
 SPEC_TYPE = "multitaper_smooth"
 VLIM      = (0.7, 1.4)
+
+# ---------------------------------------------------------------------------
+# Representative electrodes for spectrogram rows
+# Set each to "D{subj_num}-{channel_name}" or None to auto-select the first
+# available electrode in that group (sorted by channel index).
+# Examples: "D0005-LTG15", "D0016-MST1", "D0021-LST2"
+# ---------------------------------------------------------------------------
+SPEC_ELEC = {
+    "AUD":  "D0064-lai6",   # e.g. "D0005-LTG15"
+    "SM":   "D0028-lpio7",   # e.g. "D0016-MST1"
+    "PROD": "D0022-lpif4",   # e.g. "D0021-LST2"
+}
 
 # ---------------------------------------------------------------------------
 # Figure skeleton
@@ -166,105 +154,131 @@ gs_outer = gridspec.GridSpec(
 )
 
 # ============================================================
-# LEFT – Venn diagram spanning the full left column
+# LEFT – Manual vertical Venn diagram spanning the full left column
 # ============================================================
 ax_venn = fig.add_subplot(gs_outer[0, 0])
+ax_venn.set_aspect('equal')
+ax_venn.axis('off')
 
 aud_only  = len(AUD  - SM - PROD)
 prod_only = len(PROD - SM - AUD)
 sm_size   = len(SM)
 
-v = venn2(
-    subsets=(aud_only, prod_only, sm_size),
-    set_labels=("", ""),
-    ax=ax_venn,
-)
+# Radii proportional to sqrt(count) for approximately area-proportional circles
+aud_total  = aud_only + sm_size
+prod_total = prod_only + sm_size
+max_total  = max(aud_total, prod_total, 1)
+R_BASE     = 0.38
+r_aud  = R_BASE * np.sqrt(aud_total  / max_total)
+r_prod = R_BASE * np.sqrt(prod_total / max_total)
 
-for pid, fc, txt in [("10", "green", f"AUD\nn={aud_only}"),
-                      ("11", "red",   f"SM\nn={sm_size}"),
-                      ("01", "blue",  f"PROD\nn={prod_only}")]:
-    patch = v.get_patch_by_id(pid)
-    lbl   = v.get_label_by_id(pid)
-    if patch:
-        patch.set_facecolor(fc)
-        patch.set_alpha(0.08)
-        patch.set_zorder(1)
-    if lbl:
-        lbl.set_text(txt)
-        lbl.set_fontsize(9)
-        lbl.set_zorder(3)
+# Center distance: heuristic so geometric overlap is proportional to sm_size
+overlap_frac = sm_size / max(aud_total + prod_total - sm_size, 1)
+d_centers = (r_aud + r_prod) * max(0.35, 1.0 - 1.4 * overlap_frac)
+d_centers = np.clip(d_centers,
+                    abs(r_aud - r_prod) + 0.02,
+                    r_aud + r_prod - 0.02)
+
+# Vertical layout: AUD on top, PROD on bottom
+cy_aud  =  d_centers / 2
+cy_prod = -d_centers / 2
+cx = 0.0
+
+# Tight axes limits
+margin = 0.10
+ax_venn.set_xlim(-(max(r_aud, r_prod) + margin), max(r_aud, r_prod) + margin)
+ax_venn.set_ylim(cy_prod - r_prod - margin * 1.5,
+                 cy_aud  + r_aud  + margin * 1.5)
+
+# Draw AUD circle (green, top)
+circ_aud = Circle((cx, cy_aud), r_aud,
+                  facecolor='green', alpha=0.10,
+                  edgecolor='green', linewidth=2, zorder=1)
+ax_venn.add_patch(circ_aud)
+
+# Draw PROD circle (blue, bottom)
+circ_prod = Circle((cx, cy_prod), r_prod,
+                   facecolor='blue', alpha=0.10,
+                   edgecolor='blue', linewidth=2, zorder=1)
+ax_venn.add_patch(circ_prod)
+
+# SM intersection (red): draw red AUD-circle clipped to PROD circle extent
+sm_patch = Circle((cx, cy_aud), r_aud,
+                  facecolor='red', alpha=0.20,
+                  edgecolor='none', zorder=2)
+ax_venn.add_patch(sm_patch)
+sm_patch.set_clip_path(circ_prod)
 
 ax_venn.set_title("Electrode Groups", fontsize=11)
 
-# Force draw so axes limits are set before we query them
+# Force draw so axes limits are settled before computing inset bounds
 fig.canvas.draw()
 
-# -- extract circle geometry (Point2D → ndarray) --
-def _pt(p):
-    return np.array([float(p.x), float(p.y)])
-
-c0 = _pt(v.centers[0])   # AUD circle centre
-c1 = _pt(v.centers[1])   # PROD circle centre
-r0, r1 = float(v.radii[0]), float(v.radii[1])
-c_sm = (c0 + c1) / 2
-
-direction = (c0 - c1) / np.linalg.norm(c0 - c1)   # unit vec pointing AUD-ward
-aud_pos  = c0 + direction * r0 * 0.25
-prod_pos = c1 - direction * r1 * 0.25
-
-xlim, ylim = ax_venn.get_xlim(), ax_venn.get_ylim()
-xr, yr = xlim[1] - xlim[0], ylim[1] - ylim[0]
+xlim = ax_venn.get_xlim()
+ylim = ax_venn.get_ylim()
+xr   = xlim[1] - xlim[0]
+yr   = ylim[1] - ylim[0]
 
 
-def _bounds(cx, cy, hw, hh):
-    """[x0, y0, w, h] in axes-fraction coordinates."""
-    return [(cx - hw - xlim[0]) / xr,
-            (cy - hh - ylim[0]) / yr,
+def _bounds_v(cx_d, cy_d, hw, hh):
+    """[x0, y0, w, h] in axes-fraction coordinates for ax_venn."""
+    return [(cx_d - hw  - xlim[0]) / xr,
+            (cy_d - hh  - ylim[0]) / yr,
             2 * hw / xr,
             2 * hh / yr]
 
 
-# Render and place one brain inset per circle — sized to fill each region
-for (cx, cy), half_r, idx_set, color in [
-    (aud_pos,  r0 * 0.82, AUD,  "green"),
-    (c_sm,     r0 * 0.70, SM,   "red"),
-    (prod_pos, r1 * 0.82, PROD, "blue"),
-]:
+# Geometric midpoints for each region
+y_intersect_top    = cy_prod + r_prod   # top of PROD circle (top of intersection)
+y_intersect_bottom = cy_aud  - r_aud   # bottom of AUD circle (bottom of intersection)
+y_aud_inset  = (y_intersect_top + cy_aud  + r_aud)  / 2   # AUD exclusive centre
+y_sm_inset   = (y_intersect_top + y_intersect_bottom) / 2  # intersection centre
+y_prod_inset = (cy_prod - r_prod + y_intersect_bottom) / 2 # PROD exclusive centre
+
+inset_hw = min(r_aud, r_prod) * 0.70  # common half-width for all three insets
+
+inset_specs = [
+    (cx, y_aud_inset,  inset_hw, AUD,  "green"),
+    (cx, y_sm_inset,   inset_hw * 0.80, SM, "red"),
+    (cx, y_prod_inset, inset_hw, PROD, "blue"),
+]
+
+for icx, icy, hw, idx_set, color in inset_specs:
     shot = _brain_screenshot(idx_set, color)
     h_img, w_img = shot.shape[:2]
-    hw = half_r
-    hh = half_r * (h_img / w_img)
-
-    ax_ins = ax_venn.inset_axes(_bounds(cx, cy, hw, hh), zorder=2)
-    # Make inset axes fully transparent so RGBA image alpha shows the
-    # underlying venn diagram through the image's transparent background.
+    hh = hw * (h_img / w_img)
+    ax_ins = ax_venn.inset_axes(_bounds_v(icx, icy, hw, hh), zorder=3)
     ax_ins.set_facecolor('none')
-    im_brain = ax_ins.imshow(shot,
-                             # interpolation="lanczos"
-                             )
+    ax_ins.imshow(shot)
     ax_ins.axis("off")
 
-    # clip_c = Circle((0.5, 0.5), 0.5, transform=ax_ins.transAxes)
-    # ax_ins.add_patch(clip_c)
-    # im_brain.set_clip_path(clip_c)
+# Count labels — placed at region centres, above brain insets
+lbl_kw = dict(ha='center', va='center', zorder=6,
+              bbox=dict(facecolor='white', alpha=0.75, edgecolor='none', pad=1.5))
+ax_venn.text(cx, y_aud_inset,  f"AUD\nn={aud_only}",
+             fontsize=9, color='darkgreen', **lbl_kw)
+ax_venn.text(cx, y_sm_inset,   f"SM\nn={sm_size}",
+             fontsize=9, color='darkred',   **lbl_kw)
+ax_venn.text(cx, y_prod_inset, f"PROD\nn={prod_only}",
+             fontsize=9, color='darkblue',  **lbl_kw)
 
 # ============================================================
 # RIGHT – 4 rows × 3 cols
 #   Row 0       : frequency-averaged line plots (1 per condition)
 #   Rows 1–3    : spectrograms — one row per group (AUD/SM/PROD),
-#                 one col per condition — 3×3 total.
+#                 one col per condition — 3×3 total, single shared colorbar.
 # Shared x-axis per column; x-labels only on the bottom row.
 # ============================================================
 gs_right = gridspec.GridSpecFromSubplotSpec(
     4, 3,
     subplot_spec=gs_outer[0, 1],
     height_ratios=[2, 1, 1, 1],
-    hspace=0.10,
-    wspace=0.30,
+    hspace=0.06,
+    wspace=0.18,
 )
 
 axes_ts   = []
-axes_spec = []
+axes_spec = [[None] * 3 for _ in range(3)]
 
 # ---- Row 0: frequency-averaged time series ----
 ylims_ts = None
@@ -287,7 +301,7 @@ for j, (cond, timing, title) in enumerate(COND_LIST):
                 ha="center", va="center", transform=ax.transAxes, fontsize=8)
 
     ax.set_title(title, fontsize=10)
-    plt.setp(ax.get_xticklabels(), visible=False)   # hide – shared with row below
+    plt.setp(ax.get_xticklabels(), visible=False)
 
     if j == 0:
         ax.set_ylabel("Z-Score HG Power", fontsize=9)
@@ -301,8 +315,7 @@ if ylims_ts:
         ax.set_ylim(ylims_ts)
 
 # ---- Rows 1–3: spectrograms — 3 groups × 3 conditions ----
-# axes_spec[i][j] = row i (group), col j (condition)
-axes_spec = [[None] * 3 for _ in range(3)]
+last_im = None
 
 for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
     if not grp_idx:
@@ -314,30 +327,34 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
             axes_spec[i][j] = ax
         continue
 
-    ch_i    = sorted(grp_idx)[0]
-    ch_full = all_chans[ch_i]
+    # Electrode selection: use SPEC_ELEC override or first available in group
+    override = SPEC_ELEC.get(grp_name)
+    if override:
+        ch_full = override
+    else:
+        ch_i    = sorted(grp_idx)[0]
+        ch_full = all_chans[ch_i]
     subj, ch_name = ch_full.split("-", 1)
 
     for j, (cond, timing, _title) in enumerate(COND_LIST):
         ax = fig.add_subplot(gs_right[i + 1, j], sharex=axes_ts[j])
         axes_spec[i][j] = ax
 
-        # x-label only on the bottom spectrogram row
         if i == len(GROUPS) - 1:
             ax.set_xlabel("Time (s)", fontsize=8)
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
 
-        # y-label / ticks: only leftmost column
         if j == 0:
-            ax.set_ylabel(f"{grp_name}\nFreq (Hz)", color=color, fontsize=8)
+            ax.set_ylabel(f"{grp_name}\n{ch_name}\nFreq (Hz)",
+                          color=color, fontsize=8)
         else:
             ax.set_yticklabels([])
 
         tfr_path   = os.path.join(layout.root, "derivatives", "spec",
-                                   SPEC_TYPE, subj, f"{cond}-tfr.h5")
+                                  SPEC_TYPE, subj, f"{cond}-tfr.h5")
         start_path = os.path.join(layout.root, "derivatives", "spec",
-                                   SPEC_TYPE, subj, "start-tfr.h5")
+                                  SPEC_TYPE, subj, "start-tfr.h5")
 
         try:
             spec      = mne.time_frequency.read_tfrs(tfr_path)
@@ -360,9 +377,7 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
                         spec_avg.freqs[0], spec_avg.freqs[-1]],
                 cmap=parula_map, vmin=VLIM[0], vmax=VLIM[1],
             )
-            # colorbar only on rightmost column
-            if j == 2:
-                plt.colorbar(im, ax=ax, label="Power ratio", pad=0.02)
+            last_im = im
             ax.set_xlim(timing)
 
         except (OSError, ValueError) as exc:
@@ -370,6 +385,13 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
                     ha="center", va="center", transform=ax.transAxes,
                     fontsize=7, wrap=True)
             ax.axis("off")
+
+# Single colorbar spanning all 3 spectrogram rows (right edge of grid)
+if last_im is not None:
+    right_col = [axes_spec[i][2] for i in range(3)
+                 if axes_spec[i][2] is not None]
+    if right_col:
+        fig.colorbar(last_im, ax=right_col, label="Power ratio", pad=0.02)
 
 # ---------------------------------------------------------------------------
 # Save
