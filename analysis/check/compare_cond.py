@@ -21,15 +21,14 @@ layout = get_data('SentenceRep', root=fpath)
 # Create a gridspec instance with 3 rows and 3 columns
 r = 5
 c_minor = 2
-c_major = 3
+c_major = 1
 major_rows = (0,1)
 
 fig, axs = subgrids(r, c_major, c_minor, major_rows)
 
 ## Load the data
-kwargs = [dict(folder='stats'), dict(folder='stats_freq'),
-          dict(folder='stats_freq_multitaper')]
-fnames = ['gamma (70-150 Hz)', 'hilbert_spec (50-500 Hz)', 'multitaper (50-300 Hz)']
+kwargs = [dict(folder='stats_freq_hilbert')]
+fnames = ['gamma (50-300 Hz)']
 groups = ['AUD', 'SM', 'PROD', 'sig_chans']
 colors = ['green', 'red', 'blue', 'grey']
 ylims = [0, 0]

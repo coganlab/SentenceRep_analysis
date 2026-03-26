@@ -80,9 +80,9 @@ def autocrop_nonwhite(img, *, white_thresh=250, pad=0, bg="white"):
 
 # --- Add import for shared loading functions ---
 from analysis.load import load_tensor, load_spec, load_hg, split_and_stack
-from slicetca.run.dtw import SoftDTW
+from slicetca.run.dtw import SoftDTWNested
 
-SoftDTW.__module__ = 'tslearn.metrics'
+SoftDTWNested.__module__ = 'tslearn.metrics'
 
 
 torch.set_float32_matmul_precision("medium")
@@ -268,7 +268,7 @@ if decompose:
 
     # neural_data_jl, _, _ = load_tensor(zscores, SM, conds_jl, 4, 1)
     # trial_av = neural_data_tensor.nanmean(1, dtype=torch.float32)
-    all_con = split_and_stack(neural_data_tensor.nanmean(2)
+    all_con = split_and_stack(neural_data_tensor#.nanmean(2)
                               , -1, 1, 3)
     # all_con = all_con.swapaxes(-3, -2)
     # movingaverage = torch.nn.AvgPool2d((2,4), (2,4), 0)
@@ -277,7 +277,7 @@ if decompose:
     # all_con = all_con.swapaxes(-3, -2)
     # all_con = all_con.nanmean(axis=2)
     all_con = torch.cat([all_con[..., :175], all_con[..., 200:375]], dim=-1)
-    all_mask = split_and_stack(mask.any(2)
+    all_mask = split_and_stack(mask#.any(2)
                                , -1, 1, 3)
     all_mask = torch.cat([all_mask[..., :175], all_mask[..., 200:375]], dim=-1)
 
@@ -310,17 +310,17 @@ if decompose:
     # for i in range(all_con.shape[0]):
     #     trial_av[i] = all_con[i].nanmean(-2, dtype=torch.float32)
     # trial_av = all_con.nanmean(-2, dtype=torch.float32)
-    # from tslearn.metrics import gamma_soft_dtw
-    # gammas = torch.tensor([
-    #     gamma_soft_dtw(torch.nanmean(all_con[i, 0], 1).detach().cpu().numpy(), 400)
-    #     for i in range(all_con.shape[0])
-    # ])
+    from tslearn.metrics import gamma_soft_dtw
+    gammas = torch.tensor([
+        gamma_soft_dtw(torch.nanmean(all_con[i, 0], 2).detach().cpu().numpy().T, 350)
+        for i in range(all_con.shape[0])
+    ])
     # neural_data_tensor = neural_data_tensor.to(torch.bfloat16)
 
     n = 0
     # %%
-    import tslearn
-    filename = "model_SM2_freq.pt"
+    from slicetca.run.dtw import SoftDTWNested
+    filename = "model_SM6_freq.pt"
     if os.path.exists(filename):
         model = slicetca.core.SliceTCA(
             dimensions=list(all_con.shape),
@@ -339,13 +339,13 @@ if decompose:
         losses, model = slicetca.decompose(
             # trial_av,
             # neural_data_tensor,
-            all_con,#.nanmean(2),
+            all_con,#.to(torch.float32),#.nanmean(2),
             # n_components,
             (4, 0, 0, 0),
             seed=None,
             positive=True,
-            min_std=9e-3,
-            iter_std=20,
+            min_std=9e-5,
+            iter_std=10,
             learning_rate=1e-3,
             max_iter=100000,
             batch_dim=3,
@@ -353,18 +353,19 @@ if decompose:
             # batch_prop=0.001,
             # batch_prop_decay=10,
             # weight_decay=partial(torch.optim.RMSprop,
-            #                      eps=1e-9,
+            #                      eps=1e-9,2
             #                      momentum=0.9,
             #                      # alpha=0.5,
             #                      centered=True,
             #                      weight_decay=1e-4),
-            # weight_decay=partial(torch.optim.Rprop, etas=(0.85, 1.1), step_sizes=(1e-8, .1)),
+            # weight_decay=partial(torch.optim.Rprop, etas=(0.5, 1.01), step_sizes=(1e-8, .01)),
             weight_decay=partial(torch.optim.AdamW,
-                                    # betas=(0.5, 0.5),
+            #                         betas=(0.5, 0.5),
                                     # amsgrad=True,
                                     eps=1e-9,
-                                    weight_decay=1e-3,
+                                    weight_decay=1e-4,
                                  # maximize=True
+                                 # fused=True
                                  ),
             # weight_decay=partial(torch.optim.LBFGS, max_eval=200,
             #                      tolerance_grad=1e-6,
@@ -375,21 +376,22 @@ if decompose:
             init_bias=0.01,
             initialization='uniform-positive',
             # loss_function=torch.nn.MSELoss(reduction='mean'),#MovingAverageLoss(10),
-            loss_function=SoftDTW(True, 0.01, True, 20,
-                                  torch.nn.MSELoss(reduction='none'),
-                                  # lambda x, y: torch.nn.CosineSimilarity(dim=-1)(x, y).neg().add(1).unsqueeze(-1),
-                                torch.float16, batch_chunk_size=512),#, _euclidean_squared_dist),
+            loss_function=SoftDTWNested(gamma_time=30, gamma_freq=10,
+                                  # bandwidth=100.,
+                                  # bandwidth_freq=20.,
+                                  normalize=True,
+                                  ),
             # loss_function=partial(tslearn.metrics.gak, sigma=10.0, be='pytorch'),
             # loss_function=partial(tslearn.metrics.soft_dtw, gamma=0.1,
             #                       be='pytorch', compute_with_backend=True),
             # loss_function = lambda x, y: torch.nn.CosineSimilarity(dim=-1)(x, y).mean(),
             verbose=0,
             compile=True,
-            shuffle_dim=(0,),
+            shuffle_dim=(0, 1),
             device='cuda',
             # default_root_dir=os.path.join(os.path.dirname(LAB_root), 'logs'),
             gradient_clip_val=1,
-            # accumulate_grad_batches=10,
+            # accumulate_grad_batches=5,
             # reload_dataloaders_every_n_epochs=1,
             # regularization='L2',
             min_iter=5,
@@ -399,9 +401,9 @@ if decompose:
             # blocklength=20
         )
         # torch.save(model.state_dict(), filename)
-    model.load_state_dict(torch.load(filename))
+    # model.load_state_dict(torch.load(filename))
     losses = model.losses
-    print(f"Varience explained: {1 - torch.nn.MSELoss(reduction='mean')(model.construct(), all_con) / all_con.var()}",)
+    # print(f"Varience explained: {1 - torch.nn.MSELoss(reduction='mean')(model.construct(), all_con) / all_con.var()}",)
     # Re-instantiate the SliceTCA object with the same arguments as in decompose
     # model = slicetca.core.SliceTCA(
     #     dimensions=list(trial_av.shape),
@@ -420,7 +422,7 @@ if decompose:
 
     # plot the losses
     plt.figure(figsize=(4, 3), dpi=100)
-    plt.plot(np.arange(100, len(model.losses)), model.losses[100:], 'k')
+    plt.plot(np.arange(0, len(model.losses)), model.losses, 'k')
     plt.xlabel('iterations')
     plt.ylabel('mean squared error')
     plt.xlim(0, len(model.losses))
@@ -432,7 +434,7 @@ if decompose:
                'go_ls': slice(175, 350),}
                # 'go_lm': range(800, 1000)}
     # components = model.get_components(numpy=True)
-    mod = model[:,0]
+    mod = model[:, 0]
     figs = {}
     n = -1
     for cond, timing in timings.items():
@@ -448,7 +450,7 @@ if decompose:
             t_label = f"Time (s) from Go Cue (:=:)"
         axes = slicetca.plot(mod[..., timing],
                              # components=comp,
-                             ignore_component=(0,),
+                             # ignore_component=(0,),
                              variables=('channel',
                                         'frequency',
                                         # 'trial',
@@ -511,7 +513,7 @@ if decompose:
     # %% plot the components
     mode = 'weights'
     # freqs = np.geomspace(4, 150, 35)
-    plot_components(model, mode, all_con, True, colors=colors)
+    plot_components(model, mode, all_con.nanmean(3), True, colors=colors)
     plt.suptitle(f"Components")
     # raise RuntimeError("Stop here")
 
