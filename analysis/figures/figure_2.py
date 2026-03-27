@@ -18,10 +18,12 @@ import matplotlib.pyplot as plt
 import mne.time_frequency
 import numpy as np
 from matplotlib.patches import Circle
+from scipy.optimize import brentq
 
 from pyvistaqt import BackgroundPlotter
 
 from analysis.grouping import group_elecs
+from analysis.load import load_data
 from ieeg.arrays.label import LabeledArray
 from ieeg.calc.scaling import rescale
 from ieeg.io import get_data
@@ -36,7 +38,13 @@ HOME = os.path.expanduser("~")
 LAB_root = os.path.join(HOME, "Box", "CoganLab")
 layout = get_data("SentenceRep", root=LAB_root)
 
-folder = "stats_freq_hilbert"
+folder = 'stats_freq_hilbert'
+
+conds_all = {"resp": (-1., 1.), "aud_ls": (-0.5, 1.5),
+                 "go_ls": (-0.5, 1.5)}
+
+# zscores = load_data(layout, folder, "zscore", conds_all, 3,
+#                     "float16", True, 1, "combined2")
 derivatives = os.path.join(layout.root, "derivatives", folder, "combined")
 
 # ---------------------------------------------------------------------------
@@ -62,7 +70,7 @@ def freq_avg(cond: str) -> np.ndarray:
     """Return (channel, time) averaged over freq and (if present) trial."""
     raw = zscores[cond].__array__()
     if raw.ndim == 3:
-        return np.nanmean(raw, axis=0)        # (freq, ch, t) → (ch, t)
+        return np.nanmean(raw, axis=1)        # (freq, ch, t) → (ch, t)
     elif raw.ndim == 4:
         return np.nanmean(raw, axis=(0, 2))   # (freq, ch, trial, t) → (ch, t)
     else:
@@ -129,7 +137,7 @@ GROUPS = [
 ]
 
 SPEC_TYPE = "multitaper_smooth"
-VLIM      = (0.7, 1.4)
+VLIM      = (0.8, 1.4)
 
 # ---------------------------------------------------------------------------
 # Representative electrodes for spectrogram rows
@@ -138,20 +146,23 @@ VLIM      = (0.7, 1.4)
 # Examples: "D0005-LTG15", "D0016-MST1", "D0021-LST2"
 # ---------------------------------------------------------------------------
 SPEC_ELEC = {
-    "AUD":  "D0064-lai6",   # e.g. "D0005-LTG15"
-    "SM":   "D0028-lpio7",   # e.g. "D0016-MST1"
-    "PROD": "D0022-lpif4",   # e.g. "D0021-LST2"
+    "AUD":  "D0064-LAI6",   # e.g. "D0005-LTG15"
+    "SM":   "D0028-LPIO7",   # e.g. "D0016-MST1"
+    "PROD": "D0022-LPIF4",   # e.g. "D0021-LST2"
 }
 
 # ---------------------------------------------------------------------------
 # Figure skeleton
 # ---------------------------------------------------------------------------
-fig = plt.figure(figsize=(18, 14))
+cm = 1/2.54  # centimeters in inches
+fig = plt.figure(figsize=(18 * cm, 12 * cm))
 gs_outer = gridspec.GridSpec(
     1, 2, figure=fig,
-    width_ratios=[1, 2],
-    wspace=0.28,
+    width_ratios=[2, 3],
+    wspace=0.1,
 )
+LABEL_SIZE = 7
+TICK_SIZE  = 5
 
 # ============================================================
 # LEFT – Manual vertical Venn diagram spanning the full left column
@@ -164,29 +175,49 @@ aud_only  = len(AUD  - SM - PROD)
 prod_only = len(PROD - SM - AUD)
 sm_size   = len(SM)
 
-# Radii proportional to sqrt(count) for approximately area-proportional circles
+# Areas: PROD = prod_only + sm_size, AUD = aud_only + sm_size
 aud_total  = aud_only + sm_size
 prod_total = prod_only + sm_size
-max_total  = max(aud_total, prod_total, 1)
-R_BASE     = 0.38
-r_aud  = R_BASE * np.sqrt(aud_total  / max_total)
-r_prod = R_BASE * np.sqrt(prod_total / max_total)
 
-# Center distance: heuristic so geometric overlap is proportional to sm_size
-overlap_frac = sm_size / max(aud_total + prod_total - sm_size, 1)
-d_centers = (r_aud + r_prod) * max(0.35, 1.0 - 1.4 * overlap_frac)
-d_centers = np.clip(d_centers,
-                    abs(r_aud - r_prod) + 0.02,
-                    r_aud + r_prod - 0.02)
+# Radii area-proportional: PROD is the larger circle (normalised to R_BASE)
+R_BASE = 1.
+r_prod = R_BASE
+r_aud  = R_BASE * np.sqrt(aud_total / prod_total)
+
+
+def _circle_intersect_area(r1, r2, d):
+    """Exact lens area of two circles with radii r1, r2 and centre distance d."""
+    if d >= r1 + r2:
+        return 0.0
+    if d <= abs(r1 - r2):
+        return np.pi * min(r1, r2) ** 2
+    cos_a1 = np.clip((d**2 + r1**2 - r2**2) / (2 * d * r1), -1.0, 1.0)
+    cos_a2 = np.clip((d**2 + r2**2 - r1**2) / (2 * d * r2), -1.0, 1.0)
+    a1, a2 = np.arccos(cos_a1), np.arccos(cos_a2)
+    sq = max(0.0, (-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2))
+    return r1**2 * a1 + r2**2 * a2 - 0.5 * np.sqrt(sq)
+
+
+# Target overlap: sm_size/aud_total of AUD area  (= sm_size/prod_total of PROD area)
+target_intersect = (sm_size / aud_total) * np.pi * r_aud**2
+
+# Solve for exact centre distance
+d_min = abs(r_aud - r_prod) + 1e-8
+d_max = r_aud + r_prod - 1e-8
+d_centers = brentq(
+    lambda d: _circle_intersect_area(r_aud, r_prod, d) - target_intersect,
+    d_min, d_max,
+)
 
 # Vertical layout: AUD on top, PROD on bottom
 cy_aud  =  d_centers / 2
 cy_prod = -d_centers / 2
 cx = 0.0
 
-# Tight axes limits
-margin = 0.10
-ax_venn.set_xlim(-(max(r_aud, r_prod) + margin), max(r_aud, r_prod) + margin)
+# Tight axes limits — extra left margin to accommodate text labels
+margin     = 0.0
+lbl_margin = 0.1   # extra space on the left for the count labels
+ax_venn.set_xlim(-(r_prod + lbl_margin), r_prod + margin)
 ax_venn.set_ylim(cy_prod - r_prod - margin * 1.5,
                  cy_aud  + r_aud  + margin * 1.5)
 
@@ -209,7 +240,7 @@ sm_patch = Circle((cx, cy_aud), r_aud,
 ax_venn.add_patch(sm_patch)
 sm_patch.set_clip_path(circ_prod)
 
-ax_venn.set_title("Electrode Groups", fontsize=11)
+# ax_venn.set_title("Electrode Groups", fontsize=11)
 
 # Force draw so axes limits are settled before computing inset bounds
 fig.canvas.draw()
@@ -239,7 +270,7 @@ inset_hw = min(r_aud, r_prod) * 0.70  # common half-width for all three insets
 
 inset_specs = [
     (cx, y_aud_inset,  inset_hw, AUD,  "green"),
-    (cx, y_sm_inset,   inset_hw * 0.80, SM, "red"),
+    (cx, y_sm_inset,   inset_hw, SM,   "red"),
     (cx, y_prod_inset, inset_hw, PROD, "blue"),
 ]
 
@@ -252,15 +283,12 @@ for icx, icy, hw, idx_set, color in inset_specs:
     ax_ins.imshow(shot)
     ax_ins.axis("off")
 
-# Count labels — placed at region centres, above brain insets
-lbl_kw = dict(ha='center', va='center', zorder=6,
-              bbox=dict(facecolor='white', alpha=0.75, edgecolor='none', pad=1.5))
-ax_venn.text(cx, y_aud_inset,  f"AUD\nn={aud_only}",
-             fontsize=9, color='darkgreen', **lbl_kw)
-ax_venn.text(cx, y_sm_inset,   f"SM\nn={sm_size}",
-             fontsize=9, color='darkred',   **lbl_kw)
-ax_venn.text(cx, y_prod_inset, f"PROD\nn={prod_only}",
-             fontsize=9, color='darkblue',  **lbl_kw)
+# Count labels — left of the diagram, black, no box
+lbl_x  = -(r_prod + 0.05)   # just left of the larger (PROD) circle
+lbl_kw = dict(ha='right', va='center', zorder=6, fontsize=TICK_SIZE, color='black')
+ax_venn.text(lbl_x, y_aud_inset,  f"AUD\n{aud_only}",  **lbl_kw)
+ax_venn.text(lbl_x, y_sm_inset,   f"SM\n{sm_size}",    **lbl_kw)
+ax_venn.text(lbl_x, y_prod_inset, f"PROD\n{prod_only}", **lbl_kw)
 
 # ============================================================
 # RIGHT – 4 rows × 3 cols
@@ -270,15 +298,16 @@ ax_venn.text(cx, y_prod_inset, f"PROD\nn={prod_only}",
 # Shared x-axis per column; x-labels only on the bottom row.
 # ============================================================
 gs_right = gridspec.GridSpecFromSubplotSpec(
-    4, 3,
+    4, 4,
     subplot_spec=gs_outer[0, 1],
     height_ratios=[2, 1, 1, 1],
+    width_ratios=[10, 10, 10, 1],
     hspace=0.06,
-    wspace=0.18,
+    wspace=0.06,
 )
 
 axes_ts   = []
-axes_spec = [[None] * 3 for _ in range(3)]
+axes_spec = [[None] * len(COND_LIST) for _ in range(len(GROUPS))]
 
 # ---- Row 0: frequency-averaged time series ----
 ylims_ts = None
@@ -298,18 +327,20 @@ for j, (cond, timing, title) in enumerate(COND_LIST):
         ax.set_xlim(timing)
     else:
         ax.text(0.5, 0.5, f"'{cond}' not in data",
-                ha="center", va="center", transform=ax.transAxes, fontsize=8)
+                ha="center", va="center", transform=ax.transAxes, fontsize=TICK_SIZE)
 
-    ax.set_title(title, fontsize=10)
+    # ax.set_title(title, fontsize=TICK_SIZE)
     plt.setp(ax.get_xticklabels(), visible=False)
 
     if j == 0:
-        ax.set_ylabel("Z-Score HG Power", fontsize=9)
-        ax.legend(loc="upper left", fontsize=7, framealpha=0.6)
+        ax.set_ylabel("Z-Scored HG Power", fontsize=LABEL_SIZE)
+        ax.legend(loc="upper left", fontsize=TICK_SIZE, framealpha=0.6)
         ylims_ts = ax.get_ylim()
     else:
         ax.set_yticklabels([])
 
+for ax in axes_ts:
+    ax.tick_params(labelsize=TICK_SIZE)
 if ylims_ts:
     for ax in axes_ts:
         ax.set_ylim(ylims_ts)
@@ -319,7 +350,7 @@ last_im = None
 
 for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
     if not grp_idx:
-        for j in range(3):
+        for j in range(len(COND_LIST)):
             ax = fig.add_subplot(gs_right[i + 1, j])
             ax.text(0.5, 0.5, "no electrodes", ha="center", va="center",
                     transform=ax.transAxes)
@@ -336,18 +367,19 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
         ch_full = all_chans[ch_i]
     subj, ch_name = ch_full.split("-", 1)
 
-    for j, (cond, timing, _title) in enumerate(COND_LIST):
+    for j, (cond, timing, title) in enumerate(COND_LIST):
         ax = fig.add_subplot(gs_right[i + 1, j], sharex=axes_ts[j])
         axes_spec[i][j] = ax
+        ax.tick_params(labelsize=TICK_SIZE)
 
         if i == len(GROUPS) - 1:
-            ax.set_xlabel("Time (s)", fontsize=8)
+            ax.set_xlabel(f"Time (s) from {title}", fontsize=LABEL_SIZE)
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
 
         if j == 0:
-            ax.set_ylabel(f"{grp_name}\n{ch_name}\nFreq (Hz)",
-                          color=color, fontsize=8)
+            ax.set_ylabel(f"{override}\nFreq (Hz)",
+                          color="red", fontsize=LABEL_SIZE)
         else:
             ax.set_yticklabels([])
 
@@ -383,21 +415,21 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
         except (OSError, ValueError) as exc:
             ax.text(0.5, 0.5, f"{ch_full}\n{exc}",
                     ha="center", va="center", transform=ax.transAxes,
-                    fontsize=7, wrap=True)
+                    fontsize=TICK_SIZE, wrap=True)
             ax.axis("off")
 
-# Single colorbar spanning all 3 spectrogram rows (right edge of grid)
+# Single colorbar in the dedicated narrow 5th column (rows 1–3 only)
 if last_im is not None:
-    right_col = [axes_spec[i][2] for i in range(3)
-                 if axes_spec[i][2] is not None]
-    if right_col:
-        fig.colorbar(last_im, ax=right_col, label="Power ratio", pad=0.02)
+    cax = fig.add_subplot(gs_right[1:, -1])
+    cb = fig.colorbar(last_im, cax=cax, label="Power ratio")
+    cb.set_label("Power ratio", fontsize=LABEL_SIZE)
+    cb.ax.tick_params(labelsize=TICK_SIZE)
 
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
 out_dir = os.path.dirname(os.path.abspath(__file__))
-fig.suptitle("Figure 2", fontsize=14, y=0.995)
+# fig.suptitle("Figure 2", fontsize=14, y=0.995)
 fig.savefig(os.path.join(out_dir, "figure_2.svg"), bbox_inches="tight")
 fig.savefig(os.path.join(out_dir, "figure_2.png"), bbox_inches="tight", dpi=150)
 plt.show()
