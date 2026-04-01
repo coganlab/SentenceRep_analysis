@@ -32,20 +32,19 @@ def get_unique_subjects(subset, all_chans):
         subjects[subj].append(subset_ch_idx)
     return subjects
 
-def make_rt_array(rt_dict, trial_df_dict, labels, unique_subjects, exclude):
+def make_rt_array(rt_dict, trial_df_dict, ch_labels, unique_subjects, exclude):
     # make sure rt_array matches in_data trials
+    all_idx = [vi for v in unique_subjects.values() for vi in v]
     rt = LabeledArray(
         np.full(in_data.shape[:2], np.nan),
         in_data.labels[:2]
     )
     # Iterate over unique subjects
     for subj, subset_ch_indices in unique_subjects.items():
-        if subj in exclude:
-            continue
 
         # Check if any channel for this subject is excluded
         for subset_ch_idx in subset_ch_indices:
-            ch_identifier = labels[0][subset_ch_idx]
+            ch_identifier = ch_labels[subset_ch_idx]
             if ch_identifier in exclude:
                 subset_ch_indices.pop(subset_ch_indices.index(subset_ch_idx))
                 continue
@@ -84,7 +83,7 @@ def make_rt_array(rt_dict, trial_df_dict, labels, unique_subjects, exclude):
 
         for ch_n in subset_ch_indices:
             for t, rt_val in rt_map.items():
-                ch = labels[0][ch_n]
+                ch = ch_labels[ch_n]
                 rt[ch, t] = rt_val
     return rt
 
@@ -182,7 +181,7 @@ subjects_list_rt = list(
 rt_dict, trial_df_dict = load_response_times(layout, subjects_list_rt)
 print(f"Loaded RT data for {sum(1 for v in rt_dict.values() if v is not None)} subjects")
 
-for cond, timing in zip(('go_ls', 'resp'), ((-0.5, 1.5), (-1, 1))):
+for cond, timing in zip(('go_ls', 'resp'), ((-0.5, 1.25), (-1, 0.75))):
     print(f"Processing condition: {cond} with timing {timing}")
     # sub-select data to analyze
     in_data = np.nanmean(zscores[cond][:, labels[0]], 2).combine((0, 2)).dropna()
@@ -191,7 +190,7 @@ for cond, timing in zip(('go_ls', 'resp'), ((-0.5, 1.5), (-1, 1))):
     print("Applying response-aligned weights for resp condition")
 
     # Map subset channel indices to subjects
-    unique_subjects = get_unique_subjects(labels[0], zscores.labels[2].tolist())
+    unique_subjects = get_unique_subjects(labels[0], zscores.labels[2])
 
     # Get tokens from neural data
     # Data structure: (tokens, channels, freq, trials, time)
