@@ -20,6 +20,7 @@ import numpy as np
 from matplotlib.patches import Circle
 from scipy.optimize import brentq
 
+from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure
 from pyvistaqt import BackgroundPlotter
 
 from analysis.grouping import group_elecs
@@ -154,15 +155,12 @@ SPEC_ELEC = {
 # ---------------------------------------------------------------------------
 # Figure skeleton
 # ---------------------------------------------------------------------------
-cm = 1/2.54  # centimeters in inches
-fig = plt.figure(figsize=(18 * cm, 12 * cm))
+fig = setup_figure()
 gs_outer = gridspec.GridSpec(
     1, 2, figure=fig,
     width_ratios=[2, 3],
-    wspace=0.1,
+    **GS_KWARGS,
 )
-LABEL_SIZE = 7
-TICK_SIZE  = 5
 
 # ============================================================
 # LEFT – Manual vertical Venn diagram spanning the full left column
@@ -302,8 +300,7 @@ gs_right = gridspec.GridSpecFromSubplotSpec(
     subplot_spec=gs_outer[0, 1],
     height_ratios=[2, 1, 1, 1],
     width_ratios=[10, 10, 10, 1],
-    hspace=0.06,
-    wspace=0.06,
+    **GS_KWARGS,
 )
 
 axes_ts   = []

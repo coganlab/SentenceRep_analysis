@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import slicetca
 
+from analysis.figures.config import cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE
 from analysis.load import load_spec, split_and_stack
 from ieeg.io import get_data
 from ieeg.viz.ensemble import plot_dist
@@ -94,16 +95,14 @@ chans = [
 # ---------------------------------------------------------------------------
 # Figure skeleton
 # ---------------------------------------------------------------------------
-cm = 1/2.54  # centimeters in inches
-fig = plt.figure(figsize=(18 * cm, 12 * cm))
+fig = setup_figure()
 gs_outer = gridspec.GridSpec(
-    2, 1, figure=fig, height_ratios=[1, 1.2], hspace=0.25,
+    2, 1, figure=fig, height_ratios=[1, 1.2], **GS_KWARGS,
 )
-fontsize = 5
 
 # ========================== TOP: component time courses ====================
 gs_top = gridspec.GridSpecFromSubplotSpec(
-    1, 2, subplot_spec=gs_outer[0], wspace=0.15,
+    1, 2, subplot_spec=gs_outer[0], **GS_KWARGS,
 )
 
 ylims = [0.0, 0.0]
@@ -120,11 +119,11 @@ for j, (cond, times) in enumerate(conds_plot.items()):
         event = "Go Cue"
     else:
         event = "Stimulus"
-    ax.set_xlabel(f"Time(s) from {event}", fontsize=7)
-    ax.tick_params(axis='both', labelsize=5)
+    ax.set_xlabel(f"Time(s) from {event}", fontsize=LABEL_SIZE)
+    ax.tick_params(axis='both', labelsize=TICK_SIZE)
     if j == 0:
-        ax.set_ylabel("Z-Score HG power", fontsize=7)
-        ax.legend(fontsize=5, loc="upper left")
+        ax.set_ylabel("Z-Score HG power", fontsize=LABEL_SIZE)
+        ax.legend(fontsize=TICK_SIZE, loc="upper left")
     yl = ax.get_ylim()
     ylims[0] = min(ylims[0], yl[0])
     ylims[1] = max(ylims[1], yl[1])
@@ -152,14 +151,14 @@ for j, (cond, times) in enumerate(conds_plot.items()):
 
 # ========================= BOTTOM: channels + brains ======================
 gs_bot = gridspec.GridSpecFromSubplotSpec(
-    1, 2, subplot_spec=gs_outer[1], width_ratios=[1.2, 1], wspace=0.15,
+    1, 2, subplot_spec=gs_outer[1], width_ratios=[1.2, 1], **GS_KWARGS,
 )
 
 # ---------- Bottom-left: channel heatmaps ----------
 n_conds = len(timings)
 gs_chans = gridspec.GridSpecFromSubplotSpec(
     2 * n_conds, n_components, subplot_spec=gs_bot[0, 0],
-    hspace=0.08, wspace=0.08,
+    **GS_KWARGS,
 )
 
 for j_cond, (cond, tslice) in enumerate(timings.items()):
@@ -182,12 +181,12 @@ for j_cond, (cond, tslice) in enumerate(timings.items()):
         ax_line.set_xticklabels([])
         ylims_ch[0] = min(ylims_ch[0], ax_line.get_ylim()[0])
         ylims_ch[1] = max(ylims_ch[1], ax_line.get_ylim()[1])
-        ax_line.tick_params(axis='both', labelsize=5)
+        ax_line.tick_params(axis='both', labelsize=TICK_SIZE)
         if i > 0:
             ax_line.set_yticks([])
             ax_line.set_yticklabels([])
         else:
-            ax_line.set_ylabel("Z-Score", fontsize=7)
+            ax_line.set_ylabel("Z-Score", fontsize=LABEL_SIZE)
 
         # Heatmap
         ax_heat = fig.add_subplot(gs_chans[j + 1, i])
@@ -198,12 +197,12 @@ for j_cond, (cond, tslice) in enumerate(timings.items()):
             extent=[conds_plot[cond][0], conds_plot[cond][1],
                     0, len(sorted_trimmed)],
         )
-        ax_heat.tick_params(axis='both', labelsize=5)
+        ax_heat.tick_params(axis='both', labelsize=TICK_SIZE)
         if i > 0:
             ax_heat.set_yticks([])
             ax_heat.set_yticklabels([])
         else:
-            ax_heat.set_ylabel("Channels", fontsize=7)
+            ax_heat.set_ylabel("Channels", fontsize=LABEL_SIZE)
         if j_cond == 0:
             ax_heat.set_xticklabels([])
 
@@ -223,7 +222,7 @@ comp_colors = _create_color_alpha_matrix(          # faded RGBA per electrode
 )
 
 gs_brains = gridspec.GridSpecFromSubplotSpec(
-    2, 2, subplot_spec=gs_bot[0, 1], hspace=0.05, wspace=0.05,
+    2, 2, subplot_spec=gs_bot[0, 1], **GS_KWARGS,
 )
 
 subjects = layout.get_subjects()
