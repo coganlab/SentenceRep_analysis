@@ -21,7 +21,7 @@ from matplotlib.patches import Circle
 from scipy.optimize import brentq
 
 from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure
-from pyvistaqt import BackgroundPlotter
+import pyvista as pv
 
 from analysis.grouping import group_elecs
 from analysis.load import load_data
@@ -86,10 +86,10 @@ def _chans_for_plot(idx_set: set) -> list[str]:
 
 def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
     """Render group electrodes on fsaverage brain, return cropped RGBA array."""
-    plotter = BackgroundPlotter(shape=(1, 1))
     brain = plot_on_average(layout.get_subjects(),
                             picks=_chans_for_plot(idx_set),
                             color=color, hemi='lh', show=False)
+    plotter = pv.Plotter(off_screen=True, window_size=(3200, 2400))
     for actor in brain.plotter.actors.values():
         plotter.add_actor(actor, reset_camera=False)
     plotter.camera = brain.plotter.camera
@@ -158,7 +158,7 @@ SPEC_ELEC = {
 fig = setup_figure()
 gs_outer = gridspec.GridSpec(
     1, 2, figure=fig,
-    width_ratios=[2, 3],
+    width_ratios=[1, 1],
     **GS_KWARGS,
 )
 
@@ -214,7 +214,7 @@ cx = 0.0
 
 # Tight axes limits — extra left margin to accommodate text labels
 margin     = 0.0
-lbl_margin = 0.1   # extra space on the left for the count labels
+lbl_margin = 0.0   # extra space on the left for the count labels
 ax_venn.set_xlim(-(r_prod + lbl_margin), r_prod + margin)
 ax_venn.set_ylim(cy_prod - r_prod - margin * 1.5,
                  cy_aud  + r_aud  + margin * 1.5)
@@ -370,7 +370,7 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
         ax.tick_params(labelsize=TICK_SIZE)
 
         if i == len(GROUPS) - 1:
-            ax.set_xlabel(f"Time (s) from {title}", fontsize=LABEL_SIZE)
+            ax.set_xlabel(f"Time (s) from\n{title}", fontsize=LABEL_SIZE)
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
 
@@ -421,6 +421,21 @@ if last_im is not None:
     cb = fig.colorbar(last_im, cax=cax, label="Power ratio")
     cb.set_label("Power ratio", fontsize=LABEL_SIZE)
     cb.ax.tick_params(labelsize=TICK_SIZE)
+
+# ---------------------------------------------------------------------------
+# Remove top and right spines from all axes
+# ---------------------------------------------------------------------------
+for ax in fig.get_axes():
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+# ---------------------------------------------------------------------------
+# Subfigure labels
+# ---------------------------------------------------------------------------
+ax_venn.text(-0.05, 1.02, "a", transform=ax_venn.transAxes,
+             fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+axes_ts[0].text(-0.15, 1.02, "b", transform=axes_ts[0].transAxes,
+                fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
 
 # ---------------------------------------------------------------------------
 # Save

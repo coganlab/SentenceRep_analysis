@@ -28,4 +28,4 @@ def despine(ax):
 
 # GridSpec defaults
 # Using small hspace and wspace as requested
-GS_KWARGS = {'hspace': 0.05, 'wspace': 0.05}
+GS_KWARGS = {'hspace': 0.15, 'wspace': 0.05}

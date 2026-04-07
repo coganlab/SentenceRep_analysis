@@ -35,9 +35,9 @@ TOP_SHUF = os.path.join(REPO, "decomposition",
                         "shuffle_scores_zscore_nofreqmult_2way_AUDSMPROD.npz")
 
 BOT_TRUE = os.path.join(REPO, "decoding",
-                        "true_scores_freqmult_zscore_weighted_2way2.npz")
+                        "true_scores_zscore_weighted_words_2way3.npz")
 BOT_SHUF = os.path.join(REPO, "decoding",
-                        "shuffle_scores_freqmult_zscore_weighted_2way2.npz")
+                        "shuffle_scores_zscore_weighted_words_2way3.npz")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -212,13 +212,21 @@ def _plot_row(row_idx: int, true_scores: dict, shuf_scores: dict,
 # Top row — electrode-group decoding
 # ---------------------------------------------------------------------------
 _stat_top = lambda x, y, axis: np.mean(x, axis=axis) - np.mean(y, axis=axis)
-_plot_row(0, top_true, top_shuf, TOP_SERIES, "top", _stat_top)
+axes_top = _plot_row(0, top_true, top_shuf, TOP_SERIES, "top", _stat_top)
 
 # ---------------------------------------------------------------------------
 # Bottom row — component-weighted decoding
 # ---------------------------------------------------------------------------
 _stat_bot = lambda x, y, axis: np.mean(x, axis=axis)
-_plot_row(1, bot_true, bot_shuf, BOT_SERIES, "bottom", _stat_bot)
+axes_bot = _plot_row(1, bot_true, bot_shuf, BOT_SERIES, "bottom", _stat_bot)
+
+# ---------------------------------------------------------------------------
+# Subfigure labels
+# ---------------------------------------------------------------------------
+axes_top[0].text(-0.15, 1.15, "a", transform=axes_top[0].transAxes,
+                 fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+axes_bot[0].text(-0.15, 1.1, "b", transform=axes_bot[0].transAxes,
+                 fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
 
 # ---------------------------------------------------------------------------
 # Save

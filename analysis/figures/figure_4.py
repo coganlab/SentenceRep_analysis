@@ -4,8 +4,8 @@ Layout:
   Top row        : plot_dist of 4 component time courses for aud_ls (left)
                    and go_ls (right), with boxplots of peak latencies.
   Bottom-left    : Per-component channel heatmaps — for each condition
-                   (aud_ls / go_ls), a plot_dist line and sorted-channel
-                   imshow below it.
+                   (aud_ls / go_ls), a parula spectrogram (component-weighted
+                   mean) and sorted-channel imshow below it.
   Bottom-right   : electrode_gradient brain renders showing electrode
                    membership per component.
 """
@@ -17,14 +17,17 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+torch.backends.cuda.preferred_linalg_library("cusolver")
 import slicetca
+
+from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
 from analysis.figures.config import cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE
 from analysis.load import load_spec, split_and_stack
 from ieeg.io import get_data
 from ieeg.viz.ensemble import plot_dist
 from ieeg.viz.mri import plot_on_average, _create_color_alpha_matrix
-from pyvistaqt import BackgroundPlotter
+import pyvista as pv
 
 # ---------------------------------------------------------------------------
 # Paths & data loading
@@ -35,10 +38,8 @@ layout = get_data("SentenceRep", root=LAB_root)
 
 group = "SM"
 folder = "stats_freq_hilbert"
-conds_all = {
-    "aud_ls": (-0.5, 1.5), "aud_lm": (-0.5, 1.5), "aud_jl": (-0.5, 1.5),
-    "go_ls": (-0.5, 1.5),  "go_lm": (-0.5, 1.5),  "go_jl": (-0.5, 1.5),
-}
+# Condition order must match slice_freq.py: alternating aud/go pairs
+conds_ordered = ['aud_ls', 'go_ls', 'aud_lm', 'go_lm', 'aud_jl', 'go_jl']
 
 # Channel labels (pickled from load_spec)
 pkl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -71,20 +72,38 @@ model.load_state_dict(state)
 W, H = model.get_components(numpy=True)[0]
 # W: (n_components, n_channels)   H: (n_components, ..., time)
 
-# Load neural data for channel heatmaps
+# Load neural data for channel heatmaps — same condition order as slice_freq.py
 neural_data_tensor, mask, _, _ = load_spec(
-    group, list(conds_all.keys()), layout, folder=folder,
+    group, conds_ordered, layout, folder=folder,
     min_nan=1, n_jobs=-2,
 )
-# neural_data_tensor: (channels, freqs, trials, time)
-# Freq-and-trial averaged: (channels, time)  — time = 6 conds × 200 pts
-data_avg = neural_data_tensor[..., :375].nanmean((1, 2)).detach().cpu().numpy()
+# neural_data_tensor: (channels, freqs, trials, time)  time = 6 conds × N pts
+# Replicate slice_freq.py processing: split into 3 aud/go pairs, filter transitions
+all_con = split_and_stack(neural_data_tensor, -1, 1, 3)
+# all_con: (channels, 3_pairs, freqs, trials, N_per_pair)
+# pairs: 0=ls, 1=lm, 2=jl; within each pair: aud then go
+all_con = torch.cat([all_con[..., :175], all_con[..., 200:375]], dim=-1)
+# all_con: (channels, 3_pairs, freqs, trials, 350)  [aud 0:175 | go 175:350]
+# Select just the ls pair (index 0)
+ls_data = all_con[:, 0]  # (channels, freqs, trials, 350)
+# Freq-and-trial averaged: (channels, 350)
+data_avg = ls_data.nanmean((1, 2)).detach().cpu().numpy()
+# Trial-averaged, keep freq: (channels, freqs, 350)
+data_spec = ls_data.nanmean(2).detach().cpu().numpy()
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 colors = ["orange", "k", "c", "y"]
 names = ["Auditory", "WM", "Motor", "Visual"]
+
+# Per-component colormaps: white (0) → component color (max)
+comp_cmaps = []
+for c in colors:
+    rgb = to_rgb(c)
+    comp_cmaps.append(LinearSegmentedColormap.from_list(
+        f"white_{c}", [(1, 1, 1), rgb], N=256
+    ))
 timings = {"aud_ls": slice(0, 175), "go_ls": slice(175, 350)}
 conds_plot = {"aud_ls": (-0.5, 1.25), "go_ls": (-0.5, 1.25)}
 chans = [
@@ -97,12 +116,14 @@ chans = [
 # ---------------------------------------------------------------------------
 fig = setup_figure()
 gs_outer = gridspec.GridSpec(
-    2, 1, figure=fig, height_ratios=[1, 1.2], **GS_KWARGS,
+    2, 1, figure=fig, height_ratios=[1, 1.2],
+    hspace=0.3, wspace=GS_KWARGS['wspace'],
 )
 
 # ========================== TOP: component time courses ====================
 gs_top = gridspec.GridSpecFromSubplotSpec(
-    1, 2, subplot_spec=gs_outer[0], **GS_KWARGS,
+    1, 2, subplot_spec=gs_outer[0],
+    hspace=0.3, wspace=GS_KWARGS['wspace'],
 )
 
 ylims = [0.0, 0.0]
@@ -151,42 +172,64 @@ for j, (cond, times) in enumerate(conds_plot.items()):
 
 # ========================= BOTTOM: channels + brains ======================
 gs_bot = gridspec.GridSpecFromSubplotSpec(
-    1, 2, subplot_spec=gs_outer[1], width_ratios=[1.2, 1], **GS_KWARGS,
+    1, 2, subplot_spec=gs_outer[1], width_ratios=[1.2, 1],
+    hspace=0.3, wspace=GS_KWARGS['wspace'],
 )
 
 # ---------- Bottom-left: channel heatmaps ----------
+# 5 rows: spec1, heat1, (spacer), spec2, heat2
+# height_ratios: equal for data rows, larger spacer for x-label gap
 n_conds = len(timings)
 gs_chans = gridspec.GridSpecFromSubplotSpec(
-    2 * n_conds, n_components, subplot_spec=gs_bot[0, 0],
-    **GS_KWARGS,
+    2 * n_conds + 1, n_components, subplot_spec=gs_bot[0, 0],
+    height_ratios=[1, 1, 0.6, 1, 1],
+    hspace=0.15, wspace=GS_KWARGS['wspace'],
 )
 
+# Frequency axis for spectrograms (31 log-spaced bins from 50–300 Hz)
+freqs = np.logspace(np.log10(50), np.log10(300), data_spec.shape[1])
+SPEC_VLIM = (0, 0.35)
+
+ax_bot_left_first = None   # will hold the first bottom-left axis for label "b"
+# Row mapping: cond 0 → rows 0,1; cond 1 → rows 3,4 (row 2 is spacer)
+row_offsets = [0, 3]
+heat_axes_by_cond = {cond: [] for cond in timings}  # track heatmap axes per block
+
 for j_cond, (cond, tslice) in enumerate(timings.items()):
-    j = j_cond * 2  # row offset (0 or 2)
+    j = row_offsets[j_cond]
     time_range = range(tslice.start, tslice.stop)
-    ylims_ch = [0.0, 0.0]
-    line_axes = []
+    if cond.startswith("go"):
+        event_label = "Go Cue"
+    else:
+        event_label = "Stimulus"
     for i in range(n_components):
         # Select channels belonging to this component
         membership = (W[i] / W.sum(0)) > 0.4
         trimmed = data_avg[membership][:, time_range]
         sorted_trimmed = trimmed[np.argsort(W[i, membership])][::-1]
 
-        # Line plot
-        ax_line = fig.add_subplot(gs_chans[j, i])
-        line_axes.append(ax_line)
-        plot_dist(trimmed.reshape(-1, len(time_range)), ax=ax_line,
-                  color=colors[i], mode="sem", times=conds_plot[cond])
-        ax_line.set_xticks([])
-        ax_line.set_xticklabels([])
-        ylims_ch[0] = min(ylims_ch[0], ax_line.get_ylim()[0])
-        ylims_ch[1] = max(ylims_ch[1], ax_line.get_ylim()[1])
-        ax_line.tick_params(axis='both', labelsize=TICK_SIZE)
+        # Spectrogram (component-weighted mean across member channels)
+        ax_spec = fig.add_subplot(gs_chans[j, i])
+        if ax_bot_left_first is None:
+            ax_bot_left_first = ax_spec
+        # data_spec: (channels, freqs, time) — select member channels & time
+        spec_data = data_spec[membership][:, :, time_range]
+        # Weight by component weights and average: (freqs, time)
+        w_mem = W[i, membership]
+        spec_weighted = np.average(spec_data, axis=0, weights=w_mem)
+        ax_spec.imshow(
+            spec_weighted, aspect="auto", origin="lower",
+            cmap=comp_cmaps[i], vmin=SPEC_VLIM[0], vmax=SPEC_VLIM[1],
+            extent=[conds_plot[cond][0], conds_plot[cond][1],
+                    freqs[0], freqs[-1]],
+        )
+        plt.setp(ax_spec.get_xticklabels(), visible=False)
+        ax_spec.tick_params(axis='both', labelsize=TICK_SIZE)
         if i > 0:
-            ax_line.set_yticks([])
-            ax_line.set_yticklabels([])
+            ax_spec.set_yticks([])
+            ax_spec.set_yticklabels([])
         else:
-            ax_line.set_ylabel("Z-Score", fontsize=LABEL_SIZE)
+            ax_spec.set_ylabel("Freq (Hz)", fontsize=6)
 
         # Heatmap
         ax_heat = fig.add_subplot(gs_chans[j + 1, i])
@@ -198,17 +241,26 @@ for j_cond, (cond, tslice) in enumerate(timings.items()):
                     0, len(sorted_trimmed)],
         )
         ax_heat.tick_params(axis='both', labelsize=TICK_SIZE)
+        heat_axes_by_cond[cond].append(ax_heat)
         if i > 0:
             ax_heat.set_yticks([])
             ax_heat.set_yticklabels([])
         else:
-            ax_heat.set_ylabel("Channels", fontsize=LABEL_SIZE)
-        if j_cond == 0:
-            ax_heat.set_xticklabels([])
+            ax_heat.set_ylabel("Channels", fontsize=6)
 
-    # Unify y-limits for line plots in this condition
-    for ax_l in line_axes:
-        ax_l.set_ylim(ylims_ch)
+# Shared x-axis labels centred across all 4 columns per condition block
+fig.canvas.draw()
+for cond, axes_list in heat_axes_by_cond.items():
+    if cond.startswith("go"):
+        event_label = "Go Cue"
+    else:
+        event_label = "Stimulus"
+    # Compute centre x and bottom y from the row of heatmap axes (in fig coords)
+    bboxes = [ax.get_position() for ax in axes_list]
+    x_center = (bboxes[0].x0 + bboxes[-1].x1) / 2
+    y_bottom = min(bb.y0 for bb in bboxes)
+    fig.text(x_center, y_bottom - 0.02, f"Time(s) from {event_label}",
+             fontsize=6, ha="center", va="top")
 
 # ---------- Bottom-right: brain renders per component (2×2) ----------
 # Replicate electrode_gradient logic: per-component plotter, screenshot,
@@ -222,19 +274,23 @@ comp_colors = _create_color_alpha_matrix(          # faded RGBA per electrode
 )
 
 gs_brains = gridspec.GridSpecFromSubplotSpec(
-    2, 2, subplot_spec=gs_bot[0, 1], **GS_KWARGS,
+    2, 2, subplot_spec=gs_bot[0, 1],
+    hspace=0.15, wspace=GS_KWARGS['wspace'],
 )
 
 subjects = layout.get_subjects()
+ax_brain_first = None   # will hold the first brain axis for label "c"
 for i in range(n_components):
     ax_b = fig.add_subplot(gs_brains[i // 2, i % 2])
+    if ax_brain_first is None:
+        ax_brain_first = ax_b
     ax_b.axis("off")
     # Render this component's electrodes on fsaverage
-    plotter = BackgroundPlotter(shape=(1, 1))
     brain = plot_on_average(subjects, picks=list(chans),
                             size=comp_sizes[i], hemi='both',
                             color=comp_colors[i], show=False,
                             transparency=0.15)
+    plotter = pv.Plotter(off_screen=True, window_size=(3200, 2400))
     for actor in brain.plotter.actors.values():
         plotter.add_actor(actor, reset_camera=False)
     plotter.camera = brain.plotter.camera
@@ -257,6 +313,23 @@ for i in range(n_components):
     if rows.size and cols.size:
         img = img[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
     ax_b.imshow(img)
+
+# ---------------------------------------------------------------------------
+# Remove top and right spines from all axes
+# ---------------------------------------------------------------------------
+for ax in fig.get_axes():
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+# ---------------------------------------------------------------------------
+# Subfigure labels
+# ---------------------------------------------------------------------------
+axes_top[0].text(-0.15, 1.1, "a", transform=axes_top[0].transAxes,
+                 fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+ax_bot_left_first.text(-0.2, 1.1, "b", transform=ax_bot_left_first.transAxes,
+                       fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+ax_brain_first.text(-0.1, 1.1, "c", transform=ax_brain_first.transAxes,
+                    fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
 
 # ---------------------------------------------------------------------------
 # Save
