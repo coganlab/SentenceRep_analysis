@@ -1,4 +1,7 @@
+import os
+
 import matplotlib.pyplot as plt
+from ieeg.io import get_data
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -6,6 +9,39 @@ import matplotlib.pyplot as plt
 cm = 1 / 2.54
 LABEL_SIZE = 7
 TICK_SIZE = 5
+
+# SliceTCA component names and colours (shared across all figures)
+COMP_NAMES = ["Auditory", "WM", "Motor", "Visual"]
+COMP_COLORS_LIST = ["orange", "#4B0082", "c", "y"]
+COMP_COLORS = dict(zip(COMP_NAMES, COMP_COLORS_LIST))
+
+# ---------------------------------------------------------------------------
+# Common paths
+# ---------------------------------------------------------------------------
+HOME = os.path.expanduser("~")
+if "SLURM_ARRAY_TASK_ID" in os.environ:
+    LAB_ROOT = os.path.join(HOME, "workspace", "CoganLab")
+else:
+    LAB_ROOT = os.path.join(HOME, "Box", "CoganLab")
+
+LAYOUT = get_data("SentenceRep", root=LAB_ROOT)
+
+FIGURES_DIR = os.path.dirname(os.path.abspath(__file__))
+ANALYSIS_DIR = os.path.dirname(FIGURES_DIR)
+DECODING_DIR = os.path.join(ANALYSIS_DIR, "decoding")
+DECOMPOSITION_DIR = os.path.join(ANALYSIS_DIR, "decomposition")
+
+SM_PKL = os.path.join(DECODING_DIR, "SM_chns.pkl")
+SM_MODEL = os.path.join(DECOMPOSITION_DIR, "model_SM7_freq.pt")
+
+EXCLUDE = [
+    "D0063-RAT1", "D0063-RAT2", "D0063-RAT3", "D0063-RAT4",
+    "D0053-LPIF10", "D0053-LPIF11", "D0053-LPIF12", "D0053-LPIF13",
+    "D0053-LPIF14", "D0053-LPIF15", "D0053-LPIF16",
+    "D0027-LPIF6", "D0027-LPIF7", "D0027-LPIF8", "D0027-LPIF9",
+    "D0027-LPIF10", "D0026-RPG20", "D0026-RPG21", "D0026-RPG28",
+    "D0026-RPG29", "D0026-RPG36", "D0007-RFG44",
+]
 
 # ---------------------------------------------------------------------------
 # Plotting settings

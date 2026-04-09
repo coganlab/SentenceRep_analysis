@@ -20,14 +20,13 @@ import numpy as np
 from matplotlib.patches import Circle
 from scipy.optimize import brentq
 
-from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure
+from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure, LAYOUT
 import pyvista as pv
 
 from analysis.grouping import group_elecs
 from analysis.load import load_data
 from ieeg.arrays.label import LabeledArray
 from ieeg.calc.scaling import rescale
-from ieeg.io import get_data
 from ieeg.viz.ensemble import plot_dist
 from ieeg.viz.mri import plot_on_average
 from ieeg.viz.parula import parula_map
@@ -35,9 +34,7 @@ from ieeg.viz.parula import parula_map
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-HOME = os.path.expanduser("~")
-LAB_root = os.path.join(HOME, "Box", "CoganLab")
-layout = get_data("SentenceRep", root=LAB_root)
+layout = LAYOUT
 
 folder = 'stats_freq_hilbert'
 

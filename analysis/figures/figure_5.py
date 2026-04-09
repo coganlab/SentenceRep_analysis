@@ -14,7 +14,11 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analysis.figures.config import cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE
+from analysis.figures.config import (
+    cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE,
+    COMP_NAMES, COMP_COLORS_LIST,
+    ANALYSIS_DIR, DECOMPOSITION_DIR, DECODING_DIR,
+)
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist, plot_dist_bound
 from analysis.utils.plotting import plot_horizontal_bars
@@ -22,16 +26,14 @@ from analysis.utils.plotting import plot_horizontal_bars
 # ---------------------------------------------------------------------------
 # Paths to pre-computed score files
 # ---------------------------------------------------------------------------
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-TOP_TRUE = os.path.join(REPO, "decomposition",
+TOP_TRUE = os.path.join(DECOMPOSITION_DIR,
                         "true_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
-TOP_SHUF = os.path.join(REPO, "decomposition",
+TOP_SHUF = os.path.join(DECOMPOSITION_DIR,
                         "shuffle_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
 
-BOT_TRUE = os.path.join(REPO, "decoding",
-                        "true_scores_zscore_weighted_words29.npz")
-BOT_SHUF = os.path.join(REPO, "decoding",
+BOT_TRUE = os.path.join(DECODING_DIR,
+                        "true_scores_zscore_weighted_words_dtw2.npz")
+BOT_SHUF = os.path.join(DECODING_DIR,
                         "shuffle_scores_zscore_weighted_words29.npz")
 
 # ---------------------------------------------------------------------------
@@ -56,12 +58,7 @@ TOP_SERIES = [
 ]
 
 # Bottom row: component-weighted decoding (words_factor.py)
-BOT_SERIES = [
-    ("Auditory", "orange"),
-    ("WM",       "k"),
-    ("Motor",    "c"),
-    ("Visual",   "y"),
-]
+BOT_SERIES = list(zip(COMP_NAMES, COMP_COLORS_LIST))
 
 # Styling (matches figure_2 / figure_4)
 # ---------------------------------------------------------------------------
