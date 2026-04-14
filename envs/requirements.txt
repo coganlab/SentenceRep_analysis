@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+numpy>=2.0,<2.4
+scipy>1.15
+cupy-cuda12x
+numba-cuda[cu12]
+torch
+torchvision
+torchaudio
+tslearn
+scikit-optimize
