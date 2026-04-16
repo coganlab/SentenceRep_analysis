@@ -20,7 +20,7 @@ import pyvista as pv
 from matplotlib.colors import LinearSegmentedColormap
 
 from analysis.figures.config import (
-    cm, setup_figure, LABEL_SIZE, TICK_SIZE,
+    cm, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS_LIST, LAYOUT, SM_PKL, SM_MODEL,
 )
 from ieeg.viz.mri import (
@@ -113,7 +113,7 @@ for row, (w1, w2) in enumerate(pairs):
     ax_brain.axis("off")
 
     cmap_pair = LinearSegmentedColormap.from_list(
-        "two_color_cmap", [colors[w1], colors[w2]], N=200)
+        "two_color_cmap", [colors[w2], colors[w1]], N=200)
     weights_2 = np.stack([W[w1], W[w2]], axis=0)
     plotter = electrode_ratio_gradient(
         layout.get_subjects(), weights_2, chans, cmap_pair, 2, 16, (1, 1))
@@ -128,21 +128,18 @@ for row, (w1, w2) in enumerate(pairs):
     ax_scat = fig.add_subplot(gs[row, 1])
 
     cmap_scat = LinearSegmentedColormap.from_list(
-        "two_color_cmap", [colors[w1], colors[w2]], N=200)
-    c = ratio_to_color_gradient(W_log[w1], W_log[w2], colormap=cmap_scat)
+        "two_color_cmap", [colors[w2], colors[w1]], N=200)
+    c = ratio_to_color_gradient(W_log[w2], W_log[w1], colormap=cmap_scat)
     Wt = np.max([W_log[w1], W_log[w2]], axis=0)
     Wt -= Wt.min()
     Wt /= Wt.max()
     wgts = 1 - Wt
     c_greyed = color_contrast(list(c), list(wgts))
-    ax_scat.scatter(W_log[w2], W_log[w1], c=c_greyed, s=4)
+    ax_scat.scatter(W_log[w1], W_log[w2], c=c_greyed, s=4)
     ax_scat.axvline(THRESH, color="k", linestyle="--", linewidth=0.5)
     ax_scat.axhline(THRESH, color="k", linestyle="--", linewidth=0.5)
-    ax_scat.set_ylabel(names[w1], fontsize=LABEL_SIZE)
-    ax_scat.set_xlabel(names[w2], fontsize=LABEL_SIZE)
-    ax_scat.tick_params(labelsize=TICK_SIZE)
-    if row == 0:
-        ax_scat.set_title("Log Weights", fontsize=LABEL_SIZE)
+    combo_title = f"{names[w1]} + {names[w2]}"
+    ax_scat.set_title(combo_title, fontsize=LABEL_SIZE)
 
     # --- Column 2: Pie chart of scatter quadrants ---
     ax_pie = fig.add_subplot(gs[row, 2])
@@ -155,7 +152,7 @@ for row, (w1, w2) in enumerate(pairs):
         np.sum(~hi_w1 & hi_w2),      # w2 only
         np.sum(~hi_w1 & ~hi_w2),     # neither
     ]
-    pie_labels = ["Both", f"{names[w1]} only", f"{names[w2]} only", "Neither"]
+    pie_labels = [combo_title, names[w1], names[w2], "Neither"]
     pie_colors = [cmap_pair(0.5), colors[w1], colors[w2], "lightgrey"]
 
     # Only plot slices with nonzero count
@@ -177,7 +174,7 @@ for row, (w1, w2) in enumerate(pairs):
 # ---------------------------------------------------------------------------
 out_dir = os.path.dirname(os.path.abspath(__file__))
 fig.savefig(os.path.join(out_dir, "figure_S_weight_scatter.svg"),
-            bbox_inches="tight")
+            bbox_inches="tight", dpi=DPI)
 fig.savefig(os.path.join(out_dir, "figure_S_weight_scatter.png"),
-            bbox_inches="tight", dpi=300)
+            bbox_inches="tight", dpi=DPI)
 plt.show()

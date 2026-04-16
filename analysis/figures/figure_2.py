@@ -20,7 +20,7 @@ import numpy as np
 from matplotlib.patches import Circle
 from scipy.optimize import brentq
 
-from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure, LAYOUT
+from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure, LAYOUT, DPI
 import pyvista as pv
 
 from analysis.grouping import group_elecs
@@ -123,9 +123,9 @@ def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
 # Conditions used in both the line-plot and spectrogram panels
 # ---------------------------------------------------------------------------
 COND_LIST = [
-    ("aud_ls", (-0.5, 1.5), "Stimulus onset"),
-    ("go_ls",  (-0.5, 1.5), "Go cue"),
-    ("resp",   (-1.0, 1.0), "Response"),
+    ("aud_ls", (-0.5, 1.5), "stimulus"),
+    ("go_ls",  (-0.5, 1.5), "go cue"),
+    ("resp",   (-1.0, 1.0), "response"),
 ]
 
 GROUPS = [
@@ -327,17 +327,43 @@ for j, (cond, timing, title) in enumerate(COND_LIST):
     plt.setp(ax.get_xticklabels(), visible=False)
 
     if j == 0:
-        ax.set_ylabel("Z-Scored HG Power", fontsize=LABEL_SIZE)
+        ax.set_ylabel("HG Power (z)", fontsize=LABEL_SIZE)
         ax.legend(loc="upper left", fontsize=TICK_SIZE, framealpha=0.6)
         ylims_ts = ax.get_ylim()
     else:
         ax.set_yticklabels([])
 
-for ax in axes_ts:
-    ax.tick_params(labelsize=TICK_SIZE)
 if ylims_ts:
     for ax in axes_ts:
         ax.set_ylim(ylims_ts)
+
+# ---- Peak-time boxplots on row 0 (same pattern as figure_4) ----
+n_groups = len(GROUPS)
+for j, (cond, timing, title) in enumerate(COND_LIST):
+    ax = axes_ts[j]
+    if cond not in avail_conds:
+        continue
+    arr = freq_avg(cond)
+    yl = ax.get_ylim()
+    positions = np.linspace(
+        (yl[0] + yl[1]) * 4 / 5, yl[1], n_groups
+    )
+    width = positions[1] - positions[0]
+    positions -= width / 2
+    for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
+        idx_list = list(grp_idx)
+        if not idx_list:
+            continue
+        grp_data = arr[idx_list]
+        n_time = grp_data.shape[-1]
+        ttimes = np.linspace(timing[0], timing[1], n_time)
+        peak_times = ttimes[np.nanargmax(grp_data, axis=-1)]
+        ax.boxplot(
+            peak_times, vert=False, manage_ticks=False,
+            positions=[positions[i]], widths=width / 2,
+            patch_artist=True, boxprops=dict(facecolor=color),
+            medianprops=dict(color="k", alpha=0.5), showfliers=False,
+        )
 
 # ---- Rows 1–3: spectrograms — 3 groups × 3 conditions ----
 last_im = None
@@ -364,10 +390,9 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
     for j, (cond, timing, title) in enumerate(COND_LIST):
         ax = fig.add_subplot(gs_right[i + 1, j], sharex=axes_ts[j])
         axes_spec[i][j] = ax
-        ax.tick_params(labelsize=TICK_SIZE)
 
         if i == len(GROUPS) - 1:
-            ax.set_xlabel(f"Time (s) from\n{title}", fontsize=LABEL_SIZE)
+            ax.set_xlabel(f"Time from {title} (s)", fontsize=LABEL_SIZE)
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
 
@@ -417,14 +442,6 @@ if last_im is not None:
     cax = fig.add_subplot(gs_right[1:, -1])
     cb = fig.colorbar(last_im, cax=cax, label="Power ratio")
     cb.set_label("Power ratio", fontsize=LABEL_SIZE)
-    cb.ax.tick_params(labelsize=TICK_SIZE)
-
-# ---------------------------------------------------------------------------
-# Remove top and right spines from all axes
-# ---------------------------------------------------------------------------
-for ax in fig.get_axes():
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
 
 # ---------------------------------------------------------------------------
 # Subfigure labels
@@ -439,6 +456,6 @@ axes_ts[0].text(-0.15, 1.02, "b", transform=axes_ts[0].transAxes,
 # ---------------------------------------------------------------------------
 out_dir = os.path.dirname(os.path.abspath(__file__))
 # fig.suptitle("Figure 2", fontsize=14, y=0.995)
-fig.savefig(os.path.join(out_dir, "figure_2.svg"), bbox_inches="tight")
-fig.savefig(os.path.join(out_dir, "figure_2.png"), bbox_inches="tight", dpi=150)
+fig.savefig(os.path.join(out_dir, "figure_2.svg"), bbox_inches="tight", dpi=DPI)
+fig.savefig(os.path.join(out_dir, "figure_2.png"), bbox_inches="tight", dpi=DPI)
 plt.show()

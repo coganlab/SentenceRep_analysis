@@ -22,7 +22,7 @@ import slicetca
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
 from analysis.figures.config import (
-    cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE,
+    cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS_LIST, LAYOUT, SM_PKL, SM_MODEL,
 )
 from analysis.load import load_spec, split_and_stack
@@ -119,29 +119,35 @@ gs_outer = gridspec.GridSpec(
 
 # Left side: single gridspec shared by panels a (row 0) and c (rows 1+)
 # so that their two columns are guaranteed to align exactly.
+# 3 columns: col 0 = aud_ls, col 1 = colorbars (slim), col 2 = go_ls
 n_rows_c = n_components * 2
 gs_left = gridspec.GridSpecFromSubplotSpec(
-    1 + n_rows_c, 2, subplot_spec=gs_outer[0, 0],
+    1 + n_rows_c, 3, subplot_spec=gs_outer[0, 0],
     height_ratios=[1] + [0.175] * n_rows_c,
-    hspace=0.25, wspace=0.15,
+    width_ratios=[1, 0.03, 1],
+    hspace=0.25, wspace=0.08,
 )
 
 # =================== Panel a (row 0): time courses =========================
+COL_IDX = [0, 2]  # data columns in gs_left (skip col 1 = colorbar)
+
 ylims = [0.0, 0.0]
 axes_a = []
 for j, (cond, times) in enumerate(conds_plot.items()):
-    ax = fig.add_subplot(gs_left[0, j])
+    ax = fig.add_subplot(gs_left[0, COL_IDX[j]])
     axes_a.append(ax)
     n_time = len(range(*timings[cond].indices(H.shape[-1])))
     for i in range(n_components):
         component_data = H[i, ..., timings[cond]].reshape(-1, n_time)
         plot_dist(component_data, ax=ax, color=colors[i], mode="sem",
                   times=times, label=names[i])
-    ax.tick_params(axis='both', labelsize=TICK_SIZE)
+    ax.set_xlim(times)
     plt.setp(ax.get_xticklabels(), visible=False)
     if j == 0:
-        ax.set_ylabel("Z-Score HG power", fontsize=LABEL_SIZE)
+        ax.set_ylabel("HG Power (z)", fontsize=LABEL_SIZE)
         ax.legend(fontsize=TICK_SIZE, loc="upper left")
+    else:
+        ax.set_yticklabels([])
     yl = ax.get_ylim()
     ylims[0] = min(ylims[0], yl[0])
     ylims[1] = max(ylims[1], yl[1])
@@ -228,62 +234,76 @@ cond_list = list(timings.items())
 for i in range(n_components):
     membership = (W[i] / W.sum(0)) > 0.4
     w_mem = W[i, membership]
+    spec_im = None
+    heat_im = None
+    heat_scale = None
     for j_cond, (cond, tslice) in enumerate(cond_list):
         time_range = range(tslice.start, tslice.stop)
         trimmed = data_avg[membership][:, time_range]
         sorted_trimmed = trimmed[np.argsort(W[i, membership])][::-1]
 
         # Spectrogram — row offset 1 to skip panel a row
-        ax_spec = fig.add_subplot(gs_left[1 + i * 2, j_cond])
+        ax_spec = fig.add_subplot(gs_left[1 + i * 2, COL_IDX[j_cond]],
+                                  sharex=axes_a[j_cond])
         if ax_c_first is None:
             ax_c_first = ax_spec
         spec_data = data_spec[membership][:, :, time_range]
         spec_weighted = np.average(spec_data, axis=0, weights=w_mem)
-        ax_spec.imshow(
+        spec_im = ax_spec.imshow(
             spec_weighted, aspect="auto", origin="lower",
             cmap=comp_cmaps[i], vmin=SPEC_VLIM[0], vmax=SPEC_VLIM[1],
             extent=[conds_plot[cond][0], conds_plot[cond][1],
                     freqs[0], freqs[-1]],
         )
         plt.setp(ax_spec.get_xticklabels(), visible=False)
-        ax_spec.tick_params(axis='both', labelsize=TICK_SIZE)
         if j_cond > 0:
             ax_spec.set_yticks([])
             ax_spec.set_yticklabels([])
         elif i == 0:
-            ax_spec.set_ylabel("Freq (Hz)", fontsize=6)
+            ax_spec.set_ylabel("Freq (Hz)", fontsize=LABEL_SIZE)
 
         # Heatmap
-        ax_heat = fig.add_subplot(gs_left[1 + i * 2 + 1, j_cond])
-        scale = np.mean(sorted_trimmed) + 1.5 * np.std(sorted_trimmed)
-        ax_heat.imshow(
+        ax_heat = fig.add_subplot(gs_left[1 + i * 2 + 1, COL_IDX[j_cond]],
+                                  sharex=axes_a[j_cond])
+        heat_scale = np.mean(sorted_trimmed) + 1.5 * np.std(sorted_trimmed)
+        heat_im = ax_heat.imshow(
             sorted_trimmed, aspect="auto", cmap="inferno",
-            vmin=0, vmax=scale,
+            vmin=0, vmax=heat_scale,
             extent=[conds_plot[cond][0], conds_plot[cond][1],
                     0, len(sorted_trimmed)],
         )
-        ax_heat.tick_params(axis='both', labelsize=TICK_SIZE)
         if j_cond > 0:
             ax_heat.set_yticks([])
             ax_heat.set_yticklabels([])
         elif i == 0:
-            ax_heat.set_ylabel("Channels", fontsize=6)
+            ax_heat.set_ylabel("Channels", fontsize=LABEL_SIZE)
         # x-label only on the bottom row
         if i == n_components - 1:
             if cond.startswith("go"):
                 event_label = "Go Cue"
             else:
                 event_label = "Stimulus"
-            ax_heat.set_xlabel(f"Time(s) from {event_label}", fontsize=6)
+            ax_heat.set_xlabel(f"Time from {event_label} (s)", fontsize=LABEL_SIZE)
         else:
             plt.setp(ax_heat.get_xticklabels(), visible=False)
 
-# ---------------------------------------------------------------------------
-# Remove top and right spines from all axes
-# ---------------------------------------------------------------------------
-for ax in fig.get_axes():
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+    # Colorbars: shift rightward from gridspec col 1 so tick labels don't overlap
+    # Spectrogram colorbar
+    ax_cb_ref = fig.add_subplot(gs_left[1 + i * 2, 1])
+    ax_cb_ref.set_visible(False)
+    bbox = ax_cb_ref.get_position()
+    cax_spec = fig.add_axes([bbox.x0 + bbox.width, bbox.y0,
+                             bbox.width, bbox.height])
+    fig.colorbar(spec_im, cax=cax_spec)
+    cax_spec.yaxis.set_ticks_position("left")
+    # Heatmap colorbar
+    ax_cb_ref2 = fig.add_subplot(gs_left[1 + i * 2 + 1, 1])
+    ax_cb_ref2.set_visible(False)
+    bbox2 = ax_cb_ref2.get_position()
+    cax_heat = fig.add_axes([bbox2.x0 + bbox2.width, bbox2.y0,
+                             bbox2.width, bbox2.height])
+    fig.colorbar(heat_im, cax=cax_heat)
+    cax_heat.yaxis.set_ticks_position("left")
 
 # ---------------------------------------------------------------------------
 # Subfigure labels
@@ -299,6 +319,6 @@ ax_c_first.text(-0.2, 1.1, "c", transform=ax_c_first.transAxes,
 # Save
 # ---------------------------------------------------------------------------
 out_dir = os.path.dirname(os.path.abspath(__file__))
-fig.savefig(os.path.join(out_dir, "figure_4.svg"), bbox_inches="tight")
-fig.savefig(os.path.join(out_dir, "figure_4.png"), bbox_inches="tight", dpi=150)
+fig.savefig(os.path.join(out_dir, "figure_4.svg"), bbox_inches="tight", dpi=DPI)
+fig.savefig(os.path.join(out_dir, "figure_4.png"), bbox_inches="tight", dpi=DPI)
 plt.show()

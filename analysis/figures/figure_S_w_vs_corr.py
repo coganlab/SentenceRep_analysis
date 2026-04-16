@@ -18,7 +18,7 @@ from scipy.stats import pearsonr
 from mne.stats import fdr_correction
 
 from analysis.figures.config import (
-    cm, setup_figure, LABEL_SIZE, TICK_SIZE,
+    cm, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS, LAYOUT, SM_PKL, SM_MODEL, EXCLUDE,
 )
 from analysis.fix.rt_hg_map import (
@@ -129,14 +129,13 @@ def _build_figure(filtered: bool):
         if col == 0 and row == 0:
             ax.set_ylabel("HG\u2013RT corr (r)", fontsize=LABEL_SIZE)
 
-        ax.tick_params(labelsize=TICK_SIZE)
 
     # Save
     out_dir = os.path.dirname(os.path.abspath(__file__))
     fig.savefig(os.path.join(out_dir, f"figure_S_w_vs_corr{tag}.svg"),
-                bbox_inches="tight")
+                bbox_inches="tight", dpi=DPI)
     fig.savefig(os.path.join(out_dir, f"figure_S_w_vs_corr{tag}.png"),
-                bbox_inches="tight", dpi=300)
+                bbox_inches="tight", dpi=DPI)
     print(f"Saved figure_S_w_vs_corr{tag}.svg / .png  ({filter_label})")
     plt.show()
 

@@ -9,12 +9,13 @@ import os
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist, plot_dist_bound
 from analysis.utils.plotting import plot_horizontal_bars
-from analysis.figures.config import DECOMPOSITION_DIR
+from analysis.figures.config import cm, setup_figure, LABEL_SIZE, TICK_SIZE, DECOMPOSITION_DIR, DPI
 
 # ---------------------------------------------------------------------------
 # Paths to pre-computed score files
@@ -29,7 +30,7 @@ TOP_SHUF = os.path.join(DECOMPOSITION_DIR,
 # ---------------------------------------------------------------------------
 N_CLASSES = 4
 BASELINE = 1 / N_CLASSES
-YLIMS = (BASELINE - 0.2, BASELINE + 0.6)
+YLIMS = (BASELINE - 0.3, BASELINE + 0.6)
 
 CONDS = [["aud_ls", "aud_lm"], ["go_ls", "go_lm"], "resp"]
 COND_TITLES = {
@@ -43,11 +44,6 @@ TOP_SERIES = [
     ("Sensory-Motor", [1, 0, 0]),
     ("Auditory",      [0, 1, 0]),
 ]
-
-# Styling (matches figure_2 / figure_4)
-cm = 1 / 2.54
-LABEL_SIZE = 7
-TICK_SIZE = 5
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +81,7 @@ top_shuf = dict(np.load(TOP_SHUF, allow_pickle=True))
 # ---------------------------------------------------------------------------
 # Figure
 # ---------------------------------------------------------------------------
-fig = plt.figure(figsize=(18 * cm, 6 * cm))
+fig = setup_figure(figsize=(18 * cm, 7.5 * cm))
 gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.25)
 
 _stat = lambda x, y, axis: np.mean(x, axis=axis) - np.mean(y, axis=axis)
@@ -124,16 +120,13 @@ for j, cond in enumerate(CONDS):
         shuf_smooth = np.mean(window, axis=-1)
         plot_dist_bound(shuf_smooth, "std", "both",
                         _times_shuffle(cond_str), 0,
-                        ax=ax, color=color, alpha=0.3)
+                        ax=ax, color='grey', alpha=0.2, linewidth=0)
 
     if bars:
         plot_horizontal_bars(ax, bars, 0.02, "below")
 
     ax.axhline(BASELINE, color="k", linestyle="--", linewidth=0.5)
     ax.set_ylim(*YLIMS)
-    ax.tick_params(labelsize=TICK_SIZE)
-    ax.set_title(COND_TITLES[cond_str], fontsize=LABEL_SIZE)
-
     if cond_str == "resp":
         ax.set_xlabel("Time from response (s)", fontsize=LABEL_SIZE)
     elif "aud" in cond_str:
@@ -141,9 +134,11 @@ for j, cond in enumerate(CONDS):
     else:
         ax.set_xlabel("Time from go cue (s)", fontsize=LABEL_SIZE)
 
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda x, _: f"{x * 100:.0f}"))
     if j == 0:
-        ax.set_ylabel("Accuracy", fontsize=LABEL_SIZE)
-        ax.legend(fontsize=TICK_SIZE - 1, loc="upper left",
+        ax.set_ylabel("Accuracy (%)", fontsize=LABEL_SIZE)
+        ax.legend(fontsize=TICK_SIZE, loc="upper left",
                   framealpha=0.6)
     else:
         ax.set_yticklabels([])
@@ -152,7 +147,7 @@ for j, cond in enumerate(CONDS):
 # Save
 # ---------------------------------------------------------------------------
 out_dir = os.path.dirname(os.path.abspath(__file__))
-fig.savefig(os.path.join(out_dir, "figure_5_supp.svg"), bbox_inches="tight")
+fig.savefig(os.path.join(out_dir, "figure_5_supp.svg"), bbox_inches="tight", dpi=DPI)
 fig.savefig(os.path.join(out_dir, "figure_5_supp.png"), bbox_inches="tight",
-            dpi=300)
+            dpi=DPI)
 plt.show()

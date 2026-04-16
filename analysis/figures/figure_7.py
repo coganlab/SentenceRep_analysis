@@ -28,7 +28,7 @@ import slicetca
 from scipy.stats import f_oneway
 
 from analysis.figures.config import (
-    cm, setup_figure, LABEL_SIZE, TICK_SIZE,
+    cm, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS, COMP_COLORS_LIST,
     LAYOUT, SM_PKL, SM_MODEL, EXCLUDE, DECODING_DIR,
 )
@@ -71,7 +71,7 @@ def _load_mean_peak_times_and_rt(filtered: bool = True):
     Returns
     -------
     peak_dict : dict[str, np.ndarray]
-    mean_rt : float
+    median_rt : float
     """
     sm_mapping = get_sm_subgroup_mapping(
         layout, threshold=SM_MAPPING_THRESHOLD,
@@ -113,8 +113,8 @@ def _load_mean_peak_times_and_rt(filtered: bool = True):
 
     peak_dict = {g: np.array(list(v.values())) for g, v in elec_peaks.items()
                  if len(v) > 0}
-    mean_rt = float(np.nanmean(np.concatenate(all_rts))) if all_rts else np.nan
-    return peak_dict, mean_rt
+    median_rt = float(np.nanmedian(np.concatenate(all_rts))) if all_rts else np.nan
+    return peak_dict, median_rt
 
 
 # ===================================================================
@@ -224,7 +224,7 @@ def _build_figure(filtered: bool):
     # ======================= Panel (a): box plots ==========================
     ax_a = fig.add_subplot(gs[0, 0])
 
-    peak_data, mean_rt = _load_mean_peak_times_and_rt(filtered=filtered)
+    peak_data, median_rt = _load_mean_peak_times_and_rt(filtered=filtered)
     groups_ordered = [g for g in SM_SUBGROUPS if g in peak_data]
     box_arrays = [peak_data[g] for g in groups_ordered]
 
@@ -248,11 +248,11 @@ def _build_figure(filtered: bool):
                      edgecolors="none", zorder=5)
 
     # Mean RT reference line
-    if np.isfinite(mean_rt):
-        ax_a.axhline(mean_rt, color="k", linewidth=0.8, linestyle=":",
+    if np.isfinite(median_rt):
+        ax_a.axhline(median_rt, color="k", linewidth=0.8, linestyle=":",
                      alpha=0.7, zorder=4)
-        ax_a.text(len(groups_ordered) + 0.45, mean_rt,
-                  f"mean RT = {mean_rt:.3f} s", va="center", ha="right",
+        ax_a.text(len(groups_ordered) + 0.45, median_rt,
+                  f"median RT = {median_rt:.3f} s", va="center", ha="right",
                   fontsize=FS, color="k", style="italic")
 
     # ANOVA
@@ -332,9 +332,9 @@ def _build_figure(filtered: bool):
     # ----------------------------- Save ------------------------------------
     out_dir = os.path.dirname(os.path.abspath(__file__))
     fig.savefig(os.path.join(out_dir, f"figure_7{tag}.svg"),
-                bbox_inches="tight")
+                bbox_inches="tight", dpi=DPI)
     fig.savefig(os.path.join(out_dir, f"figure_7{tag}.png"),
-                bbox_inches="tight", dpi=300)
+                bbox_inches="tight", dpi=DPI)
     print(f"Saved figure_7{tag}.svg / .png  ({filter_label})")
     plt.show()
 
@@ -342,5 +342,5 @@ def _build_figure(filtered: bool):
 # ---------------------------------------------------------------------------
 # Generate both versions
 # ---------------------------------------------------------------------------
-_build_figure(filtered=True)
+# _build_figure(filtered=True)
 _build_figure(filtered=False)
