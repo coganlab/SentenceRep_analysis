@@ -18,13 +18,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import slicetca
+from scipy.stats import f_oneway
 
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
 from analysis.figures.config import (
     cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS_LIST, LAYOUT, SM_PKL, SM_MODEL,
+    XLABEL_STIMULUS, XLABEL_GO,
+    finalize_figure, add_panel_label,
 )
+from analysis.fix.rt_hg_map import pairwise_comparisons
 from analysis.load import load_spec, split_and_stack
 from ieeg.viz.ensemble import plot_dist
 from ieeg.viz.mri import plot_on_average, _create_color_alpha_matrix
@@ -152,26 +156,89 @@ for j, (cond, times) in enumerate(conds_plot.items()):
     ylims[0] = min(ylims[0], yl[0])
     ylims[1] = max(ylims[1], yl[1])
 
-# Unify y-limits and add peak-time boxplots
+# Unify y-limits and add peak-time boxplots (per-channel, figure-7 methodology)
 for j, (cond, times) in enumerate(conds_plot.items()):
     ax = axes_a[j]
     ax.set_ylim(ylims)
-    n_time = len(range(*timings[cond].indices(H.shape[-1])))
+
+    time_range = range(timings[cond].start, timings[cond].stop)
+    n_time = len(time_range)
+    ttimes = np.linspace(times[0], times[1], n_time)
+
+    # Per-component per-channel peak times — membership matches panel c
+    peak_dists = {}
+    for i in range(n_components):
+        membership = (W[i] / W.sum(0)) > 0.4
+        trimmed = data_avg[membership][:, time_range]
+        peak_dists[names[i]] = ttimes[trimmed.argmax(axis=-1)]
+
     positions = np.linspace(
         (ylims[0] + ylims[1]) * 4 / 5, ylims[1], n_components
     )
     width = positions[1] - positions[0]
     positions -= width / 2
+
+    box_arrays = [peak_dists[names[i]] for i in range(n_components)]
+    bp = ax.boxplot(
+        box_arrays, vert=False, manage_ticks=False,
+        positions=positions.tolist(), widths=width * 0.6,
+        patch_artist=True, showmeans=True,
+        meanprops=dict(marker="D", markerfacecolor="white",
+                       markeredgecolor="black", markersize=2.5),
+        medianprops=dict(color="k", linewidth=1),
+        flierprops=dict(marker="", linewidth=0),
+    )
+    for patch, i in zip(bp["boxes"], range(n_components)):
+        patch.set_facecolor(colors[i])
+        patch.set_alpha(0.55)
+
+    # Individual channel dots with y-jitter
+    rng = np.random.default_rng(42)
     for i in range(n_components):
-        comp_data = H[i, ..., timings[cond]].reshape(-1, n_time)
-        ttimes = np.linspace(times[0], times[1], comp_data.shape[-1])
-        peak_times = ttimes[comp_data.argmax(axis=-1)]
-        ax.boxplot(
-            peak_times, vert=False, manage_ticks=False,
-            positions=[positions[i]], widths=width / 2,
-            patch_artist=True, boxprops=dict(facecolor=colors[i]),
-            medianprops=dict(color="k", alpha=0.5), showfliers=False,
-        )
+        vals = peak_dists[names[i]]
+        jit = rng.normal(0, width * 0.12, size=len(vals))
+        ax.scatter(vals, np.full_like(vals, positions[i]) + jit,
+                   s=3, c="grey", alpha=0.45, edgecolors="none", zorder=5)
+
+    # ANOVA + FDR-corrected pairwise comparisons (right-side brackets)
+    f_stat, p_anova = f_oneway(*box_arrays)
+    ax.text(times[0] + 0.02, positions[-1] + width * 0.6,
+            f"F={f_stat:.2f}, p={p_anova:.2e}",
+            fontsize=TICK_SIZE, va="bottom", ha="left")
+
+    pw = pairwise_comparisons(peak_dists, correction_method="fdr_bh")
+    x_base = times[1] + 0.03
+    x_step = 0.035
+    tick_len = x_step * 0.35
+    for idx, (_, row) in enumerate(pw.iterrows()):
+        g1, g2 = row["group1"], row["group2"]
+        if g1 not in names or g2 not in names:
+            continue
+        i1 = names.index(g1)
+        i2 = names.index(g2)
+        y1 = positions[i1]
+        y2 = positions[i2]
+        x = x_base + idx * x_step
+        sig = row["significant"]
+        color = "red" if sig else "grey"
+        lw = 0.8 if sig else 0.4
+        # Right-facing bracket: hooks at y1, y2 pointing leftward; spine at x
+        ax.plot([x - tick_len, x, x, x - tick_len],
+                [y1, y1, y2, y2],
+                color=color, linewidth=lw, clip_on=False)
+        p = row["pvalue_corrected"]
+        if p < 0.001:
+            stars = "***"
+        elif p < 0.01:
+            stars = "**"
+        elif p < 0.05:
+            stars = "*"
+        else:
+            stars = ""
+        if stars:
+            ax.text(x + x_step * 0.15, (y1 + y2) / 2, stars,
+                    ha="left", va="center", fontsize=TICK_SIZE,
+                    color=color, clip_on=False)
 
 # ============= Panel b (right column): brain renders (4×1) ================
 max_size = 2.0
@@ -279,11 +346,8 @@ for i in range(n_components):
             ax_heat.set_ylabel("Channels", fontsize=LABEL_SIZE)
         # x-label only on the bottom row
         if i == n_components - 1:
-            if cond.startswith("go"):
-                event_label = "Go Cue"
-            else:
-                event_label = "Stimulus"
-            ax_heat.set_xlabel(f"Time from {event_label} (s)", fontsize=LABEL_SIZE)
+            xlabel = XLABEL_GO if cond.startswith("go") else XLABEL_STIMULUS
+            ax_heat.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         else:
             plt.setp(ax_heat.get_xticklabels(), visible=False)
 
@@ -308,17 +372,11 @@ for i in range(n_components):
 # ---------------------------------------------------------------------------
 # Subfigure labels
 # ---------------------------------------------------------------------------
-axes_a[0].text(-0.15, 1.1, "a", transform=axes_a[0].transAxes,
-               fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
-ax_brain_first.text(-0.1, 1.1, "b", transform=ax_brain_first.transAxes,
-                    fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
-ax_c_first.text(-0.2, 1.1, "c", transform=ax_c_first.transAxes,
-                fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+add_panel_label(axes_a[0], "a", x=-0.15, y=1.1)
+add_panel_label(ax_brain_first, "b", x=-0.1, y=1.1)
+add_panel_label(ax_c_first, "c", x=-0.2, y=1.1)
 
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
-out_dir = os.path.dirname(os.path.abspath(__file__))
-fig.savefig(os.path.join(out_dir, "figure_4.svg"), bbox_inches="tight", dpi=DPI)
-fig.savefig(os.path.join(out_dir, "figure_4.png"), bbox_inches="tight", dpi=DPI)
-plt.show()
+finalize_figure(fig, "figure_4")

@@ -15,20 +15,24 @@ import os
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
+import mne
 import mne.time_frequency
 import numpy as np
 from matplotlib.patches import Circle
 from scipy.optimize import brentq
 
-from analysis.figures.config import cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure, LAYOUT, DPI
+from analysis.figures.config import (
+    cm, LABEL_SIZE, TICK_SIZE, GS_KWARGS, setup_figure, LAYOUT, DPI,
+    EVENT_STIMULUS, EVENT_GO, EVENT_RESPONSE, POWER_RATIO_LABEL,
+    finalize_figure, add_panel_label,
+)
 import pyvista as pv
 
 from analysis.grouping import group_elecs
-from analysis.load import load_data
 from ieeg.arrays.label import LabeledArray
 from ieeg.calc.scaling import rescale
 from ieeg.viz.ensemble import plot_dist
-from ieeg.viz.mri import plot_on_average
+from ieeg.viz.mri import force2frame, get_sub_dir, plot_on_average, subject_to_info
 from ieeg.viz.parula import parula_map
 
 # ---------------------------------------------------------------------------
@@ -81,8 +85,22 @@ def _chans_for_plot(idx_set: set) -> list[str]:
             for ch in (all_chans[i] for i in sorted(idx_set))]
 
 
-def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
-    """Render group electrodes on fsaverage brain, return cropped RGBA array."""
+def _brain_screenshot(idx_set: set, color: str,
+                      highlight_elecs: dict = None):
+    """Render group electrodes on fsaverage brain; return (cropped RGBA, markers).
+
+    Parameters
+    ----------
+    highlight_elecs : dict, optional
+        ``{symbol: 'D0028-LPIO7'}`` — each electrode's 3-D position is
+        projected to 2-D screen coords via VTK WorldToDisplay *before*
+        screenshotting, so the caller can overlay text markers on the inset.
+
+    Returns
+    -------
+    rgba : np.ndarray  — cropped RGBA screenshot
+    marker_px : list of (grp_name, px, py) in cropped-image pixel coordinates
+    """
     brain = plot_on_average(layout.get_subjects(),
                             picks=_chans_for_plot(idx_set),
                             color=color, hemi='lh', show=False)
@@ -93,6 +111,24 @@ def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
     plotter.camera_position = brain.plotter.camera_position
     plotter.view_yz(True)
     plotter.camera.zoom(1.5)
+    plotter.render()  # required before WorldToDisplay matrices are valid
+
+    # Project each highlighted electrode to 2-D image pixel coordinates
+    marker_px = []
+    if highlight_elecs:
+        ren = plotter.renderer
+        win_h = plotter.window_size[1]
+        for elec_key, elec_str in highlight_elecs.items():
+            pos_3d = _get_elec_fsaverage_pos(elec_str)
+            if pos_3d is None:
+                continue
+            ren.SetWorldPoint(float(pos_3d[0]), float(pos_3d[1]),
+                              float(pos_3d[2]), 1.0)
+            ren.WorldToDisplay()
+            dp = ren.GetDisplayPoint()
+            # VTK display: (0,0) = bottom-left; image array: (0,0) = top-left
+            marker_px.append((elec_key, float(dp[0]), float(win_h - dp[1])))
+
     img = plotter.screenshot(return_img=True)
     plotter.close()
     brain.close()
@@ -115,17 +151,20 @@ def _brain_screenshot(idx_set: set, color: str) -> np.ndarray:
     rows = np.where(nw.any(1))[0]
     cols = np.where(nw.any(0))[0]
     if rows.size and cols.size:
-        return rgba[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
-    return rgba
+        rgba = rgba[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+        # Shift marker coords to account for the crop
+        marker_px = [(k, px - cols[0], py - rows[0])
+                     for k, px, py in marker_px]
+    return rgba, marker_px
 
 
 # ---------------------------------------------------------------------------
 # Conditions used in both the line-plot and spectrogram panels
 # ---------------------------------------------------------------------------
 COND_LIST = [
-    ("aud_ls", (-0.5, 1.5), "stimulus"),
-    ("go_ls",  (-0.5, 1.5), "go cue"),
-    ("resp",   (-1.0, 1.0), "response"),
+    ("aud_ls", (-0.5, 1.5), EVENT_STIMULUS),
+    ("go_ls",  (-0.5, 1.5), EVENT_GO),
+    ("resp",   (-1.0, 1.0), EVENT_RESPONSE),
 ]
 
 GROUPS = [
@@ -148,6 +187,35 @@ SPEC_ELEC = {
     "SM":   "D0028-LPIO7",   # e.g. "D0016-MST1"
     "PROD": "D0022-LPIF4",   # e.g. "D0021-LST2"
 }
+
+# Matplotlib marker codes matched in brain insets and spectrogram y-labels.
+SPEC_MARKERS_MPL = {"AUD": "^", "SM": "s", "PROD": "o"}
+MARKER_SIZE = 8   # shared size for brain-inset and ylabel markers
+
+# All three representative electrodes are in the SM group → mark them together
+# on the SM brain inset.  Keys are group names; values are electrode names.
+HIGHLIGHT_ELECS = dict(SPEC_ELEC)
+
+
+def _get_elec_fsaverage_pos(spec_elec_str: str) -> np.ndarray | None:
+    """Return fsaverage 3D position (metres) for a 'D0028-LPIO7' electrode."""
+    subj_label, ch_name = spec_elec_str.split("-", 1)
+    subj = f"D{int(subj_label[1:])}"   # 'D0028' → 'D28'
+    subj_dir = get_sub_dir()
+    try:
+        info = subject_to_info(subj, subj_dir)
+    except Exception:
+        return None
+    if ch_name not in info.ch_names:
+        return None
+    to_fsaverage = mne.read_talxfm(subj, subj_dir)
+    trans = mne.transforms.Transform(
+        fro='head', to='mri', trans=to_fsaverage['trans'])
+    montage = info.get_montage()
+    force2frame(montage, trans.from_str)
+    montage.apply_trans(trans)
+    return montage.get_positions()['ch_pos'].get(ch_name)
+
 
 # ---------------------------------------------------------------------------
 # Figure skeleton
@@ -264,26 +332,32 @@ y_prod_inset = (cy_prod - r_prod + y_intersect_bottom) / 2 # PROD exclusive cent
 inset_hw = min(r_aud, r_prod) * 0.70  # common half-width for all three insets
 
 inset_specs = [
-    (cx, y_aud_inset,  inset_hw, AUD,  "green"),
-    (cx, y_sm_inset,   inset_hw, SM,   "red"),
-    (cx, y_prod_inset, inset_hw, PROD, "blue"),
+    (cx, y_aud_inset,  inset_hw, AUD,  "green", None),
+    (cx, y_sm_inset,   inset_hw, SM,   "red",   HIGHLIGHT_ELECS),
+    (cx, y_prod_inset, inset_hw, PROD, "blue",  None),
 ]
 
-for icx, icy, hw, idx_set, color in inset_specs:
-    shot = _brain_screenshot(idx_set, color)
+for icx, icy, hw, idx_set, color, highlight_elecs in inset_specs:
+    shot, marker_px = _brain_screenshot(idx_set, color,
+                                        highlight_elecs=highlight_elecs)
     h_img, w_img = shot.shape[:2]
     hh = hw * (h_img / w_img)
     ax_ins = ax_venn.inset_axes(_bounds_v(icx, icy, hw, hh), zorder=3)
     ax_ins.set_facecolor('none')
     ax_ins.imshow(shot)
     ax_ins.axis("off")
+    for grp_key, px, py in marker_px:
+        mpl_sym = SPEC_MARKERS_MPL.get(grp_key, "o")
+        ax_ins.plot(px, py, marker=mpl_sym, linestyle='none',
+                    markerfacecolor='red', markeredgecolor='black',
+                    markeredgewidth=1, markersize=MARKER_SIZE, clip_on=False)
 
-# Count labels — left of the diagram, black, no box
+# Count labels — left of the diagram
 lbl_x  = -(r_prod + 0.05)   # just left of the larger (PROD) circle
-lbl_kw = dict(ha='right', va='center', zorder=6, fontsize=TICK_SIZE, color='black')
-ax_venn.text(lbl_x, y_aud_inset,  f"AUD\n{aud_only}",  **lbl_kw)
-ax_venn.text(lbl_x, y_sm_inset,   f"SM\n{sm_size}",    **lbl_kw)
-ax_venn.text(lbl_x, y_prod_inset, f"PROD\n{prod_only}", **lbl_kw)
+lbl_kw = dict(ha='right', va='center', zorder=6, fontsize=LABEL_SIZE)
+ax_venn.text(lbl_x, y_aud_inset,  f"Auditory\n{aud_only}",      color='green', **lbl_kw)
+ax_venn.text(lbl_x, y_sm_inset,   f"Sensory-Motor\n{sm_size}",  color='red',   **lbl_kw)
+ax_venn.text(lbl_x, y_prod_inset, f"Production\n{prod_only}",   color='blue',  **lbl_kw)
 
 # ============================================================
 # RIGHT – 4 rows × 3 cols
@@ -297,7 +371,7 @@ gs_right = gridspec.GridSpecFromSubplotSpec(
     subplot_spec=gs_outer[0, 1],
     height_ratios=[2, 1, 1, 1],
     width_ratios=[10, 10, 10, 1],
-    **GS_KWARGS,
+    hspace=GS_KWARGS['hspace'], wspace=GS_KWARGS['hspace'],
 )
 
 axes_ts   = []
@@ -392,13 +466,18 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
         axes_spec[i][j] = ax
 
         if i == len(GROUPS) - 1:
-            ax.set_xlabel(f"Time from {title} (s)", fontsize=LABEL_SIZE)
+            ax.set_xlabel(f"Time from\n{title} (s)", fontsize=LABEL_SIZE)
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
 
         if j == 0:
-            ax.set_ylabel(f"{override}\nFreq (Hz)",
-                          color="red", fontsize=LABEL_SIZE)
+            if i == 0:
+                ax.set_ylabel("Freq (Hz)")
+            mpl_sym = SPEC_MARKERS_MPL.get(grp_name, "o")
+            ax.plot(-0.5, 0.5, marker=mpl_sym, transform=ax.transAxes,
+                    clip_on=False, linestyle='none',
+                    markerfacecolor='red', markeredgecolor='black',
+                    markeredgewidth=0.75, markersize=MARKER_SIZE)
         else:
             ax.set_yticklabels([])
 
@@ -440,22 +519,16 @@ for i, (grp_name, grp_idx, color) in enumerate(GROUPS):
 # Single colorbar in the dedicated narrow 5th column (rows 1–3 only)
 if last_im is not None:
     cax = fig.add_subplot(gs_right[1:, -1])
-    cb = fig.colorbar(last_im, cax=cax, label="Power ratio")
-    cb.set_label("Power ratio", fontsize=LABEL_SIZE)
+    cb = fig.colorbar(last_im, cax=cax, label=POWER_RATIO_LABEL)
+    cb.set_label(POWER_RATIO_LABEL, fontsize=LABEL_SIZE)
 
 # ---------------------------------------------------------------------------
 # Subfigure labels
 # ---------------------------------------------------------------------------
-ax_venn.text(-0.05, 1.02, "a", transform=ax_venn.transAxes,
-             fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
-axes_ts[0].text(-0.15, 1.02, "b", transform=axes_ts[0].transAxes,
-                fontsize=LABEL_SIZE + 2, fontweight="bold", va="bottom")
+add_panel_label(ax_venn, "a", x=-0.05, y=1.02)
+add_panel_label(axes_ts[0], "b", x=-0.15, y=1.02)
 
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
-out_dir = os.path.dirname(os.path.abspath(__file__))
-# fig.suptitle("Figure 2", fontsize=14, y=0.995)
-fig.savefig(os.path.join(out_dir, "figure_2.svg"), bbox_inches="tight", dpi=DPI)
-fig.savefig(os.path.join(out_dir, "figure_2.png"), bbox_inches="tight", dpi=DPI)
-plt.show()
+finalize_figure(fig, "figure_2")

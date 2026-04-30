@@ -18,6 +18,7 @@ from analysis.figures.config import (
     cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS_LIST,
     DECOMPOSITION_DIR, DECODING_DIR,
+    XLABEL_STIMULUS, XLABEL_GO,
 )
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist, plot_dist_bound
@@ -34,16 +35,16 @@ SM_SHUF = os.path.join(DECOMPOSITION_DIR,
 
 # Component-weighted scores
 BOT_TRUE = os.path.join(DECODING_DIR,
-                        "true_scores_zscore_weighted_words_2way3.npz")
+                        "true_scores_zscore_weighted_conds_dtw.npz")
 BOT_SHUF = os.path.join(DECODING_DIR,
-                        "shuffle_scores_zscore_weighted_words_2way3.npz")
+                        "shuffle_scores_zscore_weighted_2way_sm3_pcald.npz")
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 N_CLASSES = 2
 BASELINE = 1 / N_CLASSES   # 0.5
-YLIMS = (BASELINE - 0.3, BASELINE + 0.5)
+YLIMS = (BASELINE - 0.2, 1.)
 
 # Rows = contrasts, Columns = epochs (stimulus, go)
 CONTRASTS = [
@@ -52,14 +53,14 @@ CONTRASTS = [
     (["aud_lm", "aud_jl"], ["go_lm", "go_jl"]),   # LM vs JL
 ]
 ROW_LABELS = ["LS vs LM", "LS vs JL", "LM vs JL"]
-COL_LABELS = ["Time from stimulus (s)", "Time from go cue (s)"]
+COL_LABELS = [XLABEL_STIMULUS, XLABEL_GO]
 
 # Component series (full opacity)
 COMP_SERIES = list(zip(COMP_NAMES, COMP_COLORS_LIST))
 
 # SM reference series (faded)
 SM_NAME = "Sensory-Motor"
-SM_COLOR = "#994444"
+SM_COLOR = "#661100"
 SM_ALPHA = 0.35
 SM_BAR_COLOR = tuple(c * SM_ALPHA + (1 - SM_ALPHA) for c in to_rgb(SM_COLOR))
 
@@ -144,6 +145,15 @@ for row, (aud_cond, go_cond) in enumerate(CONTRASTS):
                 shuf_acc.T, 0.05, n_perm=10000,
                 stat_func=_stat_sm,
             )[0]
+            # sig = time_perm_cluster(true_acc.T,
+            #                                               # true.mean(axis=1, keepdims=True).T,
+            #                                               shuf_acc.T, 0.0005,
+            #                                               n_perm=10000,
+            #                                               stat_func=lambda x,
+            #                                                                y,
+            #                                                                axis: np.mean(
+            #                                                   x, axis=axis)
+            #                                               )[0]
             bars.append(sig)
             bar_colors.append(SM_BAR_COLOR)
             bar_times.append(times_t)

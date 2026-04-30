@@ -18,7 +18,9 @@ from analysis.figures.config import (
     cm, GS_KWARGS, setup_figure, LABEL_SIZE, TICK_SIZE, DPI,
     COMP_NAMES, COMP_COLORS_LIST,
     ANALYSIS_DIR, DECOMPOSITION_DIR, DECODING_DIR,
+    XLABEL_STIMULUS, XLABEL_GO, XLABEL_RESPONSE,
 )
+from analysis.figures.config import finalize_figure
 from ieeg.calc.stats import time_perm_cluster
 from ieeg.viz.ensemble import plot_dist, plot_dist_bound
 from analysis.utils.plotting import plot_horizontal_bars
@@ -195,11 +197,11 @@ for j, cond in enumerate(CONDS):
     ax.axhline(BASELINE, color="k", linestyle="--", linewidth=0.5)
     ax.set_ylim(*YLIMS)
     if cond_str == "resp":
-        ax.set_xlabel("Time from response (s)", fontsize=LABEL_SIZE)
+        ax.set_xlabel(XLABEL_RESPONSE, fontsize=LABEL_SIZE)
     elif "aud" in cond_str:
-        ax.set_xlabel("Time from stimulus (s)", fontsize=LABEL_SIZE)
+        ax.set_xlabel(XLABEL_STIMULUS, fontsize=LABEL_SIZE)
     else:
-        ax.set_xlabel("Time from go cue (s)", fontsize=LABEL_SIZE)
+        ax.set_xlabel(XLABEL_GO, fontsize=LABEL_SIZE)
 
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(
         lambda x, _: f"{x * 100:.0f}"))
@@ -212,7 +214,4 @@ for j, cond in enumerate(CONDS):
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
-out_dir = os.path.dirname(os.path.abspath(__file__))
-fig.savefig(os.path.join(out_dir, "figure_5.svg"), bbox_inches="tight", dpi=DPI)
-fig.savefig(os.path.join(out_dir, "figure_5.png"), bbox_inches="tight", dpi=DPI)
-plt.show()
+finalize_figure(fig, "figure_5")
