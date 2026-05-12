@@ -30,22 +30,22 @@ from analysis.utils.plotting import plot_horizontal_bars
 # ---------------------------------------------------------------------------
 # Electrode-group scores (for SM reference trace)
 SM_TRUE = os.path.join(DECOMPOSITION_DIR,
-                       "true_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
+                       "true_scores_zscore_nofreqmult_word_AUDSMPROD.npz")
 SM_SHUF = os.path.join(DECOMPOSITION_DIR,
-                       "shuffle_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
+                       "shuffle_scores_zscore_nofreqmult_word_AUDSMPROD.npz")
 
 # Component-weighted scores
 BOT_TRUE = os.path.join(DECODING_DIR,
-                        "true_scores_zscore_weighted_words29.npz")
+                        "true_scores_zscore_weighted_words_PCARidge.npz")
 BOT_SHUF = os.path.join(DECODING_DIR,
-                        "shuffle_scores_zscore_weighted_words29.npz")
+                        "shuffle_scores_zscore_weighted_words_PCARidge.npz")
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 N_CLASSES = 4
 BASELINE = 1 / N_CLASSES
-YLIMS = (BASELINE - 0.3, BASELINE + 0.6)
+YLIMS = (BASELINE - 0.15, BASELINE + 0.6)
 
 CONDS = [["aud_ls", "aud_lm"], ["go_ls", "go_lm"], "resp"]
 COND_TITLES = {
@@ -144,7 +144,7 @@ for j, cond in enumerate(CONDS):
     bar_colors = []
     bar_times = []
 
-    # SM shuffle
+    # SM shuffle (one fixed slot; all-False placeholder if absent)
     if sm_key in sm_shuf:
         true_acc = _acc(sm_true[sm_key])
         shuf_acc = _acc(sm_shuf[sm_key])
@@ -154,48 +154,54 @@ for j, cond in enumerate(CONDS):
             stat_func=_stat_sm,
         )[0]
         bars.append(sig)
-        bar_colors.append(SM_BAR_COLOR)
-        bar_times.append(times_t)
         window = np.lib.stride_tricks.sliding_window_view(
             shuf_acc, 20, axis=0)
         shuf_smooth = np.mean(window, axis=-1)
         plot_dist_bound(shuf_smooth, "std", "both",
                         _times_shuffle_sm(cond_str), 0,
                         ax=ax, color='grey', alpha=0.15, linewidth=0)
+    else:
+        bars.append(None)
+    bar_colors.append(SM_BAR_COLOR)
+    bar_times.append(times_t)
 
-    # Component shuffles
+    # Component shuffles (one fixed slot per component; all-False if absent)
     for name, color in COMP_SERIES:
         key = _cond_key(name, cond)
-        if key not in bot_shuf:
-            continue
-        true_acc = _acc(bot_true[key])
-        shuf_acc = _acc(bot_shuf[key])
-        # sig = time_perm_cluster(
-        #     true_acc.mean(axis=1, keepdims=True).T,
-        #     shuf_acc.T, 0.05, n_perm=10000,
-        #     stat_func=_stat,
-        # )[0]
-        sig = time_perm_cluster(#true_acc.T,
-            true_acc.mean(axis=1, keepdims=True).T,
-            shuf_acc.T, 0.08, n_perm=10000,
-            stat_func=lambda x, y, axis: np.mean(x, axis=axis)
-        )[0]
-        bars.append(sig)
+        if key in bot_shuf:
+            true_acc = _acc(bot_true[key])
+            shuf_acc = _acc(bot_shuf[key])
+            sig = time_perm_cluster(
+                true_acc.mean(axis=1, keepdims=True).T,
+                shuf_acc.T, 0.05, n_perm=10000,
+                stat_func=_stat,
+            )[0]
+            # sig = time_perm_cluster(#true_acc.T,
+            #     true_acc.mean(axis=1, keepdims=True).T,
+            #     shuf_acc.T, 0.08, n_perm=10000,
+            #     stat_func=lambda x, y, axis: np.mean(x, axis=axis)
+            # )[0]
+            bars.append(sig)
+            window = np.lib.stride_tricks.sliding_window_view(
+                shuf_acc, 20, axis=0)
+            shuf_smooth = np.mean(window, axis=-1)
+            plot_dist_bound(shuf_smooth, "std", "both",
+                            _times_shuffle_comp(cond_str), 0,
+                            ax=ax, color='grey', alpha=0.2, linewidth=0)
+        else:
+            bars.append(None)
         bar_colors.append(color)
         bar_times.append(times_t)
-        window = np.lib.stride_tricks.sliding_window_view(
-            shuf_acc, 20, axis=0)
-        shuf_smooth = np.mean(window, axis=-1)
-        plot_dist_bound(shuf_smooth, "std", "both",
-                        _times_shuffle_comp(cond_str), 0,
-                        ax=ax, color='grey', alpha=0.2, linewidth=0)
 
-    if bars:
-        plot_horizontal_bars(ax, bars, 0.02, "below",
-                             colors=bar_colors, times=bar_times)
+    # Replace None placeholders with all-False arrays of the correct length
+    _n = next((len(s) for s in bars if s is not None), 0)
+    bars = [s if s is not None else np.zeros(_n, dtype=bool) for s in bars]
 
     ax.axhline(BASELINE, color="k", linestyle="--", linewidth=0.5)
     ax.set_ylim(*YLIMS)
+    if _n:
+        plot_horizontal_bars(ax, bars, 0.02, "below",
+                             colors=bar_colors, times=bar_times)
     if cond_str == "resp":
         ax.set_xlabel(XLABEL_RESPONSE, fontsize=LABEL_SIZE)
     elif "aud" in cond_str:

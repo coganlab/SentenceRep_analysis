@@ -24,16 +24,16 @@ from analysis.figures.config import (
 # Paths to pre-computed score files
 # ---------------------------------------------------------------------------
 TOP_TRUE = os.path.join(DECOMPOSITION_DIR,
-                        "true_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
+                        "true_scores_zscore_nofreqmult_word_AUDSMPROD.npz")
 TOP_SHUF = os.path.join(DECOMPOSITION_DIR,
-                        "shuffle_scores_zscore_nofreqmult_word_AUDSMPROD4.npz")
+                        "shuffle_scores_zscore_nofreqmult_word_AUDSMPROD.npz")
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 N_CLASSES = 4
 BASELINE = 1 / N_CLASSES
-YLIMS = (BASELINE - 0.3, BASELINE + 0.6)
+YLIMS = (BASELINE - 0.15, BASELINE + 0.6)
 
 CONDS = [["aud_ls", "aud_lm"], ["go_ls", "go_lm"], "resp"]
 COND_TITLES = {
@@ -106,30 +106,37 @@ for j, cond in enumerate(CONDS):
 
     # ---- Shuffle overlay + significance bars ----
     bars = []
+    bar_colors = [c for _, c in TOP_SERIES]
+    bar_times = [times_t] * len(TOP_SERIES)
     for name, color in TOP_SERIES:
         key = _cond_key(name, cond)
-        if key not in top_shuf:
-            continue
-        true_acc = _acc(top_true[key])
-        shuf_acc = _acc(top_shuf[key])
-        sig = time_perm_cluster(
-            true_acc.mean(axis=1, keepdims=True).T,
-            shuf_acc.T, 0.05, n_perm=10000,
-            stat_func=_stat,
-        )[0]
-        bars.append(sig)
-        window = np.lib.stride_tricks.sliding_window_view(
-            shuf_acc, 20, axis=0)
-        shuf_smooth = np.mean(window, axis=-1)
-        plot_dist_bound(shuf_smooth, "std", "both",
-                        _times_shuffle(cond_str), 0,
-                        ax=ax, color='grey', alpha=0.2, linewidth=0)
+        if key in top_shuf:
+            true_acc = _acc(top_true[key])
+            shuf_acc = _acc(top_shuf[key])
+            sig = time_perm_cluster(
+                true_acc.mean(axis=1, keepdims=True).T,
+                shuf_acc.T, 0.05, n_perm=10000,
+                stat_func=_stat,
+            )[0]
+            bars.append(sig)
+            window = np.lib.stride_tricks.sliding_window_view(
+                shuf_acc, 20, axis=0)
+            shuf_smooth = np.mean(window, axis=-1)
+            plot_dist_bound(shuf_smooth, "std", "both",
+                            _times_shuffle(cond_str), 0,
+                            ax=ax, color='grey', alpha=0.2, linewidth=0)
+        else:
+            bars.append(None)
 
-    if bars:
-        plot_horizontal_bars(ax, bars, 0.02, "below")
+    # Replace None placeholders with all-False arrays of the correct length
+    _n = next((len(s) for s in bars if s is not None), 0)
+    bars = [s if s is not None else np.zeros(_n, dtype=bool) for s in bars]
 
     ax.axhline(BASELINE, color="k", linestyle="--", linewidth=0.5)
     ax.set_ylim(*YLIMS)
+    if _n:
+        plot_horizontal_bars(ax, bars, 0.02, "below",
+                             colors=bar_colors, times=bar_times)
     if cond_str == "resp":
         ax.set_xlabel(XLABEL_RESPONSE, fontsize=LABEL_SIZE)
     elif "aud" in cond_str:
